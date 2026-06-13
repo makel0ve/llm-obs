@@ -1,0 +1,96 @@
+name: CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_DB: llmobs_test
+          POSTGRES_USER: llmobs
+          POSTGRES_PASSWORD: llmobs_test
+        options: --health-cmd pg_isready --health-interval 5s --health-retries 5
+        ports: ["5432:5432"]
+      redis:
+        image: redis:7-alpine
+        ports: ["6379:6379"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.11", cache: pip }
+      - run: cd backend && pip install -e ".[test]"
+      - run: cd backend && alembic upgrade head
+        env:
+          DATABASE_URL: postgresql+asyncpg://llmobs:llmobs_test@localhost/llmobs_test
+      - run: cd backend && pytest tests/ --cov=app --cov-report=xml --cov-fail-under=75
+        env:
+          DATABASE_URL: postgresql+asyncpg://llmobs:llmobs_test@localhost/llmobs_test
+          REDIS_URL: redis://localhost:6379/0
+          SECRET_KEY: ci-secret-key-for-testing-only-32chars
+          ENVIRONMENT: test
+      - uses: codecov/codecov-action@v4
+
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.11", cache: pip }
+      - run: pip install ruff mypy types-python-jose types-passlib types-python-dateutil "types-aioboto3[s3]"
+      - run: ruff check .
+      - run: mypy backend/
+
+  security:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: pip install bandit safety
+      - run: bandit -r backend/app -ll
+      - run: safety check -r backend/pyproject.toml
+
+  docker:
+    needs: [test, lint, security]
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/build-push-action@v5
+        with:
+          context: ./backend
+          target: production
+          push: true
+          tags: ghcr.io/${{ github.repository }}/backend:${{ github.sha }}
+
+  release:
+    needs: [test, lint, security]
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    concurrency: release
+    permissions:
+      id-token: write
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.11" }
+      - run: pip install python-semantic-release
+      - run: semantic-release version
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - run: semantic-release publish
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

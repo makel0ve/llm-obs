@@ -1,0 +1,126 @@
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    env_file: ../backend/.env.prod
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  redis:
+    image: redis:7-alpine
+    command: redis-server --maxmemory 512mb --maxmemory-policy allkeys-lru --save ""
+    restart: unless-stopped
+
+  minio:
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    image: minio/minio
+    command: server /data --console-address ":9001"
+    env_file: ../backend/.env.prod
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+    volumes:
+      - minio_data:/data
+    restart: unless-stopped
+
+  backend:
+    build:
+      context: ../backend
+      target: production
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+      minio:
+        condition: service_healthy
+      pgbouncer:
+        condition: service_healthy
+    env_file: ../backend/.env.prod
+    ports: ["8000:8000"]
+    command: gunicorn app.main:app -k uvicorn.workers.UvicornWorker -w 2 --bind 0.0.0.0:8000
+    restart: unless-stopped
+
+  worker:
+    build:
+      context: ../backend
+      target: production
+    command: taskiq worker app.core.taskiq:broker app.workers.process_span app.workers.maintenance app.workers.dlq
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+      minio:
+        condition: service_healthy
+      pgbouncer:
+        condition: service_healthy
+    env_file: ../backend/.env.prod
+    restart: unless-stopped
+
+  scheduler:
+    build:
+      context: ../backend
+      target: production
+    command: taskiq scheduler app.core.taskiq:scheduler
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    env_file: ../backend/.env.prod
+    restart: unless-stopped
+
+  pgbouncer:
+    image: pgbouncer/pgbouncer:latest
+    env_file: ../backend/.env.prod
+    environment:
+      DATABASES_HOST: ${POSTGRES_HOST}
+      DATABASES_PORT: ${POSTGRES_PORT}
+      DATABASES_DBNAME: ${POSTGRES_DB}
+      DATABASES_USER: ${POSTGRES_USER}
+      DATABASES_PASSWORD: ${POSTGRES_PASSWORD}
+      PGBOUNCER_POOL_MODE: transaction
+      PGBOUNCER_MAX_CLIENT_CONN: 1000
+      PGBOUNCER_DEFAULT_POOL_SIZE: 25
+      PGBOUNCER_PREPARED_STATEMENTS: 0
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z localhost 6432"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ../frontend
+      target: production
+    ports:
+      - "3000:80"
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+  mailpit:
+    image: axllent/mailpit
+    ports:
+      - "1025:1025"
+      - "8025:8025"
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  minio_data:

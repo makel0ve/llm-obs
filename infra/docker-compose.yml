@@ -1,0 +1,97 @@
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_DB: llmobs
+      POSTGRES_USER: llmobs
+      POSTGRES_PASSWORD: llmobs_dev
+    ports: ["5432:5432"]
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U llmobs -d llmobs"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    ports: ["6379:6379"]
+    command: redis-server --maxmemory 512mb --maxmemory-policy allkeys-lru --save ""
+
+  minio:
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    image: minio/minio
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin123
+    ports: ["9000:9000", "9001:9001"]
+    volumes:
+      - minio_data:/data
+
+  backend:
+    build:
+      context: ../backend
+      target: development
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+      minio:
+        condition: service_healthy
+    env_file: ../backend/.env
+    ports: ["8000:8000"]
+    volumes:
+      - ../backend/app:/app/app
+      - ../backend/alembic:/app/alembic
+      - ../backend/seed:/app/seed
+      - ../backend/tests:/app/tests
+    command: uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+
+  worker:
+    build:
+      context: ../backend
+      target: development
+    command: taskiq worker app.core.taskiq:broker app.workers.process_span app.workers.maintenance app.workers.dlq
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+      minio:
+        condition: service_healthy
+    env_file: ../backend/.env
+    volumes:
+      - ../backend/app:/app/app
+      - ../backend/alembic:/app/alembic
+
+  mailpit:
+    image: axllent/mailpit
+    ports:
+      - "1025:1025"
+      - "8025:8025"
+    restart: unless-stopped
+
+
+  frontend:
+    build:
+      context: ../frontend
+      target: development
+    ports:
+      - "3000:3000"
+    volumes:
+      - ../frontend/src:/app/src
+    environment:
+      - VITE_API_URL=http://localhost:8000
+    depends_on:
+      - backend
+
+volumes:
+  postgres_data:
+  minio_data:

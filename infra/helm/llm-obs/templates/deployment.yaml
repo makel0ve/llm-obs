@@ -1,0 +1,31 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name }}-backend
+spec:
+  replicas: {{ .Values.backend.replicas | default 2 }}
+  template:
+    spec:
+      containers:
+        - name: backend
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          ports: [{containerPort: 8000}]
+          livenessProbe:
+            httpGet: {path: /health, port: 8000}
+            initialDelaySeconds: 10
+            periodSeconds: 30
+          readinessProbe:
+            httpGet: {path: /ready, port: 8000}
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            failureThreshold: 3
+          resources:
+            requests: {cpu: "500m", memory: "512Mi"}
+            limits: {cpu: "2000m", memory: "2Gi"}
+          env:
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef: {name: llm-obs-secrets, key: database-url}
+            - name: SECRET_KEY
+              valueFrom:
+                secretKeyRef: {name: llm-obs-secrets, key: secret-key}
