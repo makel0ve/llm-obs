@@ -5,9 +5,6 @@ Open-source, privacy-first alternative to LangSmith and Helicone.
 
 ![Dashboard](docs/assets/dashboard.png)
 
-[![CI](https://github.com/makel0ve/llm-obs/actions/workflows/ci.yml/badge.svg)](https://github.com/makel0ve/llm-obs/actions)
-[![Coverage](https://codecov.io/gh/makel0ve/llm-obs/graph/badge.svg)](https://codecov.io/gh/makel0ve/llm-obs)
-
 ---
 
 ## What is LLM Obs?
