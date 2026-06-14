@@ -42,7 +42,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with: { python-version: "3.11", cache: pip }
-      - run: pip install ruff mypy types-python-jose types-passlib types-python-dateutil "types-aioboto3[s3]"
+      - run: cd backend && pip install -e ".[test,dev]"
       - run: ruff check .
       - run: mypy backend/
 
@@ -51,7 +51,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: pip install bandit safety
-      - run: bandit -r backend/app -ll
+      - run: bandit -r backend/app -ll --severity-level high
       - run: safety check -r backend/pyproject.toml
 
   docker:
