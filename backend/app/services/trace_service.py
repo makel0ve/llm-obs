@@ -48,6 +48,7 @@ class TraceService:
             conditions.append("started_at <= :to_dt")
             params["to_dt"] = filters["to_dt"]
 
+        # nosec B608
         sql = text(
             f"""
             SELECT id, project_id, started_at, ended_at, total_tokens,
