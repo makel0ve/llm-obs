@@ -17,9 +17,9 @@ LLM Obs is a self-hosted platform for monitoring LLM calls. Your data never leav
 
 - **Python SDK** — `@trace` decorator and auto-patching for OpenAI, Anthropic
 - **Cost tracking** — per model, per project, with historical pricing support
-- **Latency metrics** — P50/P95/P99 with time series charts
-- **Trace viewer** — full span details including stored input/output payloads
-- **Alerts** — email and Slack notifications with configurable thresholds
+- **Latency metrics** — average, P95 and P99 with time series charts
+- **Trace API** — query traces and spans, with optional stored input/output payloads
+- **Alerts API** — email and Slack notifications with configurable thresholds
 - **OpenTelemetry** — OTLP HTTP endpoint for existing instrumentation
 - **Multi-tenant** — organizations, projects, API keys
 - **Data retention** — automatic cleanup with per-project policies
@@ -40,20 +40,26 @@ cp infra/.env.example infra/.env
 # Generate SECRET_KEY
 python3 -c "import secrets; print(secrets.token_hex(32))"
 
+# In backend/.env.prod, set ENVIRONMENT=production and use PgBouncer:
+# DATABASE_URL=postgresql+asyncpg://<POSTGRES_USER>:<POSTGRES_PASSWORD>@pgbouncer:6432/<POSTGRES_DB>
+
 # Start
-docker compose -f infra/docker-compose.prod.yml up -d
+docker compose --env-file infra/.env -f infra/docker-compose.prod.yml up -d
 
 # Apply migrations
-docker compose -f infra/docker-compose.prod.yml exec backend alembic upgrade head
+docker compose --env-file infra/.env -f infra/docker-compose.prod.yml exec backend alembic upgrade head
 
 # Create first user
 curl -X POST http://localhost:8000/v1/auth/register \
   -H "Content-Type: application/json" \
-  -d '{"email": "admin@example.com", "password": "yourpassword", "name": "Admin", "org_name": "My Org"}'
+  -d '{"email": "admin@example.com", "password": "yourpassword", "org_name": "My Org"}'
 
 # Open dashboard
 open http://localhost:3000
 ```
+
+The first registration response includes the default project API key. Save it:
+it is shown only once.
 
 ---
 
@@ -63,6 +69,14 @@ open http://localhost:3000
 
 ```bash
 pip install llm-obs-sdk
+```
+
+The SDK package name is reserved for published releases. For local development,
+install it from this repository:
+
+```bash
+cd sdk
+pip install -e .
 ```
 
 ### Basic usage — decorator
@@ -115,7 +129,9 @@ client = patch_anthropic(client)
 
 ## Configuration
 
-Copy `backend/.env.example` to `backend/.env.prod` and fill in the values:
+Copy `backend/.env.example` to `backend/.env.prod` and fill in the values.
+For `infra/docker-compose.prod.yml`, keep database, PostgreSQL and MinIO
+credentials consistent between `backend/.env.prod` and `infra/.env`.
 
 | Variable | Description | Required |
 |----------|-------------|----------|
@@ -146,7 +162,7 @@ VALUES
 Connect to the database:
 
 ```bash
-docker compose -f infra/docker-compose.prod.yml exec postgres psql -U llmobs -d llmobs
+docker compose --env-file infra/.env -f infra/docker-compose.prod.yml exec postgres psql -U llmobs -d llmobs
 ```
 
 ---
@@ -209,8 +225,25 @@ Scheduler (Taskiq)
 git clone https://github.com/makel0ve/llm-obs
 cd llm-obs
 
-# Start dev infrastructure
+# Copy local development environment variables
+cp backend/.env.example backend/.env
+
+# Start the full local stack
 docker compose -f infra/docker-compose.yml up -d
+
+docker compose -f infra/docker-compose.yml exec backend alembic upgrade head
+```
+
+The backend, frontend, worker, PostgreSQL, Redis, MinIO and Mailpit are started
+by the compose file.
+
+For local code-only runs outside Docker, point `backend/.env` to host ports
+first:
+
+```bash
+DATABASE_URL=postgresql+asyncpg://llmobs:llmobs_dev@localhost:5432/llmobs
+REDIS_URL=redis://localhost:6379/0
+S3_ENDPOINT_URL=http://localhost:9000
 
 # Backend
 cd backend
@@ -258,6 +291,14 @@ docker compose -f infra/docker-compose.yml run --rm \
 | Storage | MinIO (S3-compatible) |
 | Frontend | React, TypeScript, Vite, Tailwind CSS |
 | Infra | Docker Compose, Helm (Kubernetes) |
+
+---
+
+## Current Dashboard Scope
+
+The current frontend includes login and overview metrics for a project. Trace
+listing/detail views, alert management screens and project settings are available
+through backend APIs but are not yet exposed as full dashboard pages.
 
 ---
 
