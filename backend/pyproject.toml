@@ -85,7 +85,6 @@ select = ["E", "F", "I", "UP"]
 version_toml = ["pyproject.toml:project.version"]
 branch = "main"
 changelog_file = "CHANGELOG.md"
-build_command = false
 commit_message = "chore(release): v{version} [skip ci]"
 
 [tool.semantic_release.commit_parser_options]

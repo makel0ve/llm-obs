@@ -112,7 +112,7 @@ jobs:
       - uses: actions/setup-python@v5
         with: { python-version: "3.11" }
       - run: pip install "python-semantic-release>=9,<10"
-      - run: semantic-release version
+      - run: semantic-release version --skip-build
         working-directory: backend
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
