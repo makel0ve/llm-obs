@@ -87,6 +87,10 @@ branch = "main"
 changelog_file = "CHANGELOG.md"
 commit_message = "chore(release): v{version} [skip ci]"
 
+[tool.semantic_release.remote]
+url = "ssh://git@github.com/makel0ve/llm-obs.git"
+ignore_token_for_push = true
+
 [tool.semantic_release.commit_parser_options]
 allowed_tags = ["feat", "fix", "perf", "refactor", "docs", "test", "chore"]
 minor_tags = ["feat"]
