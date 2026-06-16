@@ -110,7 +110,11 @@ jobs:
           fetch-depth: 0
           ssh-key: ${{ secrets.RELEASE_DEPLOY_KEY }}
           persist-credentials: false
-      - run: git remote set-url origin "git@github.com:${GITHUB_REPOSITORY}.git"
+      - name: Use SSH for release pushes
+        run: |
+          git remote set-url origin "git@github.com:${GITHUB_REPOSITORY}.git"
+          git config --global url."git@github.com:".insteadOf "https://github.com/"
+          git remote -v
       - uses: actions/setup-python@v5
         with: { python-version: "3.11" }
       - run: pip install "python-semantic-release>=9,<10"
