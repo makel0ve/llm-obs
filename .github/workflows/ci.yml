@@ -111,8 +111,14 @@ jobs:
           persist-credentials: false
       - name: Use SSH for release pushes
         run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "${{ secrets.RELEASE_DEPLOY_KEY }}" > ~/.ssh/release_deploy_key
+          chmod 600 ~/.ssh/release_deploy_key
+          ssh-keyscan github.com >> ~/.ssh/known_hosts
+          echo "GIT_SSH_COMMAND=ssh -i ~/.ssh/release_deploy_key -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes" >> "$GITHUB_ENV"
           git remote set-url origin "git@github.com:${GITHUB_REPOSITORY}.git"
           git config --global url."git@github.com:".insteadOf "https://github.com/"
+          ssh -i ~/.ssh/release_deploy_key -o IdentitiesOnly=yes -T git@github.com || true
           git remote -v
       - uses: actions/setup-python@v5
         with: { python-version: "3.11" }
