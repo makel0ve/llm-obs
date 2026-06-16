@@ -47,7 +47,7 @@ dev = [
     "types-passlib",
     "types-python-dateutil",
     "types-aioboto3[s3]",
-    "python-semantic-release>=9.0",
+    "python-semantic-release>=9.0,<10.0",
 ]
 
 [build-system]
