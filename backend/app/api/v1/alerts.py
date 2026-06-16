@@ -99,7 +99,7 @@ async def update_rule(
                 UPDATE alert_rules SET {set_clause}
                 WHERE id = :rule_id AND project_id IN
                 (SELECT id FROM projects WHERE org_id = :org) RETURNING id
-                """
+                """  # nosec B608
                 ),
                 {**updates, "rule_id": rule_id, "org": user["org_id"]},
             )

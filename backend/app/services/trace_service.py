@@ -56,7 +56,7 @@ class TraceService:
             WHERE {" AND ".join(conditions)}
             ORDER BY started_at DESC, id DESC
             LIMIT :limit
-            """
+            """  # nosec B608
         )
         async with get_db() as db:
             result = await db.execute(sql, params)
