@@ -109,6 +109,8 @@ jobs:
         with:
           fetch-depth: 0
           ssh-key: ${{ secrets.RELEASE_DEPLOY_KEY }}
+          persist-credentials: false
+      - run: git remote set-url origin "git@github.com:${GITHUB_REPOSITORY}.git"
       - uses: actions/setup-python@v5
         with: { python-version: "3.11" }
       - run: pip install "python-semantic-release>=9,<10"
