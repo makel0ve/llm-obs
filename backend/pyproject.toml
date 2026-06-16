@@ -85,8 +85,11 @@ select = ["E", "F", "I", "UP"]
 version_toml = ["pyproject.toml:project.version"]
 branch = "main"
 changelog_file = "CHANGELOG.md"
-build_command = false
 commit_message = "chore(release): v{version} [skip ci]"
+
+[tool.semantic_release.remote]
+url = "ssh://git@github.com/makel0ve/llm-obs.git"
+ignore_token_for_push = true
 
 [tool.semantic_release.commit_parser_options]
 allowed_tags = ["feat", "fix", "perf", "refactor", "docs", "test", "chore"]
