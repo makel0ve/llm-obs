@@ -227,6 +227,16 @@ backend/.env.test
 infra/.env
 infra/pgbouncer_userlist.txt
 
+# Local secrets and private keys
+.ssh/
+*.pem
+*.key
+id_rsa
+id_rsa.pub
+id_ed25519
+id_ed25519.pub
+*release-bot*
+
 # Frontend
 frontend/node_modules/
 frontend/dist/
