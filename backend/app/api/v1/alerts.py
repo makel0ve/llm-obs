@@ -93,9 +93,8 @@ async def update_rule(
     set_clause = ", ".join(f"{k} = :{k}" for k in updates)
     async with get_db() as db:
         async with db.begin():
-            # nosec B608
             result = await db.execute(
-                text(
+                text(  # nosec B608
                     f"""
                 UPDATE alert_rules SET {set_clause}
                 WHERE id = :rule_id AND project_id IN
