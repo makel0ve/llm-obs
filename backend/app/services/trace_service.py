@@ -48,7 +48,7 @@ class TraceService:
             conditions.append("started_at <= :to_dt")
             params["to_dt"] = filters["to_dt"]
 
-        sql = text(  # nosec B608
+        sql = text(
             f"""
             SELECT id, project_id, started_at, ended_at, total_tokens,
                 total_cost_usd, span_count, status
@@ -56,7 +56,7 @@ class TraceService:
             WHERE {" AND ".join(conditions)}
             ORDER BY started_at DESC, id DESC
             LIMIT :limit
-            """
+            """  # nosec B608
         )
         async with get_db() as db:
             result = await db.execute(sql, params)
