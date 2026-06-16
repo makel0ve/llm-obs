@@ -38,7 +38,7 @@ repos:
     rev: v4.6.0
     hooks:
       - id: no-commit-to-branch
-        args: [--branch, main]
+        args: [--branch, main, --branch, develop]
       - id: check-merge-conflict
       - id: detect-private-key
       - id: trailing-whitespace
