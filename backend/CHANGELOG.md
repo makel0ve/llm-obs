@@ -1,6 +1,14 @@
 # CHANGELOG
 
 
+## v0.1.1 (2026-06-17)
+
+### Chores
+
+- Merge main into develop sync branch
+  ([`75e458f`](https://github.com/makel0ve/llm-obs/commit/75e458fa7fd0cb3d1b3ca3e523b6163226406543))
+
+
 ## v0.1.0 (2026-06-16)
 
 ### Bug Fixes
@@ -38,8 +46,14 @@
 - Push releases through deploy key
   ([`650e678`](https://github.com/makel0ve/llm-obs/commit/650e6782af884cbc3f9fecb597bb89793f571c7e))
 
+- Restore pytest compatibility for db sessions
+  ([`37662ec`](https://github.com/makel0ve/llm-obs/commit/37662ec3b6e5847eba609a99fd0f19104c968378))
+
 - Skip package build during release
   ([`3621a85`](https://github.com/makel0ve/llm-obs/commit/3621a852a735d3775ca112ba7aa48b31a2602fa3))
+
+- Stabilize sdk initialization and realtime ingestion
+  ([`bf378be`](https://github.com/makel0ve/llm-obs/commit/bf378bedc154564e82f71ef2d6ca08c6f696a9c8))
 
 - Use deploy key for release commits
   ([`2a5dfc4`](https://github.com/makel0ve/llm-obs/commit/2a5dfc4183b64e01d82d415117b9cf3b3ce8f961))
@@ -53,6 +67,9 @@
   ([`b34ec88`](https://github.com/makel0ve/llm-obs/commit/b34ec888c0bb47905febcd08867e4ee4e55eeace))
 
 ### Documentation
+
+- Align readme with v1 project state
+  ([`61df3bd`](https://github.com/makel0ve/llm-obs/commit/61df3bdfd01d6cb49a2746c7092f4204fe1598b2))
 
 - Fixed readme
   ([`02dae1e`](https://github.com/makel0ve/llm-obs/commit/02dae1e53cef68b0a674a8035b3e5d56c54e7a80))
