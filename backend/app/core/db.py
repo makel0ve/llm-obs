@@ -26,7 +26,8 @@ async def get_db(project_id: str | None = None) -> AsyncGenerator[AsyncSession, 
     async with session_factory() as session:
         if project_id:
             await session.execute(
-                text("SET LOCAL app.current_project_id = :pid"), {"pid": project_id}
+                text("SELECT set_config('app.current_project_id', :pid, true)"),
+                {"pid": project_id},
             )
 
         try:

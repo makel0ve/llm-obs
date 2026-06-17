@@ -17,6 +17,7 @@ class HttpTransport:
             base_url=endpoint,
             headers={"X-API-Key": api_key, "User-Agent": "llm-obs-sdk/1.0"},
             timeout=httpx.Timeout(connect=5.0, read=10.0, write=10.0, pool=5.0),
+            trust_env=False,
         )
 
     async def send_batch(self, spans: list[dict]) -> bool:

@@ -12,6 +12,8 @@ from starlette.responses import Response
 from app.api.v1 import alerts, auth, health, ingest, metrics, otlp, projects, traces
 from app.core.config import settings
 from app.core.metrics import setup_metrics
+from app.core.redis import get_redis
+from app.services.pubsub import pubsub_manager
 
 log = structlog.get_logger()
 
@@ -32,7 +34,14 @@ async def lifespan(app: FastAPI):
             await s3.create_bucket(Bucket=settings.s3_bucket)
             log.info("s3_bucket_created", bucket=settings.s3_bucket)
 
-    yield
+    redis = await get_redis()
+    await pubsub_manager.start(redis)
+
+    try:
+        yield
+
+    finally:
+        await pubsub_manager.stop()
 
 
 app = FastAPI(
