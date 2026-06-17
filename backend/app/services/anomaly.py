@@ -31,7 +31,7 @@ class AnomalyService:
         return abs(z) > self.Z_SCORE_THRESHOLD
 
     async def _error_rate_anomaly(self, project_id: str, model: str) -> bool:
-        async with get_db() as db:
+        async with get_db(project_id=project_id) as db:
             r = await db.execute(
                 text(
                     """
@@ -62,7 +62,7 @@ class AnomalyService:
         if cached:
             return json.loads(cached)
 
-        async with get_db() as db:
+        async with get_db(project_id=project_id) as db:
             r = await db.execute(
                 text(
                     """

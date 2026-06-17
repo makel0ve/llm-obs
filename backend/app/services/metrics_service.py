@@ -31,7 +31,7 @@ class MetricsService:
         interval = PERIOD_TO_INTERVAL[period]
         cutoff = datetime.now(UTC) - interval
 
-        async with get_db() as db:
+        async with get_db(project_id=project_id) as db:
             result = await db.execute(
                 text(
                     """
@@ -69,7 +69,7 @@ class MetricsService:
         bucket_size = PERIOD_TO_BUCKET_SIZE[period]
         cutoff = datetime.now(UTC) - interval
 
-        async with get_db() as db:
+        async with get_db(project_id=project_id) as db:
             result = await db.execute(
                 text(
                     """

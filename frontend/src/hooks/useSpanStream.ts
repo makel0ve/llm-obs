@@ -1,6 +1,7 @@
 import { useEffect, useCallback, useRef } from "react";
 
 export function useSpanStream(
+  projectId: string,
   onSpan: (span: unknown) => void
 ) {
   const onSpanRef = useRef(onSpan);
@@ -8,8 +9,13 @@ export function useSpanStream(
 
   const connect = useCallback(() => {
     const controller = new AbortController();
-    const url = `${import.meta.env.VITE_API_URL ?? 'http://localhost:8000'}/v1/stream/spans`;
+    const baseUrl = import.meta.env.VITE_API_URL ?? 'http://localhost:8000';
+    const url = `${baseUrl}/v1/stream/spans?project_id=${encodeURIComponent(projectId)}`;
     const token = localStorage.getItem('token');
+
+    if (!projectId || !token) {
+      return controller;
+    }
 
     fetch(url, {
       headers: {
@@ -44,7 +50,7 @@ export function useSpanStream(
     });
 
     return controller;
-  }, []);
+  }, [projectId]);
 
   useEffect(() => {
     const controller = connect();
