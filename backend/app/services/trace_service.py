@@ -58,7 +58,7 @@ class TraceService:
             LIMIT :limit
             """  # nosec B608
         )
-        async with get_db() as db:
+        async with get_db(project_id=project_id) as db:
             result = await db.execute(sql, params)
             rows = result.mappings().all()
 
@@ -78,7 +78,7 @@ class TraceService:
         project_id: str,
         started_at: datetime | None = None,
     ) -> dict | None:
-        async with get_db() as db:
+        async with get_db(project_id=project_id) as db:
             if not started_at:
                 r = await db.execute(
                     text(

@@ -20,10 +20,21 @@ async def rotate_api_key(project_id: str, user=Depends(get_current_user)):
 
     async with get_db() as db:
         async with db.begin():
+            current = await db.execute(
+                text(
+                    "SELECT api_key_hash FROM projects "
+                    "WHERE id = :id AND org_id = :org FOR UPDATE"
+                ),
+                {"id": project_id, "org": user["org_id"]},
+            )
+            project = current.mappings().one_or_none()
+            if not project:
+                raise HTTPException(404, "Project not found")
+
             result = await db.execute(
                 text(
                     "UPDATE projects SET api_key_hash = :hash "
-                    "WHERE id = :id AND org_id = :org RETURNING api_key_hash"
+                    "WHERE id = :id AND org_id = :org RETURNING id"
                 ),
                 {"hash": new_hash, "id": project_id, "org": user["org_id"]},
             )
@@ -31,6 +42,7 @@ async def rotate_api_key(project_id: str, user=Depends(get_current_user)):
                 raise HTTPException(404, "Project not found")
 
     redis = await get_redis()
+    await redis.delete(f"apikey:{project['api_key_hash']}")
     await redis.delete(f"apikey:{new_hash}")
 
     await log_audit(

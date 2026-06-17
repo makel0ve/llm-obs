@@ -13,7 +13,21 @@ class PubSubManager:
         self._task: asyncio.Task | None = None
 
     async def start(self, redis: Redis) -> None:
+        if self._task and not self._task.done():
+            return
+
         self._task = asyncio.create_task(self._listen(redis))
+
+    async def stop(self) -> None:
+        if not self._task or self._task.done():
+            return
+
+        self._task.cancel()
+        try:
+            await self._task
+
+        except asyncio.CancelledError:
+            pass
 
     async def _listen(self, redis: Redis) -> None:
         while True:

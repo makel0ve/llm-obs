@@ -24,7 +24,7 @@ async def process_span_batch(batch_id: str, project_id: str, spans: list[dict]) 
     cost_svc = CostService()
     storage_svc = StorageService()
 
-    async with get_db() as db:
+    async with get_db(project_id=project_id) as db:
         prepared_spans = []
         for span_data in spans:
             try:
@@ -82,7 +82,10 @@ async def process_span_batch(batch_id: str, project_id: str, spans: list[dict]) 
         trace_map: dict = {}
         for span in prepared_spans:
             tid = span["trace_id"]
-            if tid not in trace_map:
+            if (
+                tid not in trace_map
+                or span["started_at"] < trace_map[tid]["started_at"]
+            ):
                 trace_map[tid] = span
 
         for tid, span in trace_map.items():
@@ -106,24 +109,24 @@ async def process_span_batch(batch_id: str, project_id: str, spans: list[dict]) 
         await db.commit()
 
         redis = await get_redis()
-        for span_data in spans:
+        for span_data in prepared_spans:
             await redis.publish(
                 f"project:{project_id}:new_span",
                 json.dumps(
                     {
-                        "span_id": span_data["span_id"],
+                        "span_id": str(span_data["id"]),
                         "name": span_data.get("name"),
                         "latency_ms": span_data["latency_ms"],
-                        "status": "error" if span_data.get("error") else "ok",
+                        "status": span_data["status"],
                     }
                 ),
             )
 
-    trace_ids = {s["trace_id"] for s in spans}
-    for trace_id in trace_ids:
-        span = next(s for s in spans if s["trace_id"] == trace_id)
+    for trace_id, span in trace_map.items():
         await update_trace_aggregates.kiq(
-            trace_id=trace_id, started_at=span["started_at"]
+            project_id=project_id,
+            trace_id=str(trace_id),
+            started_at=span["started_at"],
         )
 
     await check_batch_anomalies.kiq(project_id=project_id, spans=spans)
@@ -131,38 +134,45 @@ async def process_span_batch(batch_id: str, project_id: str, spans: list[dict]) 
 
 
 @broker.task
-async def update_trace_aggregates(trace_id: str, started_at: str) -> None:
+async def update_trace_aggregates(
+    project_id: str, trace_id: str, started_at: str
+) -> None:
     if isinstance(started_at, str):
         sat_dt = datetime.fromisoformat(started_at.replace("Z", "+00:00"))
 
     else:
         sat_dt = started_at
 
-    async with get_db() as db:
+    async with get_db(project_id=project_id) as db:
         await db.execute(
             text(
                 """
             UPDATE traces SET
                 total_cost_usd = (SELECT COALESCE(SUM(cost_usd), 0)
                                     FROM spans
-                                    WHERE trace_id = :tid AND started_at >= :sat),
+                                    WHERE project_id = :pid
+                                        AND trace_id = :tid AND started_at >= :sat),
                 total_tokens   = (SELECT COALESCE(SUM(input_tokens + output_tokens), 0)
                                     FROM spans
-                                    WHERE trace_id = :tid AND started_at >= :sat),
+                                    WHERE project_id = :pid
+                                        AND trace_id = :tid AND started_at >= :sat),
                 span_count     = (SELECT COUNT(*)
                                     FROM spans
-                                    WHERE trace_id = :tid AND started_at >= :sat),
+                                    WHERE project_id = :pid
+                                        AND trace_id = :tid AND started_at >= :sat),
                 ended_at       = (SELECT MAX(started_at)
                                     FROM spans
-                                    WHERE trace_id = :tid AND started_at >= :sat),
+                                    WHERE project_id = :pid
+                                        AND trace_id = :tid AND started_at >= :sat),
                 status = CASE WHEN EXISTS(
                     SELECT 1 FROM spans
-                    WHERE trace_id = :tid AND started_at >= :sat AND status = 'error'
+                    WHERE project_id = :pid
+                        AND trace_id = :tid AND started_at >= :sat AND status = 'error'
                 ) THEN 'error' ELSE 'ok' END
-            WHERE id = :tid AND started_at >= :sat
+            WHERE project_id = :pid AND id = :tid AND started_at = :sat
             """
             ),
-            {"tid": trace_id, "sat": sat_dt},
+            {"pid": project_id, "tid": trace_id, "sat": sat_dt},
         )
 
         await db.commit()
