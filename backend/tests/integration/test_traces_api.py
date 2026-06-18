@@ -55,3 +55,17 @@ async def test_ingest_rate_limiting(client, db_session):
         assert "Retry-After" in r.headers
     finally:
         config_module.settings.api_rate_limit_per_minute = original_limit
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("field", ["span_id", "trace_id", "parent_span_id"])
+async def test_ingest_rejects_invalid_uuid_ids(client, db_session, field):
+    project = await create_test_project(db_session)
+    span = make_span_payload()
+    span[field] = "not-a-uuid"
+
+    r = await client.post(
+        "/v1/ingest", json={"spans": [span]}, headers={"X-API-Key": project.raw_key}
+    )
+
+    assert r.status_code == 422
