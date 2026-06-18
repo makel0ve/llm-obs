@@ -99,6 +99,21 @@ LLM_OBS_ENDPOINT=http://your-llm-obs-host:8000
 
 The SDK auto-initializes from environment variables — no explicit `init()` call needed.
 
+### Shutdown
+
+Long-running applications can leave the SDK running in the background. In tests,
+short-lived scripts or CLIs, shut it down before process exit so buffered spans
+are flushed and the HTTP client is closed:
+
+```python
+import llm_obs
+
+await llm_obs.shutdown()
+```
+
+Use `await llm_obs.shutdown(flush=False)` in tests that should discard buffered
+spans instead of sending them.
+
 ### OpenAI auto-patching
 
 ```python
