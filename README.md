@@ -58,8 +58,18 @@ curl -X POST http://localhost:8000/v1/auth/register \
 open http://localhost:3000
 ```
 
-The first registration response includes the default project API key. Save it:
-it is shown only once.
+The first registration response includes the default project API key. The
+dashboard Create account flow shows the same key after signup. Save it before
+dismissing or refreshing the page: API keys are shown only once.
+
+If the key is lost or exposed, rotate it with the Project API:
+
+```bash
+curl -X POST http://localhost:8000/v1/projects/YOUR_PROJECT_ID/rotate-key \
+  -H "Authorization: Bearer YOUR_JWT_TOKEN"
+```
+
+The rotation response returns the replacement key once.
 
 ---
 
