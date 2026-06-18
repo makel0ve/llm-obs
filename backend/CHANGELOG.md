@@ -1,6 +1,35 @@
 # CHANGELOG
 
 
+## v0.2.0 (2026-06-18)
+
+### Chores
+
+- Trigger ci for release sync
+  ([`b1bc08a`](https://github.com/makel0ve/llm-obs/commit/b1bc08ad973b632e5e74c8774eaae9dc94da68fb))
+
+### Documentation
+
+- Document sdk shutdown
+  ([`38311d7`](https://github.com/makel0ve/llm-obs/commit/38311d71fef0324710fa28f18fa51549c28e7111))
+
+- Sync contributing checks with ci
+  ([`cc6e0a0`](https://github.com/makel0ve/llm-obs/commit/cc6e0a03bb455f7f0ca01daac247e8f11e603f8d))
+
+- Update readme ci and mvp scope
+  ([`4a7b59d`](https://github.com/makel0ve/llm-obs/commit/4a7b59db631a15b49e78f031d59ed5509bfcdf89))
+
+### Features
+
+- Add registration flow to dashboard
+  ([`f326069`](https://github.com/makel0ve/llm-obs/commit/f32606927d6f8355c112920fb9faaa3b41968c6f))
+
+### Testing
+
+- Cover sdk shutdown reinitialization
+  ([`e59ecda`](https://github.com/makel0ve/llm-obs/commit/e59ecdae00411d1456003e659729a44fef4c1fd3))
+
+
 ## v0.1.2 (2026-06-18)
 
 ### Bug Fixes
