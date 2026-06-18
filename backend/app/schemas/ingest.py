@@ -2,7 +2,7 @@ import uuid
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, ValidationInfo, field_validator
 
 ALLOWED_PROVIDERS = frozenset(
     {
@@ -17,6 +17,18 @@ ALLOWED_PROVIDERS = frozenset(
         "custom",
     }
 )
+
+
+def validate_uuid_string(value: str | None, field_name: str) -> str | None:
+    if value is None:
+        return value
+
+    try:
+        uuid.UUID(value)
+    except ValueError:
+        raise ValueError(f"{field_name} must be a valid UUID") from None
+
+    return value
 
 
 class SpanSchema(BaseModel):
@@ -34,6 +46,11 @@ class SpanSchema(BaseModel):
     latency_ms: float = Field(ge=0, le=3_600_000)
     started_at: datetime
     metadata: dict[str, Any] = Field(default_factory=dict)
+
+    @field_validator("span_id", "trace_id", "parent_span_id")
+    @classmethod
+    def validate_uuid_fields(cls, v: str | None, info: ValidationInfo) -> str | None:
+        return validate_uuid_string(v, info.field_name or "field")
 
     @field_validator("provider")
     @classmethod
@@ -56,7 +73,7 @@ class SpanSchema(BaseModel):
 
     @field_validator("metadata")
     @classmethod
-    def limit_metadata_size(cls, v: dict) -> dict:
+    def limit_metadata_size(cls, v: dict[str, Any]) -> dict[str, Any]:
         if len(str(v)) > 10_000:
             raise ValueError("metadata exceeds 10KB limit")
 
