@@ -73,6 +73,17 @@ def get_tracer() -> LLMTracer | None:
     return _tracer_instance
 
 
+async def shutdown(*, flush: bool = True) -> None:
+    global _tracer_instance
+
+    with _tracer_lock:
+        tracer = _tracer_instance
+        _tracer_instance = None
+
+    if tracer is not None:
+        await tracer.shutdown(flush=flush)
+
+
 def _get_tracer() -> LLMTracer:
     tracer = _get_or_create_tracer()
     if tracer is None:
@@ -83,4 +94,4 @@ def _get_tracer() -> LLMTracer:
 
 from llm_obs.decorators import trace as trace  # noqa: E402
 
-__all__ = ["LLMTracer", "get_tracer", "init", "trace"]
+__all__ = ["LLMTracer", "get_tracer", "init", "shutdown", "trace"]
