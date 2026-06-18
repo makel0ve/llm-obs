@@ -1,6 +1,6 @@
 [project]
 name = "llm-obs-backend"
-version = "0.2.1"
+version = "0.2.2"
 requires-python = ">=3.11"
 dependencies = [
     "fastapi>=0.115,<0.136",
@@ -49,6 +49,7 @@ dev = [
     "types-aioboto3[s3]",
     "python-semantic-release>=9.0,<10.0",
 ]
+
 
 
 
