@@ -1,6 +1,19 @@
 # CHANGELOG
 
 
+## v0.2.1 (2026-06-18)
+
+### Bug Fixes
+
+- Validate ingest span identifiers
+  ([`9b43d8c`](https://github.com/makel0ve/llm-obs/commit/9b43d8c3400cc0440bf043bb24e2144a38393e0e))
+
+### Chores
+
+- Trigger ci for release sync
+  ([`d4d2d2a`](https://github.com/makel0ve/llm-obs/commit/d4d2d2a4c5b4454fe1647a99e825e05d2b2030cf))
+
+
 ## v0.2.0 (2026-06-18)
 
 ### Chores
