@@ -23,7 +23,7 @@ LLM Obs is a self-hosted platform for monitoring LLM calls. Your data never leav
 - **OpenTelemetry** — OTLP HTTP endpoint for existing instrumentation
 - **Multi-tenant** — organizations, projects, API keys
 - **Data retention** — automatic cleanup with per-project policies
-- **Self-hosted** — Docker Compose or Kubernetes (Helm)
+- **Self-hosted** — Docker Compose, with experimental Helm manifests
 
 ---
 
@@ -260,11 +260,15 @@ npm run dev
 ### Tests
 
 ```bash
-# Run integration tests
+# Run backend integration tests
 docker compose -f infra/docker-compose.yml run --rm backend pytest tests/ -v
+
+# Run SDK tests
+cd sdk && pytest llm_obs_tests/ -q
 
 # Type checking
 mypy backend/
+mypy sdk/llm_obs
 
 # Linting
 ruff check .
@@ -290,7 +294,7 @@ docker compose -f infra/docker-compose.yml run --rm \
 | Queue | Redis 7, Taskiq |
 | Storage | MinIO (S3-compatible) |
 | Frontend | React, TypeScript, Vite, Tailwind CSS |
-| Infra | Docker Compose, Helm (Kubernetes) |
+| Infra | Docker Compose, experimental Helm manifests |
 
 ---
 
@@ -319,8 +323,8 @@ through backend APIs but are not yet exposed as full dashboard pages.
 - [ ] Admin UI for model pricing
 - [ ] DLQ integration with retry middleware
 - [ ] Trace waterfall visualization in frontend
-- [ ] SDK tests with mocked providers
-- [ ] Kubernetes Helm chart
+- [ ] Provider integration tests with mocked OpenAI and Anthropic clients
+- [ ] Production-ready Kubernetes Helm chart
 
 ---
 
@@ -329,9 +333,10 @@ through backend APIs but are not yet exposed as full dashboard pages.
 1. Fork the repository
 2. Create a feature branch: `git checkout -b feat/your-feature`
 3. Make your changes following [Conventional Commits](https://www.conventionalcommits.org/)
-4. Run tests: `pytest tests/ -v`
-5. Run linting: `ruff check . && mypy backend/`
-6. Submit a pull request
+4. Run backend tests: `pytest tests/ -v`
+5. Run SDK tests: `cd sdk && pytest llm_obs_tests/ -q`
+6. Run linting and type checks: `ruff check . && mypy backend/ && mypy sdk/llm_obs`
+7. Submit a pull request
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for detailed setup instructions.
 
