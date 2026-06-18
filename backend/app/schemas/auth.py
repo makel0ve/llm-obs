@@ -10,3 +10,17 @@ class RegisterRequest(BaseModel):
 class LoginRequest(BaseModel):
     email: EmailStr
     password: str
+
+
+class TokenResponse(BaseModel):
+    access_token: str
+    token_type: str
+
+
+class RegisterResponse(TokenResponse):
+    api_key: str
+    project_id: str
+
+
+class LoginResponse(TokenResponse):
+    project_id: str | None
