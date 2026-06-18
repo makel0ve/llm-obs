@@ -1,15 +1,16 @@
 import pytest
 import httpx
 import respx
+import pytest_asyncio
 
 import llm_obs
 from llm_obs.tracer import LLMTracer, SpanData
 
 
-@pytest.fixture(autouse=True)
-def reset_tracer():
+@pytest_asyncio.fixture(autouse=True)
+async def reset_tracer():
     yield
-    llm_obs._tracer_instance = None
+    await llm_obs.shutdown(flush=False)
 
 
 @pytest.mark.asyncio

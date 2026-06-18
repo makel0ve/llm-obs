@@ -29,6 +29,7 @@ repos:
           - "types-aioboto3[s3]"
           - alembic
           - pytest
+          - pytest-asyncio
           - respx
           - locust
           - prometheus-fastapi-instrumentator
