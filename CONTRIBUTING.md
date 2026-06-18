@@ -40,14 +40,21 @@ npm run dev
 ## Running Tests
 
 ```bash
-# Integration tests (requires running postgres and redis)
+# Backend integration tests (requires running postgres and redis)
 docker compose -f infra/docker-compose.yml run --rm backend pytest tests/ -v
 
-# With coverage
+# Backend coverage
 docker compose -f infra/docker-compose.yml run --rm backend pytest tests/ -v --cov=app
+
+# SDK tests
+cd sdk && pytest llm_obs_tests/ -q
+
+# Frontend build
+cd frontend && npm run build
 
 # Type checking
 mypy backend/
+mypy sdk/llm_obs
 
 # Linting
 ruff check .
@@ -83,7 +90,7 @@ docs: update SDK integration examples
 
 1. Fork the repository and create a branch from `main`
 2. Branch name should describe the change: `feat/slack-alerts`, `fix/alert-threshold`
-3. Make sure tests pass and there are no linting errors
+3. Make sure backend tests, SDK tests, frontend build, type checks and linting pass
 4. Write a clear PR description explaining what and why
 5. Reference any related issues: `Closes #123`
 
