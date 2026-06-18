@@ -21,6 +21,19 @@ async def test_double_init_raises():
 
 
 @pytest.mark.asyncio
+async def test_shutdown_allows_reinitialization():
+    first = llm_obs.init(api_key="k", endpoint="http://test")
+    assert llm_obs.get_tracer() is first
+
+    await llm_obs.shutdown(flush=False)
+    assert llm_obs.get_tracer() is None
+
+    second = llm_obs.init(api_key="k2", endpoint="http://test")
+    assert second is not first
+    assert llm_obs.get_tracer() is second
+
+
+@pytest.mark.asyncio
 async def test_trace_decorator_records_span():
     tracer = llm_obs.init(api_key="test", endpoint="http://test")
 
