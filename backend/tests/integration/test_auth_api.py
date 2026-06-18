@@ -43,3 +43,37 @@ async def test_register_returns_default_project_credentials(client, db_session):
     assert row["name"] == "Default"
     assert row["email"] == email
     assert row["api_key_hash"] == hashlib.sha256(body["api_key"].encode()).hexdigest()
+
+
+@pytest.mark.asyncio
+async def test_register_rejects_duplicate_email(client, db_session):
+    email = f"duplicate-{uuid.uuid4().hex}@example.com"
+    payload = {
+        "email": email,
+        "password": "correct-horse-battery-staple",
+        "org_name": "Duplicate Registration Test",
+    }
+
+    first = await client.post("/v1/auth/register", json=payload)
+    second = await client.post("/v1/auth/register", json=payload)
+
+    assert first.status_code == 201
+    assert second.status_code == 409
+
+    counts = await db_session.execute(
+        text(
+            """
+            SELECT
+                COUNT(DISTINCT u.id) AS users,
+                COUNT(DISTINCT p.id) AS projects
+            FROM users u
+            LEFT JOIN projects p ON p.org_id = u.org_id
+            WHERE u.email = :email
+            """
+        ),
+        {"email": email},
+    )
+    row = counts.mappings().one()
+
+    assert row["users"] == 1
+    assert row["projects"] == 1
