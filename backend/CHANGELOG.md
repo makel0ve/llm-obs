@@ -1,6 +1,19 @@
 # CHANGELOG
 
 
+## v0.2.2 (2026-06-18)
+
+### Bug Fixes
+
+- Resolve frontend span stream lint errors
+  ([`7c402a2`](https://github.com/makel0ve/llm-obs/commit/7c402a28c34adcfa6988240c0ae5bc1d87d764ff))
+
+### Chores
+
+- Trigger ci for release sync
+  ([`277928d`](https://github.com/makel0ve/llm-obs/commit/277928dede222eec505dc74c0037e9de008616b7))
+
+
 ## v0.2.1 (2026-06-18)
 
 ### Bug Fixes
