@@ -39,16 +39,27 @@ class LLMTracer:
         self._flush_interval = flush_interval
         self._flush_task: asyncio.Task | None = None
         self._shutting_down = False
+        self._closed = False
         self._transport = HttpTransport(self._endpoint, self._api_key)
 
         atexit.register(self._sync_flush_on_exit)
 
     async def start(self) -> None:
+        if self._closed:
+            raise RuntimeError("llm-obs tracer is already shut down")
+
+        if self._flush_task and not self._flush_task.done():
+            return
+
+        self._shutting_down = False
         self._flush_task = asyncio.create_task(
             self._flush_loop(), name="llm-obs-flush-loop"
         )
 
-    async def shutdown(self) -> None:
+    async def shutdown(self, *, flush: bool = True) -> None:
+        if self._closed:
+            return
+
         self._shutting_down = True
         if self._flush_task and not self._flush_task.done():
             self._flush_task.cancel()
@@ -58,8 +69,14 @@ class LLMTracer:
             except asyncio.CancelledError:
                 pass
 
-        await self._flush()
+        if flush:
+            await self._flush()
+
+        else:
+            self._buffer.clear()
+
         await self._transport.aclose()
+        self._closed = True
 
     async def __aenter__(self) -> "LLMTracer":
         await self.start()
@@ -69,7 +86,7 @@ class LLMTracer:
         await self.shutdown()
 
     def _sync_flush_on_exit(self) -> None:
-        if not self._buffer:
+        if self._closed or not self._buffer:
             return
 
         try:
