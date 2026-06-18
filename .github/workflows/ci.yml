@@ -132,3 +132,71 @@ jobs:
         working-directory: backend
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  sync-release-to-develop:
+    needs: release
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    concurrency: release-sync
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ssh-key: ${{ secrets.RELEASE_DEPLOY_KEY }}
+          persist-credentials: false
+      - name: Use SSH for sync branch pushes
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "${{ secrets.RELEASE_DEPLOY_KEY }}" > ~/.ssh/release_deploy_key
+          chmod 600 ~/.ssh/release_deploy_key
+          ssh-keyscan github.com >> ~/.ssh/known_hosts
+          echo "GIT_SSH_COMMAND=ssh -i ~/.ssh/release_deploy_key -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes" >> "$GITHUB_ENV"
+          git remote set-url origin "git@github.com:${GITHUB_REPOSITORY}.git"
+      - name: Create release sync branch
+        id: sync
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git fetch origin main develop --tags
+
+          main_version="$(git show origin/main:backend/pyproject.toml | sed -n 's/^version = "\(.*\)"/\1/p')"
+          develop_version="$(git show origin/develop:backend/pyproject.toml | sed -n 's/^version = "\(.*\)"/\1/p')"
+          echo "version=${main_version}" >> "$GITHUB_OUTPUT"
+
+          if [ "$main_version" = "$develop_version" ]; then
+            echo "created=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          branch="sync/release-${main_version}-to-develop"
+          echo "branch=${branch}" >> "$GITHUB_OUTPUT"
+          git checkout -B "$branch" origin/develop
+          git merge --ff-only origin/main
+          git commit --allow-empty -m "chore: trigger ci for release sync"
+          git push --force-with-lease origin "$branch"
+          echo "created=true" >> "$GITHUB_OUTPUT"
+      - name: Open release sync pull request
+        if: steps.sync.outputs.created == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_PR_TOKEN }}
+          BRANCH: ${{ steps.sync.outputs.branch }}
+          VERSION: ${{ steps.sync.outputs.version }}
+        run: |
+          if [ -z "$GH_TOKEN" ]; then
+            echo "::error::Set RELEASE_PR_TOKEN to a PAT with repo pull request permissions so release sync PR checks can run."
+            exit 1
+          fi
+
+          pr_number="$(gh pr list --head "$BRANCH" --base develop --json number --jq '.[0].number')"
+          if [ -n "$pr_number" ]; then
+            gh pr edit "$pr_number" \
+              --base develop \
+              --title "Sync release v${VERSION} to develop" \
+              --body "Syncs the semantic-release commit for v${VERSION} from main back into develop."
+          else
+            gh pr create \
+              --base develop \
+              --head "$BRANCH" \
+              --title "Sync release v${VERSION} to develop" \
+              --body "Syncs the semantic-release commit for v${VERSION} from main back into develop."
+          fi

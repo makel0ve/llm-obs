@@ -89,6 +89,20 @@ docs: update SDK integration examples
 
 ---
 
+## Release Sync
+
+Merging `develop` into `main` runs semantic-release. The release job updates
+`backend/pyproject.toml`, writes `backend/CHANGELOG.md`, creates a tag, and then
+opens a sync PR back into `develop`.
+
+The sync PR needs a repository secret named `RELEASE_PR_TOKEN`. Use a fine-grained
+GitHub token with access to this repository, read-only contents access, and pull
+request write permissions. The workflow intentionally does not use the default
+`GITHUB_TOKEN` for PR creation, because PRs created by `GITHUB_TOKEN` can leave
+required checks stuck in the `Expected` state.
+
+---
+
 ## Project Structure
 
 ```
