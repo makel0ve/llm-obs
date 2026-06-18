@@ -8,12 +8,17 @@ from sqlalchemy import text
 
 from app.core.auth import create_access_token, hash_password, verify_password
 from app.core.db import get_db
-from app.schemas.auth import LoginRequest, RegisterRequest
+from app.schemas.auth import (
+    LoginRequest,
+    LoginResponse,
+    RegisterRequest,
+    RegisterResponse,
+)
 
 router = APIRouter(prefix="/v1/auth", tags=["auth"])
 
 
-@router.post("/register", status_code=201)
+@router.post("/register", status_code=201, response_model=RegisterResponse)
 async def register(body: RegisterRequest):
     async with get_db() as db:
         async with db.begin():
@@ -51,6 +56,7 @@ async def register(body: RegisterRequest):
                 },
             )
 
+            project_id = str(uuid.uuid4())
             raw_key = f"llmobs_{secrets.token_urlsafe(32)}"
             key_hash = hashlib.sha256(raw_key.encode()).hexdigest()
             await db.execute(
@@ -61,7 +67,7 @@ async def register(body: RegisterRequest):
                 """
                 ),
                 {
-                    "id": str(uuid.uuid4()),
+                    "id": project_id,
                     "org": org_id,
                     "hash": key_hash,
                     "retention": 90,
@@ -72,10 +78,11 @@ async def register(body: RegisterRequest):
         "access_token": create_access_token(user_id, org_id, "admin"),
         "token_type": "bearer",
         "api_key": raw_key,
+        "project_id": project_id,
     }
 
 
-@router.post("/login")
+@router.post("/login", response_model=LoginResponse)
 async def login(body: LoginRequest):
     async with get_db() as db:
         r = await db.execute(
