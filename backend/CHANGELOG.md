@@ -1,6 +1,22 @@
 # CHANGELOG
 
 
+## v0.1.2 (2026-06-18)
+
+### Bug Fixes
+
+- Cleanly shutdown sdk tracer task
+  ([`8d19940`](https://github.com/makel0ve/llm-obs/commit/8d19940f848dca8e0797b127c6522ca1d8d8f99a))
+
+### Chores
+
+- Trigger ci for release sync
+  ([`3bb2eea`](https://github.com/makel0ve/llm-obs/commit/3bb2eea7151daae655494633eb480a942acd507d))
+
+- Trigger ci for release sync
+  ([`7b477b4`](https://github.com/makel0ve/llm-obs/commit/7b477b4d5450bd6556717bef3f40f4f031e6b9ff))
+
+
 ## v0.1.1 (2026-06-17)
 
 ### Chores
