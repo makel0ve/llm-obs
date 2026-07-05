@@ -226,6 +226,7 @@ backend/.env.prod
 backend/.env.test
 infra/.env
 infra/pgbouncer_userlist.txt
+PROJECT_DEVELOPMENT_PLAN.md
 
 # Local secrets and private keys
 .ssh/
