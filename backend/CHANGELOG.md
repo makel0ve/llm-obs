@@ -1,6 +1,19 @@
 # CHANGELOG
 
 
+## v0.5.1 (2026-07-07)
+
+### Bug Fixes
+
+- Clarify missing trace payload state
+  ([`e421d54`](https://github.com/makel0ve/llm-obs/commit/e421d54ba561472b3275f551eb6767c613058b51))
+
+### Chores
+
+- Trigger ci for release sync
+  ([`9968818`](https://github.com/makel0ve/llm-obs/commit/9968818ddf6e8b0d11c8d7714a1c24303d141de5))
+
+
 ## v0.5.0 (2026-07-07)
 
 ### Chores
