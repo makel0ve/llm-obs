@@ -1,6 +1,35 @@
 # CHANGELOG
 
 
+## v0.2.3 (2026-07-05)
+
+### Bug Fixes
+
+- Add default trace span partitions
+  ([`8592e5d`](https://github.com/makel0ve/llm-obs/commit/8592e5dec02125b269363a4d74226f50f52e992a))
+
+### Chores
+
+- Trigger ci for release sync
+  ([`471d960`](https://github.com/makel0ve/llm-obs/commit/471d96015f2a3e7fc47ccc6e104bd2503f0eb0a2))
+
+### Documentation
+
+- Change gitignore
+  ([`cde0285`](https://github.com/makel0ve/llm-obs/commit/cde0285d7dbaa902f1777284236d52c5c3e345d5))
+
+- Clarify registration API key handling
+  ([`441ab09`](https://github.com/makel0ve/llm-obs/commit/441ab09fbc618cf8e21d00599311c5aaca79c669))
+
+### Testing
+
+- Cover duplicate registration conflict
+  ([`a258c75`](https://github.com/makel0ve/llm-obs/commit/a258c75fdbd92b0523993c971b6a3cd893e75ad3))
+
+- Cover registration response contract
+  ([`e276145`](https://github.com/makel0ve/llm-obs/commit/e2761456ba4191496278ebc1966adbeaedbcba25))
+
+
 ## v0.2.2 (2026-06-18)
 
 ### Bug Fixes
