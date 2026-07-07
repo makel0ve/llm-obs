@@ -2,38 +2,11 @@ import { useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { format } from 'date-fns'
 import { Link, useParams, useSearchParams } from 'react-router-dom'
-import { api } from '../api/client'
-
-type TraceSpan = {
-  id: string
-  trace_id: string
-  parent_span_id?: string | null
-  name: string
-  provider?: string | null
-  model?: string | null
-  input_tokens?: number | null
-  output_tokens?: number | null
-  cost_usd?: number | string | null
-  latency_ms?: number | null
-  status?: 'ok' | 'error' | string | null
-  error?: string | null
-  started_at: string
-  payload_s3_key?: string | null
-  metadata?: Record<string, unknown> | string | null
-  payload?: unknown
-}
-
-type TraceDetailResponse = {
-  id: string
-  project_id: string
-  started_at: string
-  ended_at?: string | null
-  total_tokens?: number | null
-  total_cost_usd?: number | string | null
-  span_count?: number | null
-  status?: 'ok' | 'error' | string | null
-  spans: TraceSpan[]
-}
+import {
+  dashboardQueryKeys,
+  getTraceDetail,
+  type TraceSpan,
+} from '../api/dashboard'
 
 function formatDate(value?: string | null) {
   if (!value) return '-'
@@ -237,20 +210,8 @@ export function TraceDetail({ projectId }: { projectId: string }) {
   const startedAt = searchParams.get('started_at')
 
   const query = useQuery({
-    queryKey: ['trace-detail', projectId, traceId, startedAt, includePayload],
-    queryFn: async () => {
-      const params = new URLSearchParams({
-        project_id: projectId,
-        include_payload: includePayload ? 'true' : 'false',
-      })
-
-      if (startedAt) {
-        params.set('started_at', startedAt)
-      }
-
-      const response = await api.get<TraceDetailResponse>(`/v1/traces/${traceId}?${params.toString()}`)
-      return response.data
-    },
+    queryKey: dashboardQueryKeys.traceDetail(projectId, traceId, startedAt, includePayload),
+    queryFn: () => getTraceDetail({ projectId, traceId: traceId ?? '', startedAt, includePayload }),
     enabled: !!projectId && !!traceId,
     retry: false,
   })
