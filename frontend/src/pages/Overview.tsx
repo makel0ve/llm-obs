@@ -3,9 +3,17 @@ import { useQuery } from "@tanstack/react-query";
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from "recharts";
 import { format } from "date-fns";
 import { api } from "../api/client";
+import { OnboardingSetup } from "../components/OnboardingSetup";
 
 
 type Period = "1h" | "24h" | "7d" | "30d"
+
+type OverviewMetrics = {
+    total_spans?: number | string | null
+    p95_latency_ms?: number | string | null
+    error_rate_pct?: number | string | null
+    total_cost_usd?: number | string | null
+}
 
 
 function MetricCard({
@@ -37,7 +45,7 @@ function MetricCard({
 export function Overview({ projectId }: { projectId: string }) {
     const [period, setPeriod] = useState<Period>("24h");
 
-    const { data: metrics, isLoading } = useQuery({
+    const { data: metrics, isLoading, isError } = useQuery<OverviewMetrics>({
         queryKey: ["metrics", "overview", period, projectId],
         queryFn: () => api.get(`/v1/metrics/overview?period=${period}&project_id=${projectId}`).then(r => r.data),
         refetchInterval: 30_000,
@@ -51,6 +59,9 @@ export function Overview({ projectId }: { projectId: string }) {
         refetchInterval: 60_000,
         enabled: !!projectId,
     });
+
+    const totalSpans = Number(metrics?.total_spans ?? 0)
+    const hasNoSpans = !isLoading && !isError && !!projectId && totalSpans === 0
 
     return (
         <div className="space-y-6 p-4 sm:p-6 lg:p-8">
@@ -73,6 +84,18 @@ export function Overview({ projectId }: { projectId: string }) {
                 </div>
             </div>
 
+            {!projectId && (
+                <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
+                    No active project is selected. Sign in again or create an account to open the overview.
+                </div>
+            )}
+
+            {isError && (
+                <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">
+                    Could not load overview metrics. Check that the API is running and your session is still valid.
+                </div>
+            )}
+
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
                 <MetricCard label="Spans" value={metrics?.total_spans?.toLocaleString()} loading={isLoading}/>
                 <MetricCard label="P95 Latency" value={`${Number(metrics?.p95_latency_ms ?? 0).toFixed(0)}ms`} loading={isLoading}/>
@@ -85,18 +108,22 @@ export function Overview({ projectId }: { projectId: string }) {
                 <MetricCard label="Total Cost" value={`$${Number(metrics?.total_cost_usd ?? 0).toFixed(4)}`} loading={isLoading}/>
             </div>
 
-            <div className="rounded-lg border border-gray-200 bg-white p-4">
-                <h2 className="mb-4 text-sm font-medium text-gray-500">Avg Latency (ms)</h2>
-                <ResponsiveContainer width="100%" height={200}>
-                    <LineChart data={timeseries ?? []}>
-                        <CartesianGrid strokeDasharray="3 3" stroke="#f5f5f5" />
-                        <XAxis dataKey="bucket" tickFormatter={t => format(new Date(t), "HH:mm")} />
-                        <YAxis />
-                        <Tooltip labelFormatter={t => format(new Date(t), "dd MMM HH:mm")} />
-                        <Line type="monotone" dataKey="avg_latency" stroke="#3b82f6" dot={false} strokeWidth={2} />
-                    </LineChart>
-                </ResponsiveContainer>
-            </div>
+            {hasNoSpans ? (
+                <OnboardingSetup title="No spans yet" />
+            ) : (
+                <div className="rounded-lg border border-gray-200 bg-white p-4">
+                    <h2 className="mb-4 text-sm font-medium text-gray-500">Avg Latency (ms)</h2>
+                    <ResponsiveContainer width="100%" height={200}>
+                        <LineChart data={timeseries ?? []}>
+                            <CartesianGrid strokeDasharray="3 3" stroke="#f5f5f5" />
+                            <XAxis dataKey="bucket" tickFormatter={t => format(new Date(t), "HH:mm")} />
+                            <YAxis />
+                            <Tooltip labelFormatter={t => format(new Date(t), "dd MMM HH:mm")} />
+                            <Line type="monotone" dataKey="avg_latency" stroke="#3b82f6" dot={false} strokeWidth={2} />
+                        </LineChart>
+                    </ResponsiveContainer>
+                </div>
+            )}
         </div>
     );
 }

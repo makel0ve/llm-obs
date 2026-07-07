@@ -3,6 +3,7 @@ import { useInfiniteQuery } from '@tanstack/react-query'
 import { format } from 'date-fns'
 import { Link } from 'react-router-dom'
 import { api } from '../api/client'
+import { OnboardingSetup } from '../components/OnboardingSetup'
 
 type Period = '1h' | '24h' | '7d' | '30d'
 type StatusFilter = 'all' | 'ok' | 'error'
@@ -70,16 +71,16 @@ function StatusBadge({ status }: { status?: string | null }) {
   )
 }
 
-function EmptyState() {
+function EmptyState({ filtered }: { filtered: boolean }) {
+  if (!filtered) {
+    return <OnboardingSetup title="No traces yet" />
+  }
+
   return (
     <div className="rounded-lg border border-dashed border-gray-300 bg-white p-6">
-      <h2 className="text-lg font-semibold text-gray-950">No traces found</h2>
+      <h2 className="text-lg font-semibold text-gray-950">No matching traces</h2>
       <p className="mt-2 max-w-2xl text-sm leading-6 text-gray-600">
-        Send spans with the Python SDK, then refresh this page. Set
-        <code className="mx-1 rounded bg-gray-100 px-1.5 py-0.5 text-xs text-gray-800">LLM_OBS_API_KEY</code>
-        and
-        <code className="mx-1 rounded bg-gray-100 px-1.5 py-0.5 text-xs text-gray-800">LLM_OBS_ENDPOINT</code>
-        in the application that makes LLM calls.
+        Change the status or model filters, then refresh this page.
       </p>
     </div>
   )
@@ -174,6 +175,7 @@ export function Traces({ projectId }: { projectId: string }) {
     () => query.data?.pages.flatMap(page => page.traces) ?? [],
     [query.data],
   )
+  const hasActiveFilter = status !== 'all' || !!model
 
   const applyModelFilter = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
@@ -272,7 +274,7 @@ export function Traces({ projectId }: { projectId: string }) {
           Could not load traces. Check that the API is running and your session is still valid.
         </div>
       ) : traces.length === 0 ? (
-        <EmptyState />
+        <EmptyState filtered={hasActiveFilter} />
       ) : (
         <>
           <TraceTable traces={traces} />
