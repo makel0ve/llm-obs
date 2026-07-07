@@ -1,6 +1,19 @@
 # CHANGELOG
 
 
+## v0.8.0 (2026-07-07)
+
+### Chores
+
+- Trigger ci for release sync
+  ([`124142a`](https://github.com/makel0ve/llm-obs/commit/124142abe11c6895e0fae1889952c9ddfef6ea53))
+
+### Features
+
+- Add onboarding empty states
+  ([`c195d11`](https://github.com/makel0ve/llm-obs/commit/c195d119158ee20affe9f452f8c8eb3e9fa7538c))
+
+
 ## v0.7.0 (2026-07-07)
 
 ### Chores
