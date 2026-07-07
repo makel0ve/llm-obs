@@ -1,6 +1,19 @@
 # CHANGELOG
 
 
+## v0.6.0 (2026-07-07)
+
+### Chores
+
+- Trigger ci for release sync
+  ([`f892f82`](https://github.com/makel0ve/llm-obs/commit/f892f828b6fb9e3a5457afa786992b73e66f8f5a))
+
+### Features
+
+- Add project settings page
+  ([`654df4c`](https://github.com/makel0ve/llm-obs/commit/654df4c43dbf910c5a2514483abc0131c7d95866))
+
+
 ## v0.5.1 (2026-07-07)
 
 ### Bug Fixes
