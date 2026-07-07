@@ -1,7 +1,8 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { useState } from 'react'
-import { BrowserRouter, Routes, Route, Navigate, NavLink, Outlet } from 'react-router-dom'
+import { BrowserRouter, Routes, Route, Navigate, NavLink, Outlet, useParams } from 'react-router-dom'
 import { Overview } from './pages/Overview'
+import { Traces } from './pages/Traces'
 import { api } from './api/client'
 
 const queryClient = new QueryClient()
@@ -69,6 +70,17 @@ function PlaceholderPage({
         <p className="mt-3 max-w-2xl text-sm leading-6 text-gray-600">{description}</p>
       </div>
     </div>
+  )
+}
+
+function TraceDetailPlaceholder() {
+  const { traceId } = useParams()
+
+  return (
+    <PlaceholderPage
+      title="Trace Detail"
+      description={`Trace ${traceId ?? ''} opens here. The full span timeline and payload controls are planned in the next block.`}
+    />
   )
 }
 
@@ -280,15 +292,8 @@ export default function App() {
             </PrivateRoute>
           }>
             <Route index element={<Overview projectId={projectId} />} />
-            <Route
-              path="traces"
-              element={
-                <PlaceholderPage
-                  title="Traces"
-                  description="The route is ready for the Trace Explorer page planned in the next block."
-                />
-              }
-            />
+            <Route path="traces" element={<Traces projectId={projectId} />} />
+            <Route path="traces/:traceId" element={<TraceDetailPlaceholder />} />
             <Route
               path="alerts"
               element={
