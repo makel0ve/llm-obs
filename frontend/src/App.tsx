@@ -1,12 +1,76 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { useState, useEffect } from 'react'
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
+import { useState } from 'react'
+import { BrowserRouter, Routes, Route, Navigate, NavLink, Outlet } from 'react-router-dom'
 import { Overview } from './pages/Overview'
 import { api } from './api/client'
 
 const queryClient = new QueryClient()
 
 type AuthMode = 'login' | 'register'
+type DashboardNavItem = {
+  label: string
+  path: string
+  end?: boolean
+}
+
+const dashboardNavItems: DashboardNavItem[] = [
+  { label: 'Overview', path: '/', end: true },
+  { label: 'Traces', path: '/traces' },
+  { label: 'Alerts', path: '/alerts' },
+  { label: 'Project Settings', path: '/project-settings' },
+]
+
+function DashboardNav({ variant = 'desktop' }: { variant?: 'desktop' | 'mobile' }) {
+  const isMobile = variant === 'mobile'
+
+  return (
+    <nav
+      className={
+        isMobile
+          ? 'flex gap-2 overflow-x-auto px-4 py-3 sm:px-6 lg:hidden'
+          : 'space-y-1 p-3'
+      }
+      aria-label="Dashboard"
+    >
+      {dashboardNavItems.map(item => (
+        <NavLink
+          key={item.path}
+          to={item.path}
+          end={item.end}
+          className={({ isActive }) =>
+            [
+              'flex min-h-10 items-center whitespace-nowrap rounded-md px-3 text-sm font-medium transition',
+              isMobile ? 'justify-center border' : 'w-full',
+              isActive
+                ? 'border-blue-200 bg-blue-50 text-blue-700'
+                : 'border-gray-200 text-gray-600 hover:bg-gray-100 hover:text-gray-950',
+            ].join(' ')
+          }
+        >
+          {item.label}
+        </NavLink>
+      ))}
+    </nav>
+  )
+}
+
+function PlaceholderPage({
+  title,
+  description,
+}: {
+  title: string
+  description: string
+}) {
+  return (
+    <div className="p-4 sm:p-6 lg:p-8">
+      <div className="rounded-lg border border-dashed border-gray-300 bg-white p-6">
+        <p className="text-sm font-medium text-blue-700">Prepared route</p>
+        <h1 className="mt-2 text-2xl font-semibold text-gray-950">{title}</h1>
+        <p className="mt-3 max-w-2xl text-sm leading-6 text-gray-600">{description}</p>
+      </div>
+    </div>
+  )
+}
 
 function LoginPage({
   onLogin,
@@ -109,50 +173,62 @@ function Dashboard({
   projectId,
   registrationApiKey,
   onDismissApiKey,
+  onLogout,
 }: {
   projectId: string
   registrationApiKey: string
   onDismissApiKey: () => void
+  onLogout: () => void
 }) {
-  useEffect(() => {
-    const token = localStorage.getItem('token')
-    if (token) {
-      api.defaults.headers.common['Authorization'] = `Bearer ${token}`
-    }
-  }, [])
-
   return (
-    <div className="min-h-screen bg-gray-50">
-      <header className="bg-white border-b px-6 py-3 flex items-center justify-between">
-        <span className="font-semibold text-gray-900">LLM Obs</span>
-        <button
-          onClick={() => { localStorage.clear(); window.location.href = '/login' }}
-          className="text-sm text-gray-500 hover:text-gray-700"
-        >
-          Logout
-        </button>
-      </header>
-      {registrationApiKey && (
-        <div className="border-b border-blue-100 bg-blue-50 px-6 py-4">
-          <div className="mx-auto flex max-w-6xl flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-            <div className="min-w-0 space-y-2">
-              <p className="text-sm font-medium text-blue-950">Default project API key</p>
-              <code className="block overflow-x-auto rounded border border-blue-200 bg-white px-3 py-2 text-sm text-blue-950">
-                {registrationApiKey}
-              </code>
-              <p className="text-xs text-blue-800">This key is shown once. Store it before dismissing.</p>
-            </div>
-            <button
-              type="button"
-              onClick={onDismissApiKey}
-              className="shrink-0 rounded bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-700"
-            >
-              Dismiss
-            </button>
+    <div className="min-h-screen bg-gray-50 text-gray-950">
+      <header className="sticky top-0 z-20 border-b border-gray-200 bg-white">
+        <div className="flex min-h-16 items-center justify-between gap-4 px-4 sm:px-6">
+          <div className="min-w-0">
+            <div className="text-base font-semibold text-gray-950">LLM Obs</div>
+            <div className="truncate text-xs text-gray-500">Project {projectId || 'not selected'}</div>
           </div>
+          <button
+            type="button"
+            onClick={onLogout}
+            className="rounded-md border border-gray-200 bg-white px-3 py-2 text-sm font-medium text-gray-600 hover:bg-gray-100 hover:text-gray-950"
+          >
+            Logout
+          </button>
         </div>
-      )}
-      <Overview projectId={projectId} />
+        <DashboardNav variant="mobile" />
+      </header>
+
+      <div className="lg:flex">
+        <aside className="hidden min-h-[calc(100svh-4rem)] w-64 shrink-0 border-r border-gray-200 bg-white lg:block">
+          <DashboardNav />
+        </aside>
+        <main className="min-w-0 flex-1">
+          {registrationApiKey && (
+            <div className="border-b border-blue-100 bg-blue-50 px-4 py-4 sm:px-6">
+              <div className="flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
+                <div className="min-w-0 space-y-2">
+                  <p className="text-sm font-medium text-blue-950">Default project API key</p>
+                  <code className="block max-w-full overflow-x-auto rounded-md border border-blue-200 bg-white px-3 py-2 text-sm text-blue-950">
+                    {registrationApiKey}
+                  </code>
+                  <p className="text-xs text-blue-800">This key is shown once. Store it before dismissing.</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={onDismissApiKey}
+                  className="w-full rounded-md bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-700 sm:w-auto"
+                >
+                  Dismiss
+                </button>
+              </div>
+            </div>
+          )}
+          <div className="min-w-0">
+            <Outlet />
+          </div>
+        </main>
+      </div>
     </div>
   )
 }
@@ -170,9 +246,20 @@ export default function App() {
   const handleLogin = (t: string, pid: string, apiKey?: string) => {
     localStorage.setItem('token', t)
     localStorage.setItem('projectId', pid)
+    api.defaults.headers.common['Authorization'] = `Bearer ${t}`
     setToken(t)
     setProjectId(pid)
     setRegistrationApiKey(apiKey ?? '')
+  }
+
+  const handleLogout = () => {
+    localStorage.removeItem('token')
+    localStorage.removeItem('projectId')
+    localStorage.removeItem('apiKey')
+    delete api.defaults.headers.common['Authorization']
+    setToken('')
+    setProjectId('')
+    setRegistrationApiKey('')
   }
 
   return (
@@ -188,9 +275,39 @@ export default function App() {
                 projectId={projectId}
                 registrationApiKey={registrationApiKey}
                 onDismissApiKey={() => setRegistrationApiKey('')}
+                onLogout={handleLogout}
               />
             </PrivateRoute>
-          } />
+          }>
+            <Route index element={<Overview projectId={projectId} />} />
+            <Route
+              path="traces"
+              element={
+                <PlaceholderPage
+                  title="Traces"
+                  description="The route is ready for the Trace Explorer page planned in the next block."
+                />
+              }
+            />
+            <Route
+              path="alerts"
+              element={
+                <PlaceholderPage
+                  title="Alerts"
+                  description="Alert rule management will use the existing alerts API in a later dashboard block."
+                />
+              }
+            />
+            <Route
+              path="project-settings"
+              element={
+                <PlaceholderPage
+                  title="Project Settings"
+                  description="Project settings, SDK setup, retention and key rotation controls will be added in a separate block."
+                />
+              }
+            />
+          </Route>
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </BrowserRouter>

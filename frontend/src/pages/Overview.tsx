@@ -20,7 +20,7 @@ function MetricCard({
   variant?: 'default' | 'danger'
 }) {
   return (
-    <div className="bg-white rounded-xl border p-4">
+    <div className="rounded-lg border border-gray-200 bg-white p-4">
       <div className="text-sm text-gray-500 mb-1">{label}</div>
       {loading ? (
         <div className="h-7 bg-gray-100 rounded animate-pulse w-24" />
@@ -53,21 +53,27 @@ export function Overview({ projectId }: { projectId: string }) {
     });
 
     return (
-        <div className="p-6 space-y-6">
-            <div className="flex gap-2">
-                {(["1h", "24h", "7d", "30d"] as Period[]).map(p => (
-                    <button key={p} onClick={() => setPeriod(p)}
-                    className={`px-3 py-1 rounded text-sm font-medium ${
-                    period === p
-                        ? 'bg-blue-600 text-white'
-                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                    }`}>
-                        {p}
-                    </button>
-                ))}
+        <div className="space-y-6 p-4 sm:p-6 lg:p-8">
+            <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+                <div>
+                    <h1 className="text-2xl font-semibold text-gray-950">Overview</h1>
+                    <p className="mt-1 text-sm text-gray-500">Latency, errors, usage and spend for the active project.</p>
+                </div>
+                <div className="flex w-full gap-2 overflow-x-auto sm:w-auto">
+                    {(["1h", "24h", "7d", "30d"] as Period[]).map(p => (
+                        <button key={p} onClick={() => setPeriod(p)}
+                        className={`min-h-9 min-w-14 rounded-md px-3 text-sm font-medium ${
+                        period === p
+                            ? 'bg-blue-600 text-white'
+                            : 'border border-gray-200 bg-white text-gray-700 hover:bg-gray-100'
+                        }`}>
+                            {p}
+                        </button>
+                    ))}
+                </div>
             </div>
 
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
                 <MetricCard label="Spans" value={metrics?.total_spans?.toLocaleString()} loading={isLoading}/>
                 <MetricCard label="P95 Latency" value={`${Number(metrics?.p95_latency_ms ?? 0).toFixed(0)}ms`} loading={isLoading}/>
                 <MetricCard
@@ -79,8 +85,8 @@ export function Overview({ projectId }: { projectId: string }) {
                 <MetricCard label="Total Cost" value={`$${Number(metrics?.total_cost_usd ?? 0).toFixed(4)}`} loading={isLoading}/>
             </div>
 
-            <div className="bg-white rounded-xl border p-4">
-                <h3 className="text-sm font-medium text-gray-500 mb-4">Avg Latency (ms)</h3>
+            <div className="rounded-lg border border-gray-200 bg-white p-4">
+                <h2 className="mb-4 text-sm font-medium text-gray-500">Avg Latency (ms)</h2>
                 <ResponsiveContainer width="100%" height={200}>
                     <LineChart data={timeseries ?? []}>
                         <CartesianGrid strokeDasharray="3 3" stroke="#f5f5f5" />
