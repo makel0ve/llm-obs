@@ -125,7 +125,17 @@ function getTimelineBounds(spans: TraceSpan[]) {
   }
 }
 
-function SpanRow({ span, minStart, duration }: { span: TraceSpan; minStart: number; duration: number }) {
+function SpanRow({
+  span,
+  minStart,
+  duration,
+  includePayload,
+}: {
+  span: TraceSpan
+  minStart: number
+  duration: number
+  includePayload: boolean
+}) {
   const start = new Date(span.started_at).getTime()
   const latency = Math.max(1, Number(span.latency_ms ?? 0))
   const offsetPct = Number.isFinite(start) ? Math.max(0, ((start - minStart) / duration) * 100) : 0
@@ -200,10 +210,20 @@ function SpanRow({ span, minStart, duration }: { span: TraceSpan; minStart: numb
         <JsonBlock value={span.metadata} />
       </div>
 
-      {'payload' in span && (
+      {includePayload && (
         <div className="mt-4">
           <div className="mb-2 text-sm font-medium text-gray-700">Payload</div>
-          <JsonBlock value={span.payload} />
+          {'payload' in span ? (
+            <JsonBlock value={span.payload} />
+          ) : span.payload_s3_key ? (
+            <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
+              Payload was requested, but it could not be loaded from storage.
+            </div>
+          ) : (
+            <div className="rounded-md border border-gray-200 bg-gray-50 p-3 text-sm text-gray-600">
+              Payload was not stored for this span.
+            </div>
+          )}
         </div>
       )}
     </div>
@@ -237,6 +257,10 @@ export function TraceDetail({ projectId }: { projectId: string }) {
 
   const timeline = useMemo(
     () => getTimelineBounds(query.data?.spans ?? []),
+    [query.data?.spans],
+  )
+  const payloadCount = useMemo(
+    () => query.data?.spans.filter(span => 'payload' in span).length ?? 0,
     [query.data?.spans],
   )
 
@@ -302,7 +326,7 @@ export function TraceDetail({ projectId }: { projectId: string }) {
               <div>
                 <div className="text-sm text-gray-500">Payload mode</div>
                 <div className="mt-1 text-xl font-semibold text-gray-950">
-                  {includePayload ? 'Loaded' : 'Hidden'}
+                  {includePayload ? `Loaded (${payloadCount})` : 'Hidden'}
                 </div>
               </div>
               <div>
@@ -311,6 +335,13 @@ export function TraceDetail({ projectId }: { projectId: string }) {
               </div>
             </div>
           </div>
+
+          {includePayload && payloadCount === 0 && (
+            <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
+              Payload was requested, but this trace has no stored payload objects.
+              Small payloads and demo-seeded spans may not have payloads in storage.
+            </div>
+          )}
 
           <div className="space-y-4">
             <div>
@@ -328,6 +359,7 @@ export function TraceDetail({ projectId }: { projectId: string }) {
                   span={span}
                   minStart={timeline.minStart}
                   duration={timeline.duration}
+                  includePayload={includePayload}
                 />
               ))
             )}
