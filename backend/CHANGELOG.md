@@ -1,6 +1,19 @@
 # CHANGELOG
 
 
+## v0.4.0 (2026-07-07)
+
+### Chores
+
+- Trigger ci for release sync
+  ([`7ce64f8`](https://github.com/makel0ve/llm-obs/commit/7ce64f8c916b5a4db97aad5d267d471bbb3807f4))
+
+### Features
+
+- Add trace explorer page
+  ([`a8288f4`](https://github.com/makel0ve/llm-obs/commit/a8288f4edf4d9cf1bae5535ebf82be10a588985f))
+
+
 ## v0.3.0 (2026-07-07)
 
 ### Chores
