@@ -5,6 +5,7 @@ import { Overview } from './pages/Overview'
 import { Traces } from './pages/Traces'
 import { TraceDetail } from './pages/TraceDetail'
 import { ProjectSettings } from './pages/ProjectSettings'
+import { Alerts } from './pages/Alerts'
 import { api } from './api/client'
 
 const queryClient = new QueryClient()
@@ -54,24 +55,6 @@ function DashboardNav({ variant = 'desktop' }: { variant?: 'desktop' | 'mobile' 
         </NavLink>
       ))}
     </nav>
-  )
-}
-
-function PlaceholderPage({
-  title,
-  description,
-}: {
-  title: string
-  description: string
-}) {
-  return (
-    <div className="p-4 sm:p-6 lg:p-8">
-      <div className="rounded-lg border border-dashed border-gray-300 bg-white p-6">
-        <p className="text-sm font-medium text-blue-700">Prepared route</p>
-        <h1 className="mt-2 text-2xl font-semibold text-gray-950">{title}</h1>
-        <p className="mt-3 max-w-2xl text-sm leading-6 text-gray-600">{description}</p>
-      </div>
-    </div>
   )
 }
 
@@ -285,15 +268,7 @@ export default function App() {
             <Route index element={<Overview projectId={projectId} />} />
             <Route path="traces" element={<Traces projectId={projectId} />} />
             <Route path="traces/:traceId" element={<TraceDetail projectId={projectId} />} />
-            <Route
-              path="alerts"
-              element={
-                <PlaceholderPage
-                  title="Alerts"
-                  description="Alert rule management will use the existing alerts API in a later dashboard block."
-                />
-              }
-            />
+            <Route path="alerts" element={<Alerts projectId={projectId} />} />
             <Route path="project-settings" element={<ProjectSettings projectId={projectId} />} />
           </Route>
           <Route path="*" element={<Navigate to="/" replace />} />
