@@ -297,7 +297,15 @@ mypy sdk/llm_obs
 
 # Linting
 ruff check .
+
+# Frontend validation
+cd frontend && npm run lint
+cd frontend && npm run build
 ```
+
+The frontend currently has no `npm test` script or component test runner. Do
+not add a new frontend testing stack casually; add one as a dedicated decision
+when component coverage becomes part of the release scope.
 
 ### Load testing
 
@@ -325,18 +333,23 @@ docker compose -f infra/docker-compose.yml run --rm \
 
 ## Current Dashboard Scope
 
-The current frontend includes login and overview metrics for a project. Trace
-listing/detail views, alert management screens and project settings are available
-through backend APIs but are not yet exposed as full dashboard pages.
+The current frontend includes account creation/sign-in, overview metrics,
+trace listing/detail pages, alert rule/event management, project settings,
+API key rotation and onboarding empty states for new projects.
+
+Dashboard API calls are routed through typed frontend helpers in
+`frontend/src/api/dashboard.ts`. Authentication failures from protected API
+routes clear the local session and return the user to sign-in; auth endpoints
+handle their own errors without triggering that redirect.
 
 ---
 
 ## Known Limitations (v1)
 
-- Registration is available via API only (no UI form yet)
 - Dashboard shows one project per login session (multi-project selector coming in v2)
 - Model pricing must be configured via SQL (admin UI coming in v2)
 - Dead Letter Queue is implemented but not automatically connected to retry middleware
+- Frontend component/unit tests are not configured yet
 - OpenAI and Anthropic integration tests require real API keys
 
 ---

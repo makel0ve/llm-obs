@@ -2,18 +2,13 @@ import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from "recharts";
 import { format } from "date-fns";
-import { api } from "../api/client";
 import { OnboardingSetup } from "../components/OnboardingSetup";
-
-
-type Period = "1h" | "24h" | "7d" | "30d"
-
-type OverviewMetrics = {
-    total_spans?: number | string | null
-    p95_latency_ms?: number | string | null
-    error_rate_pct?: number | string | null
-    total_cost_usd?: number | string | null
-}
+import {
+    dashboardQueryKeys,
+    getMetricsOverview,
+    getMetricsTimeseries,
+    type Period,
+} from "../api/dashboard";
 
 
 function MetricCard({
@@ -45,17 +40,17 @@ function MetricCard({
 export function Overview({ projectId }: { projectId: string }) {
     const [period, setPeriod] = useState<Period>("24h");
 
-    const { data: metrics, isLoading, isError } = useQuery<OverviewMetrics>({
-        queryKey: ["metrics", "overview", period, projectId],
-        queryFn: () => api.get(`/v1/metrics/overview?period=${period}&project_id=${projectId}`).then(r => r.data),
+    const { data: metrics, isLoading, isError } = useQuery({
+        queryKey: dashboardQueryKeys.overview(projectId, period),
+        queryFn: () => getMetricsOverview(projectId, period),
         refetchInterval: 30_000,
         staleTime: 15_000,
         enabled: !!projectId,
     });
 
     const { data: timeseries } = useQuery({
-        queryKey: ["metrics", "timeseries", period, projectId],
-        queryFn: () => api.get(`/v1/metrics/timeseries?period=${period}&project_id=${projectId}`).then(r => r.data),
+        queryKey: dashboardQueryKeys.timeseries(projectId, period),
+        queryFn: () => getMetricsTimeseries(projectId, period),
         refetchInterval: 60_000,
         enabled: !!projectId,
     });

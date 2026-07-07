@@ -1,5 +1,6 @@
 import { useState, type FormEvent, type ReactNode } from 'react'
 import { api } from '../api/client'
+import { rotateProjectApiKey, updateProjectSettings } from '../api/dashboard'
 
 type CopyState = 'idle' | 'copied' | 'failed'
 
@@ -85,11 +86,8 @@ await llm_obs.shutdown()`
 
     try {
       const days = Number(retentionDays)
-      const response = await api.patch<{ retention_days: number }>(
-        `/v1/projects/${projectId}/settings`,
-        { retention_days: days },
-      )
-      setSavedRetentionDays(response.data.retention_days)
+      const response = await updateProjectSettings(projectId, days)
+      setSavedRetentionDays(response.retention_days)
       setSettingsStatus('success')
     } catch {
       setSettingsStatus('error')
@@ -101,8 +99,8 @@ await llm_obs.shutdown()`
     setNewApiKey('')
 
     try {
-      const response = await api.post<{ api_key: string }>(`/v1/projects/${projectId}/rotate-key`)
-      setNewApiKey(response.data.api_key)
+      const response = await rotateProjectApiKey(projectId)
+      setNewApiKey(response.api_key)
       setRotateStatus('success')
     } catch {
       setRotateStatus('error')
