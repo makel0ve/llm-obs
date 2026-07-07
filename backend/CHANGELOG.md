@@ -1,6 +1,19 @@
 # CHANGELOG
 
 
+## v0.7.0 (2026-07-07)
+
+### Chores
+
+- Trigger ci for release sync
+  ([`b2efbe2`](https://github.com/makel0ve/llm-obs/commit/b2efbe2923acf020196c4c2cc49eb57f0c208b85))
+
+### Features
+
+- Add alerts management UI
+  ([`f7cefde`](https://github.com/makel0ve/llm-obs/commit/f7cefde04008c2efb39412f5dc43f7514d6dc8ef))
+
+
 ## v0.6.0 (2026-07-07)
 
 ### Chores
