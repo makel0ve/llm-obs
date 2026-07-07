@@ -4,6 +4,7 @@ import { BrowserRouter, Routes, Route, Navigate, NavLink, Outlet } from 'react-r
 import { Overview } from './pages/Overview'
 import { Traces } from './pages/Traces'
 import { TraceDetail } from './pages/TraceDetail'
+import { ProjectSettings } from './pages/ProjectSettings'
 import { api } from './api/client'
 
 const queryClient = new QueryClient()
@@ -293,15 +294,7 @@ export default function App() {
                 />
               }
             />
-            <Route
-              path="project-settings"
-              element={
-                <PlaceholderPage
-                  title="Project Settings"
-                  description="Project settings, SDK setup, retention and key rotation controls will be added in a separate block."
-                />
-              }
-            />
+            <Route path="project-settings" element={<ProjectSettings projectId={projectId} />} />
           </Route>
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
