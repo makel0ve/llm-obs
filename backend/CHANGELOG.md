@@ -1,6 +1,19 @@
 # CHANGELOG
 
 
+## v0.3.0 (2026-07-07)
+
+### Chores
+
+- Trigger ci for release sync
+  ([`6fd261c`](https://github.com/makel0ve/llm-obs/commit/6fd261cc26def27bd6fa2080c659221689141b5e))
+
+### Features
+
+- Add dashboard navigation shell
+  ([`891dcd4`](https://github.com/makel0ve/llm-obs/commit/891dcd43817dda06f75fbb6c73cc0c3ba0f17103))
+
+
 ## v0.2.3 (2026-07-05)
 
 ### Bug Fixes
