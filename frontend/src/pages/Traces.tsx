@@ -2,27 +2,14 @@ import { useMemo, useState, type FormEvent } from 'react'
 import { useInfiniteQuery } from '@tanstack/react-query'
 import { format } from 'date-fns'
 import { Link } from 'react-router-dom'
-import { api } from '../api/client'
 import { OnboardingSetup } from '../components/OnboardingSetup'
-
-type Period = '1h' | '24h' | '7d' | '30d'
-type StatusFilter = 'all' | 'ok' | 'error'
-
-type TraceSummary = {
-  id: string
-  started_at: string
-  ended_at?: string | null
-  total_tokens?: number | null
-  total_cost_usd?: number | string | null
-  span_count?: number | null
-  status?: 'ok' | 'error' | string | null
-}
-
-type TraceListResponse = {
-  traces: TraceSummary[]
-  next_cursor: string | null
-  has_more: boolean
-}
+import {
+  dashboardQueryKeys,
+  listTraces,
+  type Period,
+  type StatusFilter,
+  type TraceSummary,
+} from '../api/dashboard'
 
 const periods: Period[] = ['1h', '24h', '7d', '30d']
 const statuses: StatusFilter[] = ['all', 'ok', 'error']
@@ -143,28 +130,17 @@ export function Traces({ projectId }: { projectId: string }) {
   const [model, setModel] = useState('')
 
   const query = useInfiniteQuery({
-    queryKey: ['traces', period, status, model],
+    queryKey: dashboardQueryKeys.traces(projectId, period, status, model),
     initialPageParam: null as string | null,
-    queryFn: async ({ pageParam }) => {
-      const params = new URLSearchParams({
-        from_dt: getFromDate(period),
-        page_size: '50',
-        project_id: projectId,
+    queryFn: ({ pageParam }) => (
+      listTraces({
+        projectId,
+        fromDt: getFromDate(period),
+        status,
+        model,
+        cursor: pageParam,
       })
-
-      if (status !== 'all') {
-        params.set('status', status)
-      }
-      if (model) {
-        params.set('model', model)
-      }
-      if (pageParam) {
-        params.set('cursor', pageParam)
-      }
-
-      const response = await api.get<TraceListResponse>(`/v1/traces?${params.toString()}`)
-      return response.data
-    },
+    ),
     getNextPageParam: lastPage => lastPage.next_cursor ?? undefined,
     refetchInterval: 30_000,
     staleTime: 15_000,

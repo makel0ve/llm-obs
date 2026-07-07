@@ -1,14 +1,15 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { useState } from 'react'
+import { lazy, Suspense, useState, type FormEvent, type ReactNode } from 'react'
 import { BrowserRouter, Routes, Route, Navigate, NavLink, Outlet } from 'react-router-dom'
-import { Overview } from './pages/Overview'
-import { Traces } from './pages/Traces'
-import { TraceDetail } from './pages/TraceDetail'
-import { ProjectSettings } from './pages/ProjectSettings'
-import { Alerts } from './pages/Alerts'
 import { api } from './api/client'
+import { loginUser, registerUser } from './api/dashboard'
 
 const queryClient = new QueryClient()
+const Overview = lazy(() => import('./pages/Overview').then(module => ({ default: module.Overview })))
+const Traces = lazy(() => import('./pages/Traces').then(module => ({ default: module.Traces })))
+const TraceDetail = lazy(() => import('./pages/TraceDetail').then(module => ({ default: module.TraceDetail })))
+const Alerts = lazy(() => import('./pages/Alerts').then(module => ({ default: module.Alerts })))
+const ProjectSettings = lazy(() => import('./pages/ProjectSettings').then(module => ({ default: module.ProjectSettings })))
 
 type AuthMode = 'login' | 'register'
 type DashboardNavItem = {
@@ -70,21 +71,21 @@ function LoginPage({
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = async (e: FormEvent) => {
     e.preventDefault()
     setLoading(true)
     setError('')
     try {
       if (mode === 'register') {
-        const res = await api.post('/v1/auth/register', {
+        const res = await registerUser({
           email,
           password,
           org_name: orgName,
         })
-        onLogin(res.data.access_token, res.data.project_id ?? '', res.data.api_key)
+        onLogin(res.access_token, res.project_id ?? '', res.api_key)
       } else {
-        const res = await api.post('/v1/auth/login', { email, password })
-        onLogin(res.data.access_token, res.data.project_id ?? '')
+        const res = await loginUser({ email, password })
+        onLogin(res.access_token, res.project_id ?? '')
       }
     } catch (err) {
       const status = err && typeof err === 'object' && 'response' in err
@@ -219,7 +220,21 @@ function Dashboard({
   )
 }
 
-function PrivateRoute({ children }: { children: React.ReactNode }) {
+function PageLoader() {
+  return (
+    <div className="space-y-3 p-4 sm:p-6 lg:p-8">
+      <div className="h-10 w-48 animate-pulse rounded-lg bg-gray-100" />
+      <div className="h-32 animate-pulse rounded-lg bg-gray-100" />
+      <div className="h-32 animate-pulse rounded-lg bg-gray-100" />
+    </div>
+  )
+}
+
+function LazyPage({ children }: { children: ReactNode }) {
+  return <Suspense fallback={<PageLoader />}>{children}</Suspense>
+}
+
+function PrivateRoute({ children }: { children: ReactNode }) {
   const token = localStorage.getItem('token')
   return token ? <>{children}</> : <Navigate to="/login" replace />
 }
@@ -265,11 +280,11 @@ export default function App() {
               />
             </PrivateRoute>
           }>
-            <Route index element={<Overview projectId={projectId} />} />
-            <Route path="traces" element={<Traces projectId={projectId} />} />
-            <Route path="traces/:traceId" element={<TraceDetail projectId={projectId} />} />
-            <Route path="alerts" element={<Alerts projectId={projectId} />} />
-            <Route path="project-settings" element={<ProjectSettings projectId={projectId} />} />
+            <Route index element={<LazyPage><Overview projectId={projectId} /></LazyPage>} />
+            <Route path="traces" element={<LazyPage><Traces projectId={projectId} /></LazyPage>} />
+            <Route path="traces/:traceId" element={<LazyPage><TraceDetail projectId={projectId} /></LazyPage>} />
+            <Route path="alerts" element={<LazyPage><Alerts projectId={projectId} /></LazyPage>} />
+            <Route path="project-settings" element={<LazyPage><ProjectSettings projectId={projectId} /></LazyPage>} />
           </Route>
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>

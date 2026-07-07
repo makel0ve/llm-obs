@@ -1,40 +1,27 @@
 import { useMemo, useState, type FormEvent } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { format } from 'date-fns'
-import { api } from '../api/client'
+import {
+  createAlertRule,
+  dashboardQueryKeys,
+  deleteAlertRule,
+  listAlertEvents,
+  listAlertRules,
+  resolveAlertEvent,
+  updateAlertRule,
+  type AlertCondition,
+  type AlertMetric,
+  type AlertRule,
+  type AlertRuleCreate,
+  type AlertRuleUpdate,
+} from '../api/dashboard'
 
-type Metric = 'latency_p95' | 'error_rate' | 'cost_hourly' | 'anomaly'
-type Condition = 'gt' | 'lt' | 'anomaly'
 type MutationStatus = 'idle' | 'success' | 'error'
-
-type AlertRule = {
-  id: string
-  project_id: string
-  name: string
-  metric: Metric
-  condition: Condition
-  threshold?: number | string | null
-  window_minutes: number
-  cooldown_minutes: number
-  notify_slack_webhook?: string | null
-  notify_email?: string | null
-  is_active: boolean
-  created_at?: string | null
-}
-
-type AlertEvent = {
-  id: string
-  rule_id: string
-  triggered_at: string
-  value: number | string
-  message: string
-  resolved_at?: string | null
-}
 
 type RuleDraft = {
   name: string
-  metric: Metric
-  condition: Condition
+  metric: AlertMetric
+  condition: AlertCondition
   threshold: string
   window_minutes: string
   cooldown_minutes: string
@@ -48,14 +35,14 @@ type RuleEditDraft = {
   notify_slack_webhook: string
 }
 
-const metricOptions: Array<{ value: Metric; label: string }> = [
+const metricOptions: Array<{ value: AlertMetric; label: string }> = [
   { value: 'latency_p95', label: 'Latency p95' },
   { value: 'error_rate', label: 'Error rate' },
   { value: 'cost_hourly', label: 'Hourly cost' },
   { value: 'anomaly', label: 'Anomaly' },
 ]
 
-const conditionOptions: Array<{ value: Condition; label: string }> = [
+const conditionOptions: Array<{ value: AlertCondition; label: string }> = [
   { value: 'gt', label: 'Greater than' },
   { value: 'lt', label: 'Less than' },
   { value: 'anomaly', label: 'Anomaly' },
@@ -72,10 +59,6 @@ const emptyDraft: RuleDraft = {
   notify_slack_webhook: '',
 }
 
-function getProjectQuery(projectId: string) {
-  return new URLSearchParams({ project_id: projectId }).toString()
-}
-
 function formatDate(value?: string | null) {
   if (!value) return '-'
 
@@ -85,11 +68,11 @@ function formatDate(value?: string | null) {
   return format(date, 'dd MMM HH:mm:ss')
 }
 
-function formatMetric(metric: Metric) {
+function formatMetric(metric: AlertMetric) {
   return metricOptions.find(option => option.value === metric)?.label ?? metric
 }
 
-function formatCondition(condition: Condition) {
+function formatCondition(condition: AlertCondition) {
   return conditionOptions.find(option => option.value === condition)?.label ?? condition
 }
 
@@ -151,7 +134,7 @@ function validateDraft(draft: RuleDraft) {
   return ''
 }
 
-function buildCreatePayload(projectId: string, draft: RuleDraft) {
+function buildCreatePayload(projectId: string, draft: RuleDraft): AlertRuleCreate {
   const isAnomaly = draft.metric === 'anomaly' || draft.condition === 'anomaly'
 
   return {
@@ -167,7 +150,7 @@ function buildCreatePayload(projectId: string, draft: RuleDraft) {
   }
 }
 
-function buildPatchPayload(rule: AlertRule, draft: RuleEditDraft) {
+function buildPatchPayload(rule: AlertRule, draft: RuleEditDraft): AlertRuleUpdate {
   return {
     threshold: rule.condition === 'anomaly' || !draft.threshold.trim() ? undefined : Number(draft.threshold),
     notify_email: draft.notify_email.trim(),
@@ -183,20 +166,14 @@ export function Alerts({ projectId }: { projectId: string }) {
   const [editDrafts, setEditDrafts] = useState<Record<string, RuleEditDraft>>({})
 
   const rulesQuery = useQuery({
-    queryKey: ['alert-rules', projectId],
-    queryFn: async () => {
-      const response = await api.get<AlertRule[]>(`/v1/alerts/rules?${getProjectQuery(projectId)}`)
-      return response.data
-    },
+    queryKey: dashboardQueryKeys.alertRules(projectId),
+    queryFn: () => listAlertRules(projectId),
     enabled: !!projectId,
   })
 
   const eventsQuery = useQuery({
-    queryKey: ['alert-events', projectId],
-    queryFn: async () => {
-      const response = await api.get<AlertEvent[]>(`/v1/alerts/events?${getProjectQuery(projectId)}`)
-      return response.data
-    },
+    queryKey: dashboardQueryKeys.alertEvents(projectId),
+    queryFn: () => listAlertEvents(projectId),
     enabled: !!projectId,
     refetchInterval: 30_000,
   })
@@ -211,15 +188,13 @@ export function Alerts({ projectId }: { projectId: string }) {
 
   const invalidateAlerts = async () => {
     await Promise.all([
-      queryClient.invalidateQueries({ queryKey: ['alert-rules', projectId] }),
-      queryClient.invalidateQueries({ queryKey: ['alert-events', projectId] }),
+      queryClient.invalidateQueries({ queryKey: dashboardQueryKeys.alertRules(projectId) }),
+      queryClient.invalidateQueries({ queryKey: dashboardQueryKeys.alertEvents(projectId) }),
     ])
   }
 
   const createRule = useMutation({
-    mutationFn: async (payload: ReturnType<typeof buildCreatePayload>) => {
-      await api.post('/v1/alerts/rules', payload)
-    },
+    mutationFn: createAlertRule,
     onSuccess: async () => {
       setDraft(emptyDraft)
       setValidationError('')
@@ -230,23 +205,17 @@ export function Alerts({ projectId }: { projectId: string }) {
   })
 
   const patchRule = useMutation({
-    mutationFn: async ({ ruleId, payload }: { ruleId: string; payload: Record<string, unknown> }) => {
-      await api.patch(`/v1/alerts/rules/${ruleId}`, payload)
-    },
+    mutationFn: ({ ruleId, payload }: { ruleId: string; payload: AlertRuleUpdate }) => updateAlertRule(ruleId, payload),
     onSuccess: invalidateAlerts,
   })
 
   const deleteRule = useMutation({
-    mutationFn: async (ruleId: string) => {
-      await api.delete(`/v1/alerts/rules/${ruleId}`)
-    },
+    mutationFn: deleteAlertRule,
     onSuccess: invalidateAlerts,
   })
 
   const resolveEvent = useMutation({
-    mutationFn: async (eventId: string) => {
-      await api.post(`/v1/alerts/events/${eventId}/resolve`)
-    },
+    mutationFn: resolveAlertEvent,
     onSuccess: invalidateAlerts,
   })
 
@@ -343,7 +312,7 @@ export function Alerts({ projectId }: { projectId: string }) {
             <span className="text-sm font-medium text-gray-700">Metric</span>
             <select
               value={draft.metric}
-              onChange={event => updateDraft({ metric: event.target.value as Metric })}
+              onChange={event => updateDraft({ metric: event.target.value as AlertMetric })}
               className="mt-2 min-h-10 w-full rounded-md border border-gray-300 bg-white px-3 text-sm text-gray-900"
             >
               {metricOptions.map(option => (
@@ -355,7 +324,7 @@ export function Alerts({ projectId }: { projectId: string }) {
             <span className="text-sm font-medium text-gray-700">Condition</span>
             <select
               value={draft.condition}
-              onChange={event => updateDraft({ condition: event.target.value as Condition })}
+              onChange={event => updateDraft({ condition: event.target.value as AlertCondition })}
               disabled={draft.metric === 'anomaly'}
               className="mt-2 min-h-10 w-full rounded-md border border-gray-300 bg-white px-3 text-sm text-gray-900 disabled:bg-gray-100 disabled:text-gray-500"
             >
