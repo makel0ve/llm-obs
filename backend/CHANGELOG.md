@@ -1,6 +1,19 @@
 # CHANGELOG
 
 
+## v0.13.0 (2026-07-08)
+
+### Chores
+
+- Trigger ci for release sync
+  ([`54501f2`](https://github.com/makel0ve/llm-obs/commit/54501f29f80f5f6c56895c09703561a31a1449ea))
+
+### Features
+
+- Add cost and latency analytics
+  ([`f77c4f7`](https://github.com/makel0ve/llm-obs/commit/f77c4f7a6d73de9f3a801bcc9ee65057ba3d8d08))
+
+
 ## v0.12.0 (2026-07-08)
 
 ### Chores
