@@ -1,6 +1,19 @@
 # CHANGELOG
 
 
+## v0.11.0 (2026-07-08)
+
+### Chores
+
+- Trigger ci for release sync
+  ([`e97cd03`](https://github.com/makel0ve/llm-obs/commit/e97cd039e64c8c86fbe2b30cb049d6979ee2add0))
+
+### Features
+
+- Add ingestion pipeline metrics
+  ([`cff9cf6`](https://github.com/makel0ve/llm-obs/commit/cff9cf6a09f65de40a28ae8cc285b906e5c7209c))
+
+
 ## v0.10.0 (2026-07-08)
 
 ### Bug Fixes
