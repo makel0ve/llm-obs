@@ -1,6 +1,29 @@
 # CHANGELOG
 
 
+## v0.8.1 (2026-07-08)
+
+### Bug Fixes
+
+- Harden SDK shutdown behavior
+  ([`555a402`](https://github.com/makel0ve/llm-obs/commit/555a402afa979cba954798900514f164990a8e38))
+
+### Chores
+
+- Trigger ci for release sync
+  ([`8a70755`](https://github.com/makel0ve/llm-obs/commit/8a7075542ca8157d5affcdade0cbb982a285a670))
+
+### Documentation
+
+- Add SDK examples and troubleshooting
+  ([`2aeab19`](https://github.com/makel0ve/llm-obs/commit/2aeab19262cb1306213ef0dc9b2d3051cd7f8d0a))
+
+### Testing
+
+- Stabilize dashboard frontend
+  ([`9c47445`](https://github.com/makel0ve/llm-obs/commit/9c4744563b40ef72f3de88ec039998ad030e1848))
+
+
 ## v0.8.0 (2026-07-07)
 
 ### Chores
