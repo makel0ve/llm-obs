@@ -6,6 +6,30 @@ from llm_obs.decorators import _current_span_id, _current_trace_id
 from llm_obs.tracer import SpanData
 
 
+def _get_value(obj, name, default=None):
+    if obj is None:
+        return default
+    if isinstance(obj, dict):
+        return obj.get(name, default)
+    return getattr(obj, name, default)
+
+
+def _extract_usage(response) -> tuple[int, int]:
+    usage = _get_value(response, "usage")
+    return (
+        int(_get_value(usage, "input_tokens", 0) or 0),
+        int(_get_value(usage, "output_tokens", 0) or 0),
+    )
+
+
+def _extract_output(response) -> str | None:
+    content = _get_value(response, "content", []) or []
+    if not content:
+        return None
+
+    return _get_value(content[0], "text")
+
+
 def patch_anthropic(client):
     original = client.messages.create
 
@@ -40,7 +64,7 @@ def patch_anthropic(client):
             _current_trace_id.reset(trace_token)
 
             try:
-                usage = response.usage if response else None
+                input_tokens, output_tokens = _extract_usage(response)
                 _get_tracer().record(
                     SpanData(
                         trace_id=trace_id,
@@ -49,12 +73,10 @@ def patch_anthropic(client):
                         provider="anthropic",
                         model=model,
                         input_messages=messages,
-                        output=response.content[0].text
-                        if response and response.content
-                        else None,
+                        output=_extract_output(response),
                         error=error_str,
-                        input_tokens=usage.input_tokens if usage else 0,
-                        output_tokens=usage.output_tokens if usage else 0,
+                        input_tokens=input_tokens,
+                        output_tokens=output_tokens,
                         latency_ms=latency_ms,
                         started_at=started_at,
                         metadata={"parent_span_id": parent_span_id, "system": system},
