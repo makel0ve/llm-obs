@@ -9,7 +9,17 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import Response
 
-from app.api.v1 import alerts, auth, health, ingest, metrics, otlp, projects, traces
+from app.api.v1 import (
+    alerts,
+    auth,
+    failed_tasks,
+    health,
+    ingest,
+    metrics,
+    otlp,
+    projects,
+    traces,
+)
 from app.core.config import settings
 from app.core.metrics import setup_metrics
 from app.core.redis import get_redis
@@ -86,6 +96,7 @@ for router in [
     traces.router,
     metrics.router,
     alerts.router,
+    failed_tasks.router,
     auth.router,
     projects.router,
     health.router,
