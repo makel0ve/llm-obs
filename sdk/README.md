@@ -61,6 +61,9 @@ discard buffered spans.
 
 ## OpenAI async patching
 
+The OpenAI package is optional. Install and create your async client in the
+application, then pass it to `patch_openai`.
+
 ```python
 import asyncio
 import llm_obs
@@ -85,6 +88,9 @@ if __name__ == "__main__":
 ```
 
 ## Anthropic async patching
+
+The Anthropic package is optional. Install and create your async client in the
+application, then pass it to `patch_anthropic`.
 
 ```python
 import asyncio
