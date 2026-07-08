@@ -89,15 +89,24 @@ cd sdk
 pip install -e .
 ```
 
+Full SDK examples and troubleshooting live in [sdk/README.md](sdk/README.md).
+
 ### Basic usage — decorator
 
 ```python
-from llm_obs import trace
+import asyncio
+import llm_obs
 
-@trace(name="my.llm_call")
+@llm_obs.trace(name="my.llm_call")
 async def call_llm(prompt: str) -> str:
-    # your LLM call here
-    ...
+    await asyncio.sleep(0.05)
+    return "demo response"
+
+async def main() -> None:
+    await call_llm("Hello")
+    await llm_obs.shutdown()
+
+asyncio.run(main())
 ```
 
 Set environment variables:
@@ -108,6 +117,14 @@ LLM_OBS_ENDPOINT=http://your-llm-obs-host:8000
 ```
 
 The SDK auto-initializes from environment variables — no explicit `init()` call needed.
+
+Run a safe local smoke example without external LLM provider credentials:
+
+```bash
+export LLM_OBS_API_KEY=llmobs_your_key_here
+export LLM_OBS_ENDPOINT=http://localhost:8000
+python examples/sdk_smoke_demo.py
+```
 
 ### Shutdown
 
@@ -149,6 +166,17 @@ from llm_obs.integrations.anthropic import patch_anthropic
 client = anthropic.AsyncAnthropic(api_key="...")
 client = patch_anthropic(client)
 ```
+
+### SDK troubleshooting
+
+- No spans: check `LLM_OBS_API_KEY`, `LLM_OBS_ENDPOINT`, dashboard time range
+  and `await llm_obs.shutdown()` in short-lived scripts.
+- Auth failed: use a project ingest API key, not a login JWT token. Rotate the
+  key in Project Settings if it was lost or exposed.
+- Wrong endpoint: use `http://localhost:8000` from the host, or
+  `http://backend:8000` from another Docker Compose service.
+- Process exits before flush: end scripts, CLIs and tests with
+  `await llm_obs.shutdown()`.
 
 ---
 
