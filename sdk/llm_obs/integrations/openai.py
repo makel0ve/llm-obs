@@ -6,6 +6,31 @@ from llm_obs.decorators import _current_span_id, _current_trace_id
 from llm_obs.tracer import SpanData
 
 
+def _get_value(obj, name, default=None):
+    if obj is None:
+        return default
+    if isinstance(obj, dict):
+        return obj.get(name, default)
+    return getattr(obj, name, default)
+
+
+def _extract_usage(response) -> tuple[int, int]:
+    usage = _get_value(response, "usage")
+    return (
+        int(_get_value(usage, "prompt_tokens", 0) or 0),
+        int(_get_value(usage, "completion_tokens", 0) or 0),
+    )
+
+
+def _extract_output(response) -> str | None:
+    choices = _get_value(response, "choices", []) or []
+    if not choices:
+        return None
+
+    message = _get_value(choices[0], "message")
+    return _get_value(message, "content")
+
+
 def patch_openai(client):
     original = client.chat.completions.create
 
@@ -39,7 +64,7 @@ def patch_openai(client):
             _current_trace_id.reset(trace_token)
 
             try:
-                usage = response.usage if response else None
+                input_tokens, output_tokens = _extract_usage(response)
                 _get_tracer().record(
                     SpanData(
                         trace_id=trace_id,
@@ -48,12 +73,10 @@ def patch_openai(client):
                         provider="openai",
                         model=model,
                         input_messages=messages,
-                        output=response.choices[0].message.content
-                        if response and response.choices
-                        else None,
+                        output=_extract_output(response),
                         error=error_str,
-                        input_tokens=usage.prompt_tokens if usage else 0,
-                        output_tokens=usage.completion_tokens if usage else 0,
+                        input_tokens=input_tokens,
+                        output_tokens=output_tokens,
                         latency_ms=latency_ms,
                         started_at=started_at,
                         metadata={"parent_span_id": parent_span_id},
