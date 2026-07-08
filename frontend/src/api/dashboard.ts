@@ -116,6 +116,31 @@ export type AlertRuleUpdate = {
   notify_slack_webhook?: string
 }
 
+export type PricingRecord = {
+  id: number
+  provider: string
+  model: string
+  input_cost_per_1k_tokens: string | number
+  output_cost_per_1k_tokens: string | number
+  valid_from: string
+  valid_to?: string | null
+}
+
+export type PricingCreate = {
+  provider: string
+  model: string
+  input_cost_per_1k_tokens: string | number
+  output_cost_per_1k_tokens: string | number
+  valid_from?: string | null
+}
+
+export type PricingUpdate = {
+  input_cost_per_1k_tokens?: string | number
+  output_cost_per_1k_tokens?: string | number
+  valid_from?: string | null
+  valid_to?: string | null
+}
+
 export const dashboardQueryKeys = {
   overview: (projectId: string, period: Period) => ['metrics', 'overview', projectId, period] as const,
   timeseries: (projectId: string, period: Period) => ['metrics', 'timeseries', projectId, period] as const,
@@ -125,6 +150,8 @@ export const dashboardQueryKeys = {
     ['trace-detail', projectId, traceId, startedAt, includePayload] as const,
   alertRules: (projectId: string) => ['alert-rules', projectId] as const,
   alertEvents: (projectId: string) => ['alert-events', projectId] as const,
+  pricing: (provider: string, model: string, includeExpired: boolean) =>
+    ['pricing', provider, model, includeExpired] as const,
 }
 
 function projectParams(projectId: string) {
@@ -234,5 +261,40 @@ export async function updateProjectSettings(projectId: string, retentionDays: nu
 
 export async function rotateProjectApiKey(projectId: string) {
   const response = await api.post<{ api_key: string }>(`/v1/projects/${projectId}/rotate-key`)
+  return response.data
+}
+
+export async function listPricing({
+  provider,
+  model,
+  includeExpired,
+}: {
+  provider: string
+  model: string
+  includeExpired: boolean
+}) {
+  const params = new URLSearchParams()
+  if (provider) params.set('provider', provider)
+  if (model) params.set('model', model)
+  params.set('include_expired', includeExpired ? 'true' : 'false')
+
+  const response = await api.get<PricingRecord[]>(`/v1/pricing?${params.toString()}`)
+  return response.data
+}
+
+export async function createPricing(payload: PricingCreate) {
+  const response = await api.post<PricingRecord>('/v1/pricing', payload)
+  return response.data
+}
+
+export async function updatePricing(pricingId: number, payload: PricingUpdate) {
+  const response = await api.patch<PricingRecord>(`/v1/pricing/${pricingId}`, payload)
+  return response.data
+}
+
+export async function endPricing(pricingId: number, validTo?: string | null) {
+  const response = await api.post<PricingRecord>(`/v1/pricing/${pricingId}/end`, {
+    valid_to: validTo ?? null,
+  })
   return response.data
 }

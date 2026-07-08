@@ -255,21 +255,26 @@ credentials consistent between `backend/.env.prod` and `infra/.env`.
 
 ## Model Pricing
 
-After deployment, add pricing for your models so cost tracking works:
+After deployment, add pricing for your models so cost tracking works. Admin
+users can manage prices in the dashboard Pricing page. Pricing records are
+historical: adding a new price for the same provider/model closes the previous
+active interval at the new `valid_from` timestamp.
 
-```sql
-INSERT INTO model_pricing (provider, model, input_cost_per_1k_tokens, output_cost_per_1k_tokens, valid_from)
-VALUES
-    ('openai',    'gpt-4o',            0.0025,   0.0100,   NOW()),
-    ('openai',    'gpt-4o-mini',       0.000150, 0.000600, NOW()),
-    ('anthropic', 'claude-sonnet-4-6', 0.003,    0.015,    NOW()),
-    ('ollama',    'llama3.2:3b',       0.0,      0.0,      NOW());
-```
-
-Connect to the database:
+Pricing is also available through the API:
 
 ```bash
-docker compose --env-file infra/.env -f infra/docker-compose.prod.yml exec postgres psql -U llmobs -d llmobs
+curl -H "Authorization: Bearer YOUR_JWT_TOKEN" \
+  http://localhost:8000/v1/pricing
+
+curl -X POST http://localhost:8000/v1/pricing \
+  -H "Authorization: Bearer YOUR_JWT_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "provider": "openai",
+    "model": "gpt-4o-mini",
+    "input_cost_per_1k_tokens": 0.00015,
+    "output_cost_per_1k_tokens": 0.0006
+  }'
 ```
 
 ---

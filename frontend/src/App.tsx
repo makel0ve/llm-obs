@@ -10,6 +10,7 @@ const Traces = lazy(() => import('./pages/Traces').then(module => ({ default: mo
 const TraceDetail = lazy(() => import('./pages/TraceDetail').then(module => ({ default: module.TraceDetail })))
 const Alerts = lazy(() => import('./pages/Alerts').then(module => ({ default: module.Alerts })))
 const ProjectSettings = lazy(() => import('./pages/ProjectSettings').then(module => ({ default: module.ProjectSettings })))
+const Pricing = lazy(() => import('./pages/Pricing').then(module => ({ default: module.Pricing })))
 
 type AuthMode = 'login' | 'register'
 type DashboardNavItem = {
@@ -22,6 +23,7 @@ const dashboardNavItems: DashboardNavItem[] = [
   { label: 'Overview', path: '/', end: true },
   { label: 'Traces', path: '/traces' },
   { label: 'Alerts', path: '/alerts' },
+  { label: 'Pricing', path: '/pricing' },
   { label: 'Project Settings', path: '/project-settings' },
 ]
 
@@ -284,6 +286,7 @@ export default function App() {
             <Route path="traces" element={<LazyPage><Traces projectId={projectId} /></LazyPage>} />
             <Route path="traces/:traceId" element={<LazyPage><TraceDetail projectId={projectId} /></LazyPage>} />
             <Route path="alerts" element={<LazyPage><Alerts projectId={projectId} /></LazyPage>} />
+            <Route path="pricing" element={<LazyPage><Pricing /></LazyPage>} />
             <Route path="project-settings" element={<LazyPage><ProjectSettings projectId={projectId} /></LazyPage>} />
           </Route>
           <Route path="*" element={<Navigate to="/" replace />} />
