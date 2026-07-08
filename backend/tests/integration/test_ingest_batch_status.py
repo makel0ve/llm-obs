@@ -5,6 +5,13 @@ import pytest
 from fastapi import HTTPException, Response
 
 from app.api.v1.ingest import get_ingest_batch_status, ingest_spans
+from app.core.metrics import (
+    ingest_batches_accepted,
+    ingest_batches_failed,
+    ingest_batches_processed,
+    ingest_spans_dropped,
+    spans_ingested,
+)
 from app.schemas.ingest import IngestRequest
 from app.services.ingest import BatchStatusService, IngestService
 from app.workers import process_span as process_span_module
@@ -46,6 +53,14 @@ def _project(project_id: str) -> dict:
     return {"id": project_id, "org_id": str(uuid4()), "name": "Test Project"}
 
 
+def _counter_value(counter, *labels: str) -> float:
+    return counter.labels(*labels)._value.get()
+
+
+def _simple_counter_value(counter) -> float:
+    return counter._value.get()
+
+
 async def _noop_kiq(*args, **kwargs):
     return None
 
@@ -74,6 +89,7 @@ async def test_ingest_creates_accepted_batch_status(monkeypatch, fake_redis):
         process_span_module, "process_span_batch", FakeProcessSpanBatch()
     )
 
+    accepted_before = _simple_counter_value(ingest_batches_accepted)
     response = await ingest_spans(
         payload=IngestRequest(spans=[make_span_payload()]),
         response=Response(),
@@ -103,6 +119,7 @@ async def test_ingest_creates_accepted_batch_status(monkeypatch, fake_redis):
         }
         == status_payload
     )
+    assert _simple_counter_value(ingest_batches_accepted) == accepted_before + 1
 
 
 @pytest.mark.asyncio
@@ -136,6 +153,7 @@ async def test_ingest_marks_batch_failed_when_enqueue_fails(monkeypatch, fake_re
         process_span_module, "process_span_batch", FailingProcessSpanBatch()
     )
 
+    failed_before = _counter_value(ingest_batches_failed, "enqueue")
     with pytest.raises(RuntimeError):
         await ingest_spans(
             payload=IngestRequest(spans=[make_span_payload()]),
@@ -156,6 +174,7 @@ async def test_ingest_marks_batch_failed_when_enqueue_fails(monkeypatch, fake_re
     assert status is not None
     assert status.status == "failed"
     assert status.error == "queue unavailable"
+    assert _counter_value(ingest_batches_failed, "enqueue") == failed_before + 1
 
 
 @pytest.mark.asyncio
@@ -190,6 +209,8 @@ async def test_worker_marks_batch_processed(monkeypatch, fake_redis):
     monkeypatch.setattr(process_span_module.update_trace_aggregates, "kiq", _noop_kiq)
     monkeypatch.setattr(process_span_module.check_batch_anomalies, "kiq", _noop_kiq)
 
+    processed_before = _counter_value(ingest_batches_processed, "processed")
+    span_before = _counter_value(spans_ingested, "openai", "gpt-4o", "ok")
     await process_span_batch.original_func(
         batch_id=batch_id, project_id=project_id, spans=[span]
     )
@@ -201,6 +222,10 @@ async def test_worker_marks_batch_processed(monkeypatch, fake_redis):
     assert status.status == "processed"
     assert status.processed == 1
     assert status.failed == 0
+    assert _counter_value(ingest_batches_processed, "processed") == (
+        processed_before + 1
+    )
+    assert _counter_value(spans_ingested, "openai", "gpt-4o", "ok") == (span_before + 1)
 
 
 @pytest.mark.asyncio
@@ -236,6 +261,8 @@ async def test_worker_marks_batch_partial_failed(monkeypatch, fake_redis):
     monkeypatch.setattr(process_span_module.update_trace_aggregates, "kiq", _noop_kiq)
     monkeypatch.setattr(process_span_module.check_batch_anomalies, "kiq", _noop_kiq)
 
+    processed_before = _counter_value(ingest_batches_processed, "partial_failed")
+    dropped_before = _counter_value(ingest_spans_dropped, "processing_error")
     await process_span_batch.original_func(
         batch_id=batch_id, project_id=project_id, spans=[valid_span, invalid_span]
     )
@@ -247,6 +274,12 @@ async def test_worker_marks_batch_partial_failed(monkeypatch, fake_redis):
     assert status.status == "partial_failed"
     assert status.processed == 1
     assert status.failed == 1
+    assert _counter_value(ingest_batches_processed, "partial_failed") == (
+        processed_before + 1
+    )
+    assert _counter_value(ingest_spans_dropped, "processing_error") == (
+        dropped_before + 1
+    )
 
 
 async def _bulk_insert_spans(spans: list[dict], db) -> int:
