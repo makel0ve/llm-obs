@@ -1,6 +1,19 @@
 # CHANGELOG
 
 
+## v0.12.0 (2026-07-08)
+
+### Chores
+
+- Trigger ci for release sync
+  ([`16c9027`](https://github.com/makel0ve/llm-obs/commit/16c9027b96db1f9e2d4977499b0736e1af292f69))
+
+### Features
+
+- Add pricing management UI
+  ([`3311c84`](https://github.com/makel0ve/llm-obs/commit/3311c84552eabf2bd06c0a81dae5f5a3537c2c59))
+
+
 ## v0.11.0 (2026-07-08)
 
 ### Chores
