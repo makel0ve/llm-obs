@@ -171,6 +171,28 @@ async def test_list_failed_tasks_scopes_to_user_org(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_list_failed_tasks_allows_missing_project_filter(monkeypatch):
+    org_id = str(uuid4())
+    db = FakeDb()
+
+    @asynccontextmanager
+    async def fake_get_db():
+        yield db
+
+    monkeypatch.setattr(failed_tasks_api, "get_db", fake_get_db)
+
+    result = await list_failed_tasks(limit=100, user=_user(org_id=org_id))
+
+    assert result == []
+    assert db.params[-1] == {
+        "org": org_id,
+        "project_id": None,
+        "include_resolved": False,
+        "limit": 100,
+    }
+
+
+@pytest.mark.asyncio
 async def test_resolve_failed_task_scopes_to_user_org(monkeypatch):
     org_id = str(uuid4())
     db = FakeDb()

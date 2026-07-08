@@ -52,7 +52,10 @@ async def list_failed_tasks(
                 failed_at, resolved
             FROM failed_tasks
             WHERE org_id = :org
-              AND (:project_id IS NULL OR project_id = :project_id)
+              AND (
+                CAST(:project_id AS uuid) IS NULL
+                OR project_id = CAST(:project_id AS uuid)
+              )
               AND (:include_resolved OR resolved = false)
             ORDER BY failed_at DESC
             LIMIT :limit
