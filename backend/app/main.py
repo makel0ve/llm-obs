@@ -17,6 +17,7 @@ from app.api.v1 import (
     ingest,
     metrics,
     otlp,
+    pricing,
     projects,
     traces,
 )
@@ -97,6 +98,7 @@ for router in [
     metrics.router,
     alerts.router,
     failed_tasks.router,
+    pricing.router,
     auth.router,
     projects.router,
     health.router,
