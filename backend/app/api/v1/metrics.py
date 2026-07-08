@@ -44,3 +44,21 @@ async def get_metrics_timeseries(
     await redis.setex(cache_key, ttl, json.dumps(result, default=str))
 
     return result
+
+
+@router.get("/metrics/analytics")
+async def get_metrics_analytics(
+    project=Depends(get_project_from_token_or_api_key),
+    period: str = Query(default="24h", pattern="^(1h|24h|7d|30d)$"),
+    redis: Redis = Depends(get_redis),
+):
+    cache_key = f"metrics:analytics:{project['id']}:{period}"
+    cached = await redis.get(cache_key)
+    if cached:
+        return json.loads(cached)
+
+    result = await MetricsService().get_analytics(str(project["id"]), period)
+    ttl = {"1h": 30, "24h": 60, "7d": 300, "30d": 300}[period]
+    await redis.setex(cache_key, ttl, json.dumps(result, default=str))
+
+    return result
