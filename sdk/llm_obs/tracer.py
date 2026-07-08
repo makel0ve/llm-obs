@@ -41,6 +41,7 @@ class LLMTracer:
         self._shutting_down = False
         self._closed = False
         self._transport = HttpTransport(self._endpoint, self._api_key)
+        self._atexit_registered = True
 
         atexit.register(self._sync_flush_on_exit)
 
@@ -76,6 +77,12 @@ class LLMTracer:
             self._buffer.clear()
 
         await self._transport.aclose()
+        if self._atexit_registered:
+            try:
+                atexit.unregister(self._sync_flush_on_exit)
+            except ValueError:
+                pass
+            self._atexit_registered = False
         self._closed = True
 
     async def __aenter__(self) -> "LLMTracer":
@@ -89,29 +96,48 @@ class LLMTracer:
         if self._closed or not self._buffer:
             return
 
+        loop = None
+        created_loop = False
         try:
-            loop = asyncio.get_event_loop()
-            if not loop.is_closed():
-                loop.run_until_complete(self._flush())
+            try:
+                loop = asyncio.get_event_loop()
+            except RuntimeError:
+                loop = asyncio.new_event_loop()
+                created_loop = True
+
+            if loop.is_running() or loop.is_closed():
+                return
+
+            loop.run_until_complete(self._flush())
 
         except Exception:
             pass
+        finally:
+            if created_loop and loop is not None:
+                loop.close()
 
     async def _flush_loop(self) -> None:
         while not self._shutting_down:
             await asyncio.sleep(self._flush_interval)
             await self._flush()
 
-    async def _flush(self) -> None:
+    async def _flush(self) -> bool:
         if not self._buffer:
-            return
+            return True
 
         spans = []
         while self._buffer:
             spans.append(self._buffer.popleft())
 
         if spans:
-            await self._transport.send_batch([self._span_to_dict(s) for s in spans])
+            sent = await self._transport.send_batch(
+                [self._span_to_dict(s) for s in spans]
+            )
+            if not sent:
+                self._buffer.extendleft(reversed(spans))
+                return False
+
+        return True
 
     def _span_to_dict(self, span: SpanData) -> dict:
         return {

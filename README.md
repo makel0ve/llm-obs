@@ -139,7 +139,8 @@ await llm_obs.shutdown()
 ```
 
 Use `await llm_obs.shutdown(flush=False)` in tests that should discard buffered
-spans instead of sending them.
+spans instead of sending them. Failed flush attempts keep spans in memory for
+the lifetime of that tracer rather than treating them as delivered.
 
 ### OpenAI auto-patching
 
