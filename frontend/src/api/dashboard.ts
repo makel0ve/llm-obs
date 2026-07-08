@@ -26,6 +26,59 @@ export type TimeseriesPoint = {
   error_count?: number | string | null
 }
 
+export type CostByModel = {
+  model: string
+  total_cost_usd?: number | string | null
+  total_tokens?: number | string | null
+  span_count?: number | string | null
+}
+
+export type CostByProvider = {
+  provider: string
+  total_cost_usd?: number | string | null
+  total_tokens?: number | string | null
+  span_count?: number | string | null
+}
+
+export type CostOverTimePoint = {
+  bucket: string
+  total_cost_usd?: number | string | null
+  span_count?: number | string | null
+}
+
+export type LatencyByModel = {
+  model: string
+  avg_latency_ms?: number | string | null
+  p95_latency_ms?: number | string | null
+  span_count?: number | string | null
+}
+
+export type LatencyByProvider = {
+  provider: string
+  avg_latency_ms?: number | string | null
+  p95_latency_ms?: number | string | null
+  span_count?: number | string | null
+}
+
+export type AnalyticsTrace = {
+  trace_id: string
+  total_cost_usd?: number | string | null
+  max_latency_ms?: number | string | null
+  avg_latency_ms?: number | string | null
+  span_count?: number | string | null
+  started_at?: string | null
+}
+
+export type AnalyticsResponse = {
+  cost_by_model: CostByModel[]
+  cost_by_provider: CostByProvider[]
+  cost_over_time: CostOverTimePoint[]
+  latency_by_model: LatencyByModel[]
+  latency_by_provider: LatencyByProvider[]
+  top_expensive_traces: AnalyticsTrace[]
+  slowest_traces: AnalyticsTrace[]
+}
+
 export type TraceSummary = {
   id: string
   started_at: string
@@ -144,6 +197,7 @@ export type PricingUpdate = {
 export const dashboardQueryKeys = {
   overview: (projectId: string, period: Period) => ['metrics', 'overview', projectId, period] as const,
   timeseries: (projectId: string, period: Period) => ['metrics', 'timeseries', projectId, period] as const,
+  analytics: (projectId: string, period: Period) => ['metrics', 'analytics', projectId, period] as const,
   traces: (projectId: string, period: Period, status: StatusFilter, model: string) =>
     ['traces', projectId, period, status, model] as const,
   traceDetail: (projectId: string, traceId: string | undefined, startedAt: string | null, includePayload: boolean) =>
@@ -179,6 +233,13 @@ export async function getMetricsTimeseries(projectId: string, period: Period) {
   const params = projectParams(projectId)
   params.set('period', period)
   const response = await api.get<TimeseriesPoint[]>(`/v1/metrics/timeseries?${params.toString()}`)
+  return response.data
+}
+
+export async function getMetricsAnalytics(projectId: string, period: Period) {
+  const params = projectParams(projectId)
+  params.set('period', period)
+  const response = await api.get<AnalyticsResponse>(`/v1/metrics/analytics?${params.toString()}`)
   return response.data
 }
 

@@ -114,3 +114,165 @@ class MetricsService:
             rows = result.mappings().all()
 
         return [dict(r) for r in rows]
+
+    async def get_analytics(self, project_id: str, period: str) -> dict:
+        interval = PERIOD_TO_INTERVAL[period]
+        granularity = PERIOD_TO_GRANULARITY[period]
+        cutoff = datetime.now(UTC) - interval
+
+        async with get_db(project_id=project_id) as db:
+            cost_by_model = await db.execute(
+                text(
+                    """
+                SELECT
+                    COALESCE(model, 'unknown')                    AS model,
+                    COALESCE(SUM(cost_usd), 0)                    AS total_cost_usd,
+                    COALESCE(SUM(input_tokens + output_tokens), 0) AS total_tokens,
+                    COUNT(*)                                      AS span_count
+                FROM spans
+                WHERE project_id = :project_id
+                    AND started_at >= :cutoff
+                GROUP BY COALESCE(model, 'unknown')
+                ORDER BY total_cost_usd DESC, span_count DESC
+                LIMIT 10
+                """
+                ),
+                {"project_id": project_id, "cutoff": cutoff},
+            )
+
+            cost_by_provider = await db.execute(
+                text(
+                    """
+                SELECT
+                    COALESCE(provider, 'unknown')                 AS provider,
+                    COALESCE(SUM(cost_usd), 0)                    AS total_cost_usd,
+                    COALESCE(SUM(input_tokens + output_tokens), 0) AS total_tokens,
+                    COUNT(*)                                      AS span_count
+                FROM spans
+                WHERE project_id = :project_id
+                    AND started_at >= :cutoff
+                GROUP BY COALESCE(provider, 'unknown')
+                ORDER BY total_cost_usd DESC, span_count DESC
+                LIMIT 10
+                """
+                ),
+                {"project_id": project_id, "cutoff": cutoff},
+            )
+
+            cost_over_time = await db.execute(
+                text(
+                    """
+                SELECT
+                    date_trunc(:granularity, started_at) AS bucket,
+                    COALESCE(SUM(cost_usd), 0)           AS total_cost_usd,
+                    COUNT(*)                             AS span_count
+                FROM spans
+                WHERE project_id = :project_id
+                    AND started_at >= :cutoff
+                GROUP BY 1
+                ORDER BY 1
+                """
+                ),
+                {
+                    "granularity": granularity,
+                    "project_id": project_id,
+                    "cutoff": cutoff,
+                },
+            )
+
+            latency_by_model = await db.execute(
+                text(
+                    """
+                SELECT
+                    COALESCE(model, 'unknown')        AS model,
+                    ROUND(AVG(latency_ms)::numeric, 2) AS avg_latency_ms,
+                    PERCENTILE_CONT(0.95) WITHIN GROUP
+                        (ORDER BY latency_ms)          AS p95_latency_ms,
+                    COUNT(*)                          AS span_count
+                FROM spans
+                WHERE project_id = :project_id
+                    AND started_at >= :cutoff
+                GROUP BY COALESCE(model, 'unknown')
+                ORDER BY p95_latency_ms DESC NULLS LAST, span_count DESC
+                LIMIT 10
+                """
+                ),
+                {"project_id": project_id, "cutoff": cutoff},
+            )
+
+            latency_by_provider = await db.execute(
+                text(
+                    """
+                SELECT
+                    COALESCE(provider, 'unknown')      AS provider,
+                    ROUND(AVG(latency_ms)::numeric, 2) AS avg_latency_ms,
+                    PERCENTILE_CONT(0.95) WITHIN GROUP
+                        (ORDER BY latency_ms)          AS p95_latency_ms,
+                    COUNT(*)                          AS span_count
+                FROM spans
+                WHERE project_id = :project_id
+                    AND started_at >= :cutoff
+                GROUP BY COALESCE(provider, 'unknown')
+                ORDER BY p95_latency_ms DESC NULLS LAST, span_count DESC
+                LIMIT 10
+                """
+                ),
+                {"project_id": project_id, "cutoff": cutoff},
+            )
+
+            top_expensive_traces = await db.execute(
+                text(
+                    """
+                SELECT
+                    trace_id,
+                    COALESCE(SUM(cost_usd), 0) AS total_cost_usd,
+                    COUNT(*)                   AS span_count,
+                    MIN(started_at)            AS started_at
+                FROM spans
+                WHERE project_id = :project_id
+                    AND started_at >= :cutoff
+                GROUP BY trace_id
+                ORDER BY total_cost_usd DESC, span_count DESC
+                LIMIT 10
+                """
+                ),
+                {"project_id": project_id, "cutoff": cutoff},
+            )
+
+            slowest_traces = await db.execute(
+                text(
+                    """
+                SELECT
+                    trace_id,
+                    MAX(latency_ms)                   AS max_latency_ms,
+                    ROUND(AVG(latency_ms)::numeric, 2) AS avg_latency_ms,
+                    COUNT(*)                          AS span_count,
+                    MIN(started_at)                   AS started_at
+                FROM spans
+                WHERE project_id = :project_id
+                    AND started_at >= :cutoff
+                GROUP BY trace_id
+                ORDER BY max_latency_ms DESC, span_count DESC
+                LIMIT 10
+                """
+                ),
+                {"project_id": project_id, "cutoff": cutoff},
+            )
+
+        return {
+            "cost_by_model": [dict(row) for row in cost_by_model.mappings().all()],
+            "cost_by_provider": [
+                dict(row) for row in cost_by_provider.mappings().all()
+            ],
+            "cost_over_time": [dict(row) for row in cost_over_time.mappings().all()],
+            "latency_by_model": [
+                dict(row) for row in latency_by_model.mappings().all()
+            ],
+            "latency_by_provider": [
+                dict(row) for row in latency_by_provider.mappings().all()
+            ],
+            "top_expensive_traces": [
+                dict(row) for row in top_expensive_traces.mappings().all()
+            ],
+            "slowest_traces": [dict(row) for row in slowest_traces.mappings().all()],
+        }
