@@ -1,6 +1,6 @@
 import uuid
 from datetime import UTC, datetime, timedelta
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field, ValidationInfo, field_validator
 
@@ -88,3 +88,14 @@ class IngestRequest(BaseModel):
 class IngestResponse(BaseModel):
     batch_id: str
     accepted: int
+
+
+class BatchStatusResponse(BaseModel):
+    batch_id: str
+    status: Literal["accepted", "processing", "processed", "partial_failed", "failed"]
+    accepted: int
+    processed: int
+    failed: int
+    error: str | None = None
+    created_at: datetime
+    updated_at: datetime
