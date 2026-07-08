@@ -11,7 +11,7 @@ from app.core.redis import get_redis
 from app.core.taskiq import broker
 from app.services.anomaly import AnomalyService
 from app.services.cost import CostService
-from app.services.ingest import bulk_insert_spans
+from app.services.ingest import BatchStatusService, bulk_insert_spans
 from app.services.notifications import NotificationService
 from app.services.storage import StorageService
 
@@ -23,114 +23,131 @@ async def process_span_batch(batch_id: str, project_id: str, spans: list[dict]) 
     log.info("processing_batch", batch_id=batch_id, count=len(spans))
     cost_svc = CostService()
     storage_svc = StorageService()
+    redis = await get_redis()
+    batch_status = BatchStatusService(redis=redis)
+    await batch_status.mark_processing(project_id=project_id, batch_id=batch_id)
 
-    async with get_db(project_id=project_id) as db:
-        prepared_spans = []
-        for span_data in spans:
-            try:
-                started_at = (
-                    parse_dt(span_data["started_at"])
-                    if isinstance(span_data["started_at"], str)
-                    else span_data["started_at"]
-                )
+    try:
+        async with get_db(project_id=project_id) as db:
+            prepared_spans = []
+            failed_count = 0
+            for span_data in spans:
+                try:
+                    started_at = (
+                        parse_dt(span_data["started_at"])
+                        if isinstance(span_data["started_at"], str)
+                        else span_data["started_at"]
+                    )
 
-                cost = await cost_svc.calculate(
-                    provider=span_data["provider"],
-                    model=span_data["model"],
-                    input_tokens=span_data["input_tokens"],
-                    output_tokens=span_data["output_tokens"],
-                    at_time=started_at,
-                )
+                    cost = await cost_svc.calculate(
+                        provider=span_data["provider"],
+                        model=span_data["model"],
+                        input_tokens=span_data["input_tokens"],
+                        output_tokens=span_data["output_tokens"],
+                        at_time=started_at,
+                    )
 
-                s3_key = await storage_svc.store_payload(
-                    project_id=project_id,
-                    span_id=span_data["span_id"],
-                    messages=span_data.get("input_messages", []),
-                    output=span_data.get("output"),
-                )
+                    s3_key = await storage_svc.store_payload(
+                        project_id=project_id,
+                        span_id=span_data["span_id"],
+                        messages=span_data.get("input_messages", []),
+                        output=span_data.get("output"),
+                    )
 
-                prepared_spans.append(
-                    {
-                        "id": uuid.UUID(span_data["span_id"]),
-                        "trace_id": uuid.UUID(span_data["trace_id"]),
-                        "project_id": uuid.UUID(project_id),
-                        "name": span_data.get("name", "llm_call"),
-                        "provider": span_data["provider"],
-                        "model": span_data["model"],
-                        "input_tokens": span_data["input_tokens"],
-                        "output_tokens": span_data["output_tokens"],
-                        "cost_usd": cost,
-                        "latency_ms": span_data["latency_ms"],
-                        "status": "error" if span_data.get("error") else "ok",
-                        "error": span_data.get("error"),
-                        "started_at": started_at,
-                        "payload_s3_key": s3_key,
-                        "metadata": json.dumps(span_data.get("metadata", {})),
-                    }
-                )
+                    prepared_spans.append(
+                        {
+                            "id": uuid.UUID(span_data["span_id"]),
+                            "trace_id": uuid.UUID(span_data["trace_id"]),
+                            "project_id": uuid.UUID(project_id),
+                            "name": span_data.get("name", "llm_call"),
+                            "provider": span_data["provider"],
+                            "model": span_data["model"],
+                            "input_tokens": span_data["input_tokens"],
+                            "output_tokens": span_data["output_tokens"],
+                            "cost_usd": cost,
+                            "latency_ms": span_data["latency_ms"],
+                            "status": "error" if span_data.get("error") else "ok",
+                            "error": span_data.get("error"),
+                            "started_at": started_at,
+                            "payload_s3_key": s3_key,
+                            "metadata": json.dumps(span_data.get("metadata", {})),
+                        }
+                    )
 
-            except Exception as e:
-                log.error(
-                    "span_processing_failed",
-                    span_id=span_data.get("span_id"),
-                    error=str(e),
-                )
-                continue
+                except Exception as e:
+                    failed_count += 1
+                    log.error(
+                        "span_processing_failed",
+                        span_id=span_data.get("span_id"),
+                        error=str(e),
+                    )
+                    continue
 
-        await bulk_insert_spans(prepared_spans, db)
+            await bulk_insert_spans(prepared_spans, db)
 
-        trace_map: dict = {}
-        for span in prepared_spans:
-            tid = span["trace_id"]
-            if (
-                tid not in trace_map
-                or span["started_at"] < trace_map[tid]["started_at"]
-            ):
-                trace_map[tid] = span
+            trace_map: dict = {}
+            for span in prepared_spans:
+                tid = span["trace_id"]
+                if (
+                    tid not in trace_map
+                    or span["started_at"] < trace_map[tid]["started_at"]
+                ):
+                    trace_map[tid] = span
 
-        for tid, span in trace_map.items():
-            await db.execute(
-                text(
+            for tid, span in trace_map.items():
+                await db.execute(
+                    text(
+                        """
+                    INSERT INTO traces (id, project_id, started_at, status, span_count,
+                        total_tokens, total_cost_usd)
+                    VALUES (:id, :project_id, :started_at, :status, 0, 0, 0)
+                    ON CONFLICT (id, started_at) DO NOTHING
                     """
-                INSERT INTO traces (id, project_id, started_at, status, span_count,
-                    total_tokens, total_cost_usd)
-                VALUES (:id, :project_id, :started_at, :status, 0, 0, 0)
-                ON CONFLICT (id, started_at) DO NOTHING
-                """
-                ),
-                {
-                    "id": tid,
-                    "project_id": span["project_id"],
-                    "started_at": span["started_at"],
-                    "status": span["status"],
-                },
-            )
-
-        await db.commit()
-
-        redis = await get_redis()
-        for span_data in prepared_spans:
-            await redis.publish(
-                f"project:{project_id}:new_span",
-                json.dumps(
+                    ),
                     {
-                        "span_id": str(span_data["id"]),
-                        "name": span_data.get("name"),
-                        "latency_ms": span_data["latency_ms"],
-                        "status": span_data["status"],
-                    }
-                ),
+                        "id": tid,
+                        "project_id": span["project_id"],
+                        "started_at": span["started_at"],
+                        "status": span["status"],
+                    },
+                )
+
+            await db.commit()
+
+            for span_data in prepared_spans:
+                await redis.publish(
+                    f"project:{project_id}:new_span",
+                    json.dumps(
+                        {
+                            "span_id": str(span_data["id"]),
+                            "name": span_data.get("name"),
+                            "latency_ms": span_data["latency_ms"],
+                            "status": span_data["status"],
+                        }
+                    ),
+                )
+
+        for trace_id, span in trace_map.items():
+            await update_trace_aggregates.kiq(
+                project_id=project_id,
+                trace_id=str(trace_id),
+                started_at=span["started_at"],
             )
 
-    for trace_id, span in trace_map.items():
-        await update_trace_aggregates.kiq(
+        await check_batch_anomalies.kiq(project_id=project_id, spans=spans)
+        await batch_status.mark_finished(
             project_id=project_id,
-            trace_id=str(trace_id),
-            started_at=span["started_at"],
+            batch_id=batch_id,
+            processed=len(prepared_spans),
+            failed=failed_count,
         )
+        log.info("batch_processed", batch_id=batch_id)
 
-    await check_batch_anomalies.kiq(project_id=project_id, spans=spans)
-    log.info("batch_processed", batch_id=batch_id)
+    except Exception as e:
+        await batch_status.mark_failed(
+            project_id=project_id, batch_id=batch_id, error=str(e)
+        )
+        raise
 
 
 @broker.task

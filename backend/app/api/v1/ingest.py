@@ -1,8 +1,8 @@
-from fastapi import APIRouter, Depends, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Response, status
 
 from app.core.auth import get_project_from_api_key
 from app.core.ratelimit import RateLimiter, get_rate_limiter
-from app.schemas.ingest import IngestRequest, IngestResponse
+from app.schemas.ingest import BatchStatusResponse, IngestRequest, IngestResponse
 from app.services.ingest import IngestService, get_ingest_service
 
 router = APIRouter(prefix="/v1", tags=["ingest"])
@@ -42,3 +42,19 @@ async def ingest_spans(
         )
 
     return result
+
+
+@router.get("/ingest/batches/{batch_id}", response_model=BatchStatusResponse)
+async def get_ingest_batch_status(
+    batch_id: str,
+    project=Depends(get_project_from_api_key),
+    service: IngestService = Depends(get_ingest_service),
+):
+    batch_status = await service.get_batch_status(
+        project_id=str(project["id"]), batch_id=batch_id
+    )
+
+    if not batch_status:
+        raise HTTPException(status_code=404, detail="Batch not found")
+
+    return batch_status
