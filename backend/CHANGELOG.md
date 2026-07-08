@@ -1,6 +1,24 @@
 # CHANGELOG
 
 
+## v0.10.0 (2026-07-08)
+
+### Bug Fixes
+
+- Handle failed task listing without project filter
+  ([`77a7808`](https://github.com/makel0ve/llm-obs/commit/77a7808024080d0b5683780e70565dd522077084))
+
+### Chores
+
+- Trigger ci for release sync
+  ([`e60de0e`](https://github.com/makel0ve/llm-obs/commit/e60de0e031fd2038b0bf8cf2337608b3b6a4d3ea))
+
+### Features
+
+- Expose failed ingestion tasks
+  ([`ce81bfb`](https://github.com/makel0ve/llm-obs/commit/ce81bfbcc5ebb2126055da6bb66c0a3143a6eee6))
+
+
 ## v0.9.0 (2026-07-08)
 
 ### Chores
