@@ -5,6 +5,7 @@ import pytest_asyncio
 
 import llm_obs
 from llm_obs.tracer import LLMTracer, SpanData
+from llm_obs.transport import HttpTransport
 
 
 @pytest_asyncio.fixture(autouse=True)
@@ -125,3 +126,126 @@ async def test_flush_sends_http():
         await tracer._flush()
         assert route.called
         assert len(tracer._buffer) == 0
+
+
+def make_span(name: str = "test") -> SpanData:
+    return SpanData(
+        trace_id="t1",
+        span_id="s1",
+        name=name,
+        provider="openai",
+        model="gpt-4o",
+        input_messages=[],
+        latency_ms=100,
+    )
+
+
+@pytest.mark.asyncio
+async def test_shutdown_flush_true_sends_buffer():
+    tracer = llm_obs.init(api_key="test", endpoint="http://server")
+
+    with respx.mock:
+        route = respx.post("http://server/v1/ingest").mock(
+            return_value=httpx.Response(202, json={"batch_id": "b1"})
+        )
+
+        tracer.record(make_span())
+        await llm_obs.shutdown()
+
+        assert route.called
+        assert len(tracer._buffer) == 0
+        assert llm_obs.get_tracer() is None
+
+
+@pytest.mark.asyncio
+async def test_shutdown_flush_false_discards_buffer_without_http():
+    tracer = llm_obs.init(api_key="test", endpoint="http://server")
+
+    with respx.mock:
+        route = respx.post("http://server/v1/ingest").mock(
+            return_value=httpx.Response(202, json={"batch_id": "b1"})
+        )
+
+        tracer.record(make_span())
+        await llm_obs.shutdown(flush=False)
+
+        assert not route.called
+        assert len(tracer._buffer) == 0
+
+
+@pytest.mark.asyncio
+async def test_failed_flush_keeps_buffered_spans():
+    tracer = llm_obs.init(api_key="test", endpoint="http://server")
+
+    with respx.mock:
+        respx.post("http://server/v1/ingest").mock(return_value=httpx.Response(429))
+
+        tracer.record(make_span())
+        sent = await tracer._flush()
+
+        assert sent is False
+        assert len(tracer._buffer) == 1
+        assert tracer._buffer[0].name == "test"
+
+
+def test_sync_flush_on_exit_flushes_buffer(monkeypatch):
+    tracer = LLMTracer(api_key="test", endpoint="http://server")
+    flushed = False
+
+    async def fake_flush():
+        nonlocal flushed
+        flushed = True
+        tracer._buffer.clear()
+        return True
+
+    monkeypatch.setattr(tracer, "_flush", fake_flush)
+    tracer.record(make_span())
+
+    tracer._sync_flush_on_exit()
+
+    assert flushed
+    assert len(tracer._buffer) == 0
+
+
+@pytest.mark.asyncio
+async def test_transport_retries_5xx_then_succeeds(monkeypatch):
+    transport = HttpTransport(endpoint="http://server", api_key="test")
+
+    async def no_sleep(_delay):
+        return None
+
+    monkeypatch.setattr("llm_obs.transport.asyncio.sleep", no_sleep)
+    monkeypatch.setattr(transport, "_jitter", lambda _attempt: 0)
+
+    with respx.mock:
+        route = respx.post("http://server/v1/ingest").mock(
+            side_effect=[
+                httpx.Response(500),
+                httpx.Response(502),
+                httpx.Response(202),
+            ]
+        )
+
+        sent = await transport.send_batch([{"span_id": "s1"}])
+
+    await transport.aclose()
+
+    assert sent is True
+    assert route.call_count == 3
+
+
+@pytest.mark.asyncio
+async def test_transport_429_does_not_retry():
+    transport = HttpTransport(endpoint="http://server", api_key="test")
+
+    with respx.mock:
+        route = respx.post("http://server/v1/ingest").mock(
+            return_value=httpx.Response(429, headers={"Retry-After": "5"})
+        )
+
+        sent = await transport.send_batch([{"span_id": "s1"}])
+
+    await transport.aclose()
+
+    assert sent is False
+    assert route.call_count == 1
