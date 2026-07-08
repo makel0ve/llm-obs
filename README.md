@@ -212,6 +212,28 @@ outputs or provider credentials.
 
 ---
 
+## Pipeline Metrics
+
+Prometheus metrics are exposed by the backend at `/metrics`. The ingest pipeline
+publishes stable counters and histograms for batch and worker visibility:
+
+- `llmobs_ingest_batches_accepted_total`
+- `llmobs_ingest_batches_processed_total{status="processed|partial_failed"}`
+- `llmobs_ingest_batches_failed_total{stage="enqueue|worker"}`
+- `llmobs_ingest_batch_processing_seconds`
+- `llmobs_ingest_spans_dropped_total{reason="processing_error"}`
+- `llmobs_spans_ingested_total{provider,model,status}`
+
+Check backend dependencies with `/ready`; worker processing health is visible
+through the batch status API, failed task API and the metrics above.
+
+```bash
+curl http://localhost:8000/ready
+curl http://localhost:8000/metrics | grep llmobs_ingest
+```
+
+---
+
 ## Configuration
 
 Copy `backend/.env.example` to `backend/.env.prod` and fill in the values.

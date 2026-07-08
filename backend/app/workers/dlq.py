@@ -1,16 +1,13 @@
 from datetime import UTC, datetime
 
 import structlog
-from prometheus_client import Counter
 
 from app.core.db import get_db
+from app.core.metrics import failed_tasks
 from app.core.taskiq import dlq_broker
 from app.services.failed_tasks import record_failed_task
 
 log = structlog.get_logger()
-FAILED_TASKS_TOTAL = Counter(
-    "llmobs_failed_tasks_total", "Tasks failed permanently", ["task_name"]
-)
 
 
 @dlq_broker.task
@@ -20,7 +17,7 @@ async def handle_failed_task(
     log.error(
         "task_failed_permanently", task=task_name, attempts=attempts, error=error[:500]
     )
-    FAILED_TASKS_TOTAL.labels(task_name=task_name).inc()
+    failed_tasks.labels(task_name=task_name).inc()
 
     async with get_db() as db:
         try:

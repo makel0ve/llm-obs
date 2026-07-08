@@ -7,6 +7,7 @@ from fastapi import Depends
 from redis.asyncio import Redis
 from sqlalchemy import text
 
+from app.core.metrics import ingest_batches_accepted, ingest_batches_failed
 from app.core.redis import get_redis
 from app.schemas.ingest import BatchStatusResponse, SpanSchema
 
@@ -132,8 +133,10 @@ class IngestService:
             await self._batch_status.mark_failed(
                 project_id=project_id, batch_id=batch_id, error=str(e)
             )
+            ingest_batches_failed.labels(stage="enqueue").inc()
             raise
 
+        ingest_batches_accepted.inc()
         log.info("batch_accepted", batch_id=batch_id, span_count=len(spans))
         return batch_id
 

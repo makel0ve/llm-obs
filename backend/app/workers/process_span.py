@@ -1,4 +1,5 @@
 import json
+import time
 import uuid
 from datetime import datetime
 
@@ -7,6 +8,13 @@ from dateutil.parser import parse as parse_dt
 from sqlalchemy import text
 
 from app.core.db import get_db
+from app.core.metrics import (
+    ingest_batch_processing_s,
+    ingest_batches_failed,
+    ingest_batches_processed,
+    ingest_spans_dropped,
+    spans_ingested,
+)
 from app.core.redis import get_redis
 from app.core.taskiq import broker
 from app.services.anomaly import AnomalyService
@@ -21,6 +29,7 @@ log = structlog.get_logger()
 @broker.task(retry_on_error=True, max_retries=3)
 async def process_span_batch(batch_id: str, project_id: str, spans: list[dict]) -> None:
     log.info("processing_batch", batch_id=batch_id, count=len(spans))
+    started_at_monotonic = time.perf_counter()
     cost_svc = CostService()
     storage_svc = StorageService()
     redis = await get_redis()
@@ -76,6 +85,7 @@ async def process_span_batch(batch_id: str, project_id: str, spans: list[dict]) 
 
                 except Exception as e:
                     failed_count += 1
+                    ingest_spans_dropped.labels(reason="processing_error").inc()
                     log.error(
                         "span_processing_failed",
                         span_id=span_data.get("span_id"),
@@ -115,6 +125,11 @@ async def process_span_batch(batch_id: str, project_id: str, spans: list[dict]) 
             await db.commit()
 
             for span_data in prepared_spans:
+                spans_ingested.labels(
+                    provider=span_data["provider"],
+                    model=span_data["model"],
+                    status=span_data["status"],
+                ).inc()
                 await redis.publish(
                     f"project:{project_id}:new_span",
                     json.dumps(
@@ -141,12 +156,17 @@ async def process_span_batch(batch_id: str, project_id: str, spans: list[dict]) 
             processed=len(prepared_spans),
             failed=failed_count,
         )
+        processing_status = "partial_failed" if failed_count else "processed"
+        ingest_batches_processed.labels(status=processing_status).inc()
+        ingest_batch_processing_s.observe(time.perf_counter() - started_at_monotonic)
         log.info("batch_processed", batch_id=batch_id)
 
     except Exception as e:
         await batch_status.mark_failed(
             project_id=project_id, batch_id=batch_id, error=str(e)
         )
+        ingest_batches_failed.labels(stage="worker").inc()
+        ingest_batch_processing_s.observe(time.perf_counter() - started_at_monotonic)
         raise
 
 
