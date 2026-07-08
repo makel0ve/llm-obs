@@ -181,6 +181,37 @@ client = patch_anthropic(client)
 
 ---
 
+## Ingestion Failure Diagnostics
+
+Accepted ingest batches return a `batch_id` immediately. Check asynchronous
+processing status with the project API key:
+
+```bash
+curl -H "X-API-Key: YOUR_PROJECT_API_KEY" \
+  http://localhost:8000/v1/ingest/batches/YOUR_BATCH_ID
+```
+
+If a worker task fails permanently, admin users can inspect scoped failed-task
+summaries with a JWT token:
+
+```bash
+curl -H "Authorization: Bearer YOUR_JWT_TOKEN" \
+  "http://localhost:8000/v1/failed-tasks?project_id=YOUR_PROJECT_ID"
+```
+
+Mark an investigated task as resolved:
+
+```bash
+curl -X POST -H "Authorization: Bearer YOUR_JWT_TOKEN" \
+  http://localhost:8000/v1/failed-tasks/FAILED_TASK_ID/resolve
+```
+
+Failed-task records store task metadata, batch/project identifiers, span counts,
+error text and attempt count. They do not store full span payloads, prompts,
+outputs or provider credentials.
+
+---
+
 ## Configuration
 
 Copy `backend/.env.example` to `backend/.env.prod` and fill in the values.
