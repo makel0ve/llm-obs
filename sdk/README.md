@@ -54,8 +54,10 @@ if __name__ == "__main__":
 ```
 
 Call `await llm_obs.shutdown()` in short-lived scripts, CLIs and tests so
-buffered spans are flushed before Python exits. Use
-`await llm_obs.shutdown(flush=False)` when a test should discard buffered spans.
+buffered spans are flushed before Python exits. The default
+`shutdown(flush=True)` attempts to send the current buffer before closing the
+HTTP client. Use `await llm_obs.shutdown(flush=False)` when a test should
+discard buffered spans.
 
 ## OpenAI async patching
 
@@ -152,3 +154,8 @@ end with:
 ```python
 await llm_obs.shutdown()
 ```
+
+If ingest returns a retryable server error, the transport retries before giving
+up. If ingest returns `429 Too Many Requests` or the final retry fails, unsent
+spans stay in the in-memory buffer for the lifetime of that tracer instead of
+being marked as successfully flushed.
