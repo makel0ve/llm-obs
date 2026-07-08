@@ -1,6 +1,24 @@
 # CHANGELOG
 
 
+## v0.9.0 (2026-07-08)
+
+### Chores
+
+- Trigger ci for release sync
+  ([`21610f3`](https://github.com/makel0ve/llm-obs/commit/21610f373223157632512d7df59c59c9ecf999c4))
+
+### Features
+
+- Add ingest batch status
+  ([`e11cc15`](https://github.com/makel0ve/llm-obs/commit/e11cc15011089fbed049d28d84249ebfd7525a62))
+
+### Testing
+
+- Stabilize provider integrations
+  ([`e5d0d01`](https://github.com/makel0ve/llm-obs/commit/e5d0d01ab9665d586f079cc4c8dc3278b670990d))
+
+
 ## v0.8.1 (2026-07-08)
 
 ### Bug Fixes
