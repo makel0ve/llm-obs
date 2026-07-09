@@ -1,6 +1,27 @@
 # CHANGELOG
 
 
+## v0.15.0 (2026-07-09)
+
+### Chores
+
+- Trigger ci for release sync
+  ([`1f9f669`](https://github.com/makel0ve/llm-obs/commit/1f9f669794e4de011c56bbb6b04e1f4afe9914a9))
+
+### Documentation
+
+- Add backup and restore guide
+  ([`b029865`](https://github.com/makel0ve/llm-obs/commit/b029865e4451cda446f32f0630a205950d00bbaa))
+
+- Add production runbooks
+  ([`ddf6f3c`](https://github.com/makel0ve/llm-obs/commit/ddf6f3c76985fd0a50d531f1680e38f56c0943f2))
+
+### Features
+
+- Add organization user roles
+  ([`763f201`](https://github.com/makel0ve/llm-obs/commit/763f201e671ac23a0a39f75fbbdf95f9a037f16e))
+
+
 ## v0.14.0 (2026-07-09)
 
 ### Chores
