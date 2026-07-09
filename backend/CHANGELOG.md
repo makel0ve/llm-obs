@@ -1,6 +1,24 @@
 # CHANGELOG
 
 
+## v0.17.0 (2026-07-09)
+
+### Bug Fixes
+
+- Avoid dynamic SQL in project settings update
+  ([`6b2ff05`](https://github.com/makel0ve/llm-obs/commit/6b2ff056c0c71de44598d89b10c452b30a75b8f7))
+
+### Chores
+
+- Trigger ci for release sync
+  ([`6bb0155`](https://github.com/makel0ve/llm-obs/commit/6bb015536e780a7e55d881cc76f8f5a67e1421a2))
+
+### Features
+
+- Add payload privacy controls
+  ([`b971370`](https://github.com/makel0ve/llm-obs/commit/b9713705a9bc56901acc8cb745938f9b03b7f9cc))
+
+
 ## v0.16.0 (2026-07-09)
 
 ### Chores
