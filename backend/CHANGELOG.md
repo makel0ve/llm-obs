@@ -1,6 +1,19 @@
 # CHANGELOG
 
 
+## v0.14.0 (2026-07-09)
+
+### Chores
+
+- Trigger ci for release sync
+  ([`50861c3`](https://github.com/makel0ve/llm-obs/commit/50861c302a82f61f50c4763e9ed7251ca2002a01))
+
+### Features
+
+- Add error analytics
+  ([`5f8abf5`](https://github.com/makel0ve/llm-obs/commit/5f8abf51a6f3705e0f16641123c978c2c04bab39))
+
+
 ## v0.13.0 (2026-07-08)
 
 ### Chores
