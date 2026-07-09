@@ -5,14 +5,10 @@ from sqlalchemy import text
 
 from app.core.auth import get_current_user
 from app.core.db import get_db
+from app.core.rbac import require_admin
 from app.schemas.failed_tasks import FailedTaskResolveResponse, FailedTaskResponse
 
 router = APIRouter(prefix="/v1/failed-tasks", tags=["failed-tasks"])
-
-
-def require_admin(user: dict) -> None:
-    if user.get("role") != "admin":
-        raise HTTPException(status_code=403, detail="Admin role required")
 
 
 def _serialize_failed_task(row) -> dict:

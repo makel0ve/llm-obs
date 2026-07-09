@@ -14,6 +14,7 @@ import {
   type AlertRule,
   type AlertRuleCreate,
   type AlertRuleUpdate,
+  type UserRole,
 } from '../api/dashboard'
 
 type MutationStatus = 'idle' | 'success' | 'error'
@@ -158,8 +159,9 @@ function buildPatchPayload(rule: AlertRule, draft: RuleEditDraft): AlertRuleUpda
   }
 }
 
-export function Alerts({ projectId }: { projectId: string }) {
+export function Alerts({ projectId, role }: { projectId: string; role: UserRole }) {
   const queryClient = useQueryClient()
+  const canWrite = role !== 'viewer'
   const [draft, setDraft] = useState<RuleDraft>(emptyDraft)
   const [validationError, setValidationError] = useState('')
   const [createStatus, setCreateStatus] = useState<MutationStatus>('idle')
@@ -240,6 +242,8 @@ export function Alerts({ projectId }: { projectId: string }) {
 
   const submitCreateRule = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
+    if (!canWrite) return
+
     const error = validateDraft(draft)
     if (error) {
       setValidationError(error)
@@ -262,6 +266,8 @@ export function Alerts({ projectId }: { projectId: string }) {
   }
 
   const saveRuleTargets = (rule: AlertRule) => {
+    if (!canWrite) return
+
     const current = getEditDraft(rule)
     const payload = buildPatchPayload(rule, current)
 
@@ -276,6 +282,8 @@ export function Alerts({ projectId }: { projectId: string }) {
   }
 
   const toggleRule = (rule: AlertRule) => {
+    if (!canWrite) return
+
     patchRule.mutate({ ruleId: rule.id, payload: { is_active: !rule.is_active } })
   }
 
@@ -294,9 +302,14 @@ export function Alerts({ projectId }: { projectId: string }) {
         <p className="mt-1 text-sm text-gray-500">Create alert rules, route notifications and resolve triggered events.</p>
       </div>
 
-      <section className="rounded-lg border border-gray-200 bg-white p-4">
-        <h2 className="text-lg font-semibold text-gray-950">New rule</h2>
-        <form onSubmit={submitCreateRule} className="mt-4 grid grid-cols-1 gap-4 xl:grid-cols-4">
+      {!canWrite && (
+        <AlertMessage tone="warning">Viewer role has read-only access. Alert rule changes are disabled.</AlertMessage>
+      )}
+
+      {canWrite && (
+        <section className="rounded-lg border border-gray-200 bg-white p-4">
+          <h2 className="text-lg font-semibold text-gray-950">New rule</h2>
+          <form onSubmit={submitCreateRule} className="mt-4 grid grid-cols-1 gap-4 xl:grid-cols-4">
           <label className="block xl:col-span-2">
             <span className="text-sm font-medium text-gray-700">Name</span>
             <input
@@ -403,8 +416,9 @@ export function Alerts({ projectId }: { projectId: string }) {
             {createStatus === 'success' && <AlertMessage tone="success">Alert rule created.</AlertMessage>}
             {createStatus === 'error' && <AlertMessage tone="error">Could not create alert rule.</AlertMessage>}
           </div>
-        </form>
-      </section>
+          </form>
+        </section>
+      )}
 
       <section className="space-y-4">
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
@@ -464,66 +478,70 @@ export function Alerts({ projectId }: { projectId: string }) {
                         </div>
                       </div>
                     </div>
-                    <div className="flex flex-wrap gap-2">
-                      <button
-                        type="button"
-                        onClick={() => toggleRule(rule)}
-                        disabled={isSaving}
-                        className="min-h-9 rounded-md border border-gray-200 bg-white px-3 text-sm font-medium text-gray-700 hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-60"
-                      >
-                        {rule.is_active ? 'Disable' : 'Enable'}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => deleteRule.mutate(rule.id)}
-                        disabled={deleteRule.isPending}
-                        className="min-h-9 rounded-md border border-red-200 bg-white px-3 text-sm font-medium text-red-700 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-60"
-                      >
-                        Delete
-                      </button>
-                    </div>
+                    {canWrite && (
+                      <div className="flex flex-wrap gap-2">
+                        <button
+                          type="button"
+                          onClick={() => toggleRule(rule)}
+                          disabled={isSaving}
+                          className="min-h-9 rounded-md border border-gray-200 bg-white px-3 text-sm font-medium text-gray-700 hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-60"
+                        >
+                          {rule.is_active ? 'Disable' : 'Enable'}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => deleteRule.mutate(rule.id)}
+                          disabled={deleteRule.isPending}
+                          className="min-h-9 rounded-md border border-red-200 bg-white px-3 text-sm font-medium text-red-700 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-60"
+                        >
+                          Delete
+                        </button>
+                      </div>
+                    )}
                   </div>
-                  <div className="mt-4 grid grid-cols-1 gap-3 xl:grid-cols-[minmax(120px,180px)_1fr_1fr_auto]">
-                    <label className="block">
-                      <span className="text-sm font-medium text-gray-700">Threshold</span>
-                      <input
-                        type="number"
-                        step="0.0001"
-                        value={current.threshold}
-                        onChange={event => updateEditDraft(rule, { threshold: event.target.value })}
-                        disabled={rule.condition === 'anomaly'}
-                        className="mt-2 min-h-10 w-full rounded-md border border-gray-300 bg-white px-3 text-sm text-gray-900 disabled:bg-gray-100 disabled:text-gray-500"
-                      />
-                    </label>
-                    <label className="block">
-                      <span className="text-sm font-medium text-gray-700">Email target</span>
-                      <input
-                        type="email"
-                        value={current.notify_email}
-                        onChange={event => updateEditDraft(rule, { notify_email: event.target.value })}
-                        className="mt-2 min-h-10 w-full rounded-md border border-gray-300 bg-white px-3 text-sm text-gray-900"
-                      />
-                    </label>
-                    <label className="block">
-                      <span className="text-sm font-medium text-gray-700">Slack webhook</span>
-                      <input
-                        type="url"
-                        value={current.notify_slack_webhook}
-                        onChange={event => updateEditDraft(rule, { notify_slack_webhook: event.target.value })}
-                        className="mt-2 min-h-10 w-full rounded-md border border-gray-300 bg-white px-3 text-sm text-gray-900"
-                      />
-                    </label>
-                    <div className="flex items-end">
-                      <button
-                        type="button"
-                        onClick={() => saveRuleTargets(rule)}
-                        disabled={patchRule.isPending}
-                        className="min-h-10 w-full rounded-md bg-gray-900 px-4 text-sm font-medium text-white hover:bg-gray-700 disabled:cursor-not-allowed disabled:opacity-60 xl:w-auto"
-                      >
-                        Save
-                      </button>
+                  {canWrite && (
+                    <div className="mt-4 grid grid-cols-1 gap-3 xl:grid-cols-[minmax(120px,180px)_1fr_1fr_auto]">
+                      <label className="block">
+                        <span className="text-sm font-medium text-gray-700">Threshold</span>
+                        <input
+                          type="number"
+                          step="0.0001"
+                          value={current.threshold}
+                          onChange={event => updateEditDraft(rule, { threshold: event.target.value })}
+                          disabled={rule.condition === 'anomaly'}
+                          className="mt-2 min-h-10 w-full rounded-md border border-gray-300 bg-white px-3 text-sm text-gray-900 disabled:bg-gray-100 disabled:text-gray-500"
+                        />
+                      </label>
+                      <label className="block">
+                        <span className="text-sm font-medium text-gray-700">Email target</span>
+                        <input
+                          type="email"
+                          value={current.notify_email}
+                          onChange={event => updateEditDraft(rule, { notify_email: event.target.value })}
+                          className="mt-2 min-h-10 w-full rounded-md border border-gray-300 bg-white px-3 text-sm text-gray-900"
+                        />
+                      </label>
+                      <label className="block">
+                        <span className="text-sm font-medium text-gray-700">Slack webhook</span>
+                        <input
+                          type="url"
+                          value={current.notify_slack_webhook}
+                          onChange={event => updateEditDraft(rule, { notify_slack_webhook: event.target.value })}
+                          className="mt-2 min-h-10 w-full rounded-md border border-gray-300 bg-white px-3 text-sm text-gray-900"
+                        />
+                      </label>
+                      <div className="flex items-end">
+                        <button
+                          type="button"
+                          onClick={() => saveRuleTargets(rule)}
+                          disabled={patchRule.isPending}
+                          className="min-h-10 w-full rounded-md bg-gray-900 px-4 text-sm font-medium text-white hover:bg-gray-700 disabled:cursor-not-allowed disabled:opacity-60 xl:w-auto"
+                        >
+                          Save
+                        </button>
+                      </div>
                     </div>
-                  </div>
+                  )}
                 </article>
               )
             })}
@@ -574,7 +592,7 @@ export function Alerts({ projectId }: { projectId: string }) {
                         </span>
                       </td>
                       <td className="px-4 py-3">
-                        {!event.resolved_at && (
+                        {canWrite && !event.resolved_at && (
                           <button
                             type="button"
                             onClick={() => resolveEvent.mutate(event.id)}

@@ -5,6 +5,7 @@ from sqlalchemy import text
 
 from app.core.auth import get_current_user
 from app.core.db import get_db
+from app.core.rbac import require_admin
 from app.core.redis import get_redis
 from app.schemas.pricing import (
     PricingCreate,
@@ -14,11 +15,6 @@ from app.schemas.pricing import (
 )
 
 router = APIRouter(prefix="/v1/pricing", tags=["pricing"])
-
-
-def require_admin(user: dict) -> None:
-    if user.get("role") != "admin":
-        raise HTTPException(status_code=403, detail="Admin role required")
 
 
 def normalize_name(value: str) -> str:

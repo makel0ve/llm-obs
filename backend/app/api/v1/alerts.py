@@ -6,6 +6,7 @@ from sqlalchemy import text
 
 from app.core.auth import get_current_user
 from app.core.db import get_db
+from app.core.rbac import require_member
 from app.schemas.alerts import AlertRuleCreate, AlertRuleUpdate
 
 router = APIRouter(prefix="/v1/alerts", tags=["alerts"])
@@ -40,6 +41,8 @@ async def list_rules(project_id: str, user=Depends(get_current_user)):
 
 @router.post("/rules", status_code=201)
 async def create_rule(body: AlertRuleCreate, user=Depends(get_current_user)):
+    require_member(user)
+
     async with get_db() as db:
         async with db.begin():
             project = await db.execute(
@@ -82,6 +85,8 @@ async def create_rule(body: AlertRuleCreate, user=Depends(get_current_user)):
 async def update_rule(
     rule_id: str, body: AlertRuleUpdate, user=Depends(get_current_user)
 ):
+    require_member(user)
+
     updates = {
         k: v
         for k, v in body.model_dump().items()
@@ -111,6 +116,8 @@ async def update_rule(
 
 @router.delete("/rules/{rule_id}", status_code=204)
 async def delete_rule(rule_id: str, user=Depends(get_current_user)):
+    require_member(user)
+
     async with get_db() as db:
         async with db.begin():
             result = await db.execute(
@@ -154,6 +161,8 @@ async def list_events(project_id: str, user=Depends(get_current_user)):
 
 @router.post("/events/{event_id}/resolve")
 async def resolve_event(event_id: str, user=Depends(get_current_user)):
+    require_member(user)
+
     async with get_db() as db:
         async with db.begin():
             result = await db.execute(
