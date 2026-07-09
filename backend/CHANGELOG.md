@@ -1,6 +1,19 @@
 # CHANGELOG
 
 
+## v0.16.0 (2026-07-09)
+
+### Chores
+
+- Trigger ci for release sync
+  ([`0115af3`](https://github.com/makel0ve/llm-obs/commit/0115af31cabb7d59595efec63748e052331a9f8a))
+
+### Features
+
+- Add API key policies
+  ([`d337dcd`](https://github.com/makel0ve/llm-obs/commit/d337dcd49701b5becd1c3fc2095dd0d57e8b321d))
+
+
 ## v0.15.0 (2026-07-09)
 
 ### Chores
