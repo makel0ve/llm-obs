@@ -2,7 +2,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { lazy, Suspense, useState, type FormEvent, type ReactNode } from 'react'
 import { BrowserRouter, Routes, Route, Navigate, NavLink, Outlet } from 'react-router-dom'
 import { api } from './api/client'
-import { loginUser, registerUser } from './api/dashboard'
+import { loginUser, registerUser, type UserRole } from './api/dashboard'
 
 const queryClient = new QueryClient()
 const Overview = lazy(() => import('./pages/Overview').then(module => ({ default: module.Overview })))
@@ -11,24 +11,56 @@ const TraceDetail = lazy(() => import('./pages/TraceDetail').then(module => ({ d
 const Alerts = lazy(() => import('./pages/Alerts').then(module => ({ default: module.Alerts })))
 const ProjectSettings = lazy(() => import('./pages/ProjectSettings').then(module => ({ default: module.ProjectSettings })))
 const Pricing = lazy(() => import('./pages/Pricing').then(module => ({ default: module.Pricing })))
+const Users = lazy(() => import('./pages/Users').then(module => ({ default: module.Users })))
+const AcceptInvite = lazy(() => import('./pages/AcceptInvite').then(module => ({ default: module.AcceptInvite })))
 
 type AuthMode = 'login' | 'register'
 type DashboardNavItem = {
   label: string
   path: string
   end?: boolean
+  adminOnly?: boolean
 }
 
 const dashboardNavItems: DashboardNavItem[] = [
   { label: 'Overview', path: '/', end: true },
   { label: 'Traces', path: '/traces' },
   { label: 'Alerts', path: '/alerts' },
-  { label: 'Pricing', path: '/pricing' },
-  { label: 'Project Settings', path: '/project-settings' },
+  { label: 'Pricing', path: '/pricing', adminOnly: true },
+  { label: 'Users', path: '/users', adminOnly: true },
+  { label: 'Project Settings', path: '/project-settings', adminOnly: true },
 ]
 
-function DashboardNav({ variant = 'desktop' }: { variant?: 'desktop' | 'mobile' }) {
+function isUserRole(value: unknown): value is UserRole {
+  return value === 'admin' || value === 'member' || value === 'viewer'
+}
+
+function decodeJwtRole(token: string | null) {
+  if (!token) return null
+
+  try {
+    const payload = token.split('.')[1]
+    if (!payload) return null
+
+    const normalized = payload.replace(/-/g, '+').replace(/_/g, '/')
+    const padded = normalized.padEnd(normalized.length + ((4 - normalized.length % 4) % 4), '=')
+    const decoded = JSON.parse(atob(padded)) as { role?: unknown }
+    return isUserRole(decoded.role) ? decoded.role : null
+  } catch {
+    return null
+  }
+}
+
+function readStoredRole(): UserRole {
+  const stored = localStorage.getItem('role')
+  if (isUserRole(stored)) return stored
+
+  return decodeJwtRole(localStorage.getItem('token')) ?? 'viewer'
+}
+
+function DashboardNav({ role, variant = 'desktop' }: { role: UserRole; variant?: 'desktop' | 'mobile' }) {
   const isMobile = variant === 'mobile'
+  const visibleItems = dashboardNavItems.filter(item => !item.adminOnly || role === 'admin')
 
   return (
     <nav
@@ -39,7 +71,7 @@ function DashboardNav({ variant = 'desktop' }: { variant?: 'desktop' | 'mobile' 
       }
       aria-label="Dashboard"
     >
-      {dashboardNavItems.map(item => (
+      {visibleItems.map(item => (
         <NavLink
           key={item.path}
           to={item.path}
@@ -64,7 +96,7 @@ function DashboardNav({ variant = 'desktop' }: { variant?: 'desktop' | 'mobile' 
 function LoginPage({
   onLogin,
 }: {
-  onLogin: (token: string, pid: string, apiKey?: string) => void
+  onLogin: (token: string, pid: string, role: UserRole, apiKey?: string) => void
 }) {
   const [mode, setMode] = useState<AuthMode>('login')
   const [email, setEmail] = useState('')
@@ -84,10 +116,10 @@ function LoginPage({
           password,
           org_name: orgName,
         })
-        onLogin(res.access_token, res.project_id ?? '', res.api_key)
+        onLogin(res.access_token, res.project_id ?? '', res.role, res.api_key)
       } else {
         const res = await loginUser({ email, password })
-        onLogin(res.access_token, res.project_id ?? '')
+        onLogin(res.access_token, res.project_id ?? '', res.role)
       }
     } catch (err) {
       const status = err && typeof err === 'object' && 'response' in err
@@ -161,11 +193,13 @@ function LoginPage({
 function Dashboard({
   projectId,
   registrationApiKey,
+  role,
   onDismissApiKey,
   onLogout,
 }: {
   projectId: string
   registrationApiKey: string
+  role: UserRole
   onDismissApiKey: () => void
   onLogout: () => void
 }) {
@@ -185,12 +219,12 @@ function Dashboard({
             Logout
           </button>
         </div>
-        <DashboardNav variant="mobile" />
+        <DashboardNav role={role} variant="mobile" />
       </header>
 
       <div className="lg:flex">
         <aside className="hidden min-h-[calc(100svh-4rem)] w-64 shrink-0 border-r border-gray-200 bg-white lg:block">
-          <DashboardNav />
+          <DashboardNav role={role} />
         </aside>
         <main className="min-w-0 flex-1">
           {registrationApiKey && (
@@ -241,17 +275,24 @@ function PrivateRoute({ children }: { children: ReactNode }) {
   return token ? <>{children}</> : <Navigate to="/login" replace />
 }
 
+function AdminRoute({ role, children }: { role: UserRole; children: ReactNode }) {
+  return role === 'admin' ? <>{children}</> : <Navigate to="/" replace />
+}
+
 export default function App() {
   const [token, setToken] = useState(localStorage.getItem('token') ?? '')
   const [projectId, setProjectId] = useState(localStorage.getItem('projectId') ?? '')
+  const [role, setRole] = useState<UserRole>(readStoredRole)
   const [registrationApiKey, setRegistrationApiKey] = useState('')
 
-  const handleLogin = (t: string, pid: string, apiKey?: string) => {
+  const handleLogin = (t: string, pid: string, userRole: UserRole, apiKey?: string) => {
     localStorage.setItem('token', t)
     localStorage.setItem('projectId', pid)
+    localStorage.setItem('role', userRole)
     api.defaults.headers.common['Authorization'] = `Bearer ${t}`
     setToken(t)
     setProjectId(pid)
+    setRole(userRole)
     setRegistrationApiKey(apiKey ?? '')
   }
 
@@ -259,9 +300,11 @@ export default function App() {
     localStorage.removeItem('token')
     localStorage.removeItem('projectId')
     localStorage.removeItem('apiKey')
+    localStorage.removeItem('role')
     delete api.defaults.headers.common['Authorization']
     setToken('')
     setProjectId('')
+    setRole('viewer')
     setRegistrationApiKey('')
   }
 
@@ -269,6 +312,11 @@ export default function App() {
     <QueryClientProvider client={queryClient}>
       <BrowserRouter>
         <Routes>
+          <Route path="/accept-invite" element={
+            token
+              ? <Navigate to="/" replace />
+              : <LazyPage><AcceptInvite onLogin={handleLogin} /></LazyPage>
+          } />
           <Route path="/login" element={
             token ? <Navigate to="/" replace /> : <LoginPage onLogin={handleLogin} />
           } />
@@ -277,6 +325,7 @@ export default function App() {
               <Dashboard
                 projectId={projectId}
                 registrationApiKey={registrationApiKey}
+                role={role}
                 onDismissApiKey={() => setRegistrationApiKey('')}
                 onLogout={handleLogout}
               />
@@ -285,9 +334,10 @@ export default function App() {
             <Route index element={<LazyPage><Overview projectId={projectId} /></LazyPage>} />
             <Route path="traces" element={<LazyPage><Traces projectId={projectId} /></LazyPage>} />
             <Route path="traces/:traceId" element={<LazyPage><TraceDetail projectId={projectId} /></LazyPage>} />
-            <Route path="alerts" element={<LazyPage><Alerts projectId={projectId} /></LazyPage>} />
-            <Route path="pricing" element={<LazyPage><Pricing /></LazyPage>} />
-            <Route path="project-settings" element={<LazyPage><ProjectSettings projectId={projectId} /></LazyPage>} />
+            <Route path="alerts" element={<LazyPage><Alerts projectId={projectId} role={role} /></LazyPage>} />
+            <Route path="pricing" element={<AdminRoute role={role}><LazyPage><Pricing /></LazyPage></AdminRoute>} />
+            <Route path="users" element={<AdminRoute role={role}><LazyPage><Users role={role} /></LazyPage></AdminRoute>} />
+            <Route path="project-settings" element={<AdminRoute role={role}><LazyPage><ProjectSettings projectId={projectId} /></LazyPage></AdminRoute>} />
           </Route>
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>

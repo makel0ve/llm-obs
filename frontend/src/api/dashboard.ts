@@ -4,11 +4,13 @@ export type Period = '1h' | '24h' | '7d' | '30d'
 export type StatusFilter = 'all' | 'ok' | 'error'
 export type AlertMetric = 'latency_p95' | 'error_rate' | 'cost_hourly' | 'anomaly'
 export type AlertCondition = 'gt' | 'lt' | 'anomaly'
+export type UserRole = 'admin' | 'member' | 'viewer'
 
 export type AuthResponse = {
   access_token: string
   project_id?: string | null
   api_key?: string
+  role: UserRole
 }
 
 export type OverviewMetrics = {
@@ -233,6 +235,32 @@ export type PricingUpdate = {
   valid_to?: string | null
 }
 
+export type OrganizationUser = {
+  id: string
+  email: string
+  role: UserRole
+  is_active: boolean
+  created_at?: string | null
+}
+
+export type OrganizationUserCreate = {
+  email: string
+  role: UserRole
+}
+
+export type OrganizationInvite = {
+  id: string
+  email: string
+  role: UserRole
+  invite_token: string
+  expires_at: string
+}
+
+export type InviteAcceptPayload = {
+  token: string
+  password: string
+}
+
 export const dashboardQueryKeys = {
   overview: (projectId: string, period: Period) => ['metrics', 'overview', projectId, period] as const,
   timeseries: (projectId: string, period: Period) => ['metrics', 'timeseries', projectId, period] as const,
@@ -245,6 +273,7 @@ export const dashboardQueryKeys = {
   alertEvents: (projectId: string) => ['alert-events', projectId] as const,
   pricing: (provider: string, model: string, includeExpired: boolean) =>
     ['pricing', provider, model, includeExpired] as const,
+  users: () => ['users'] as const,
 }
 
 function projectParams(projectId: string) {
@@ -397,4 +426,28 @@ export async function endPricing(pricingId: number, validTo?: string | null) {
     valid_to: validTo ?? null,
   })
   return response.data
+}
+
+export async function listUsers() {
+  const response = await api.get<OrganizationUser[]>('/v1/users')
+  return response.data
+}
+
+export async function createOrganizationUser(payload: OrganizationUserCreate) {
+  const response = await api.post<OrganizationInvite>('/v1/users/invites', payload)
+  return response.data
+}
+
+export async function acceptOrganizationInvite(payload: InviteAcceptPayload) {
+  const response = await api.post<AuthResponse>('/v1/users/invites/accept', payload)
+  return response.data
+}
+
+export async function updateOrganizationUserRole(userId: string, role: UserRole) {
+  const response = await api.patch<OrganizationUser>(`/v1/users/${userId}/role`, { role })
+  return response.data
+}
+
+export async function deleteOrganizationUser(userId: string) {
+  await api.delete(`/v1/users/${userId}`)
 }

@@ -24,6 +24,7 @@ api.interceptors.response.use(
       localStorage.removeItem('token')
       localStorage.removeItem('apiKey')
       localStorage.removeItem('projectId')
+      localStorage.removeItem('role')
       window.location.href = '/'
     }
     return Promise.reject(error)
