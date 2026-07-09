@@ -74,7 +74,8 @@ The rotation response returns the replacement key once.
 For operational procedures after the first launch, see
 [docs/runbooks.md](docs/runbooks.md). It covers local development, production
 Docker Compose, environment variables, migrations, upgrades, rollbacks and
-post-deploy smoke checks.
+post-deploy smoke checks. Backup and restore procedures live in
+[docs/backup-restore.md](docs/backup-restore.md).
 
 ---
 

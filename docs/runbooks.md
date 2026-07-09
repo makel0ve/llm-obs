@@ -3,6 +3,9 @@
 Operational notes for local development and self-hosted Docker Compose
 deployments. Commands assume they are run from the repository root.
 
+For database and payload backups, restore order, and post-restore checks, see
+[backup-restore.md](backup-restore.md).
+
 ## Local Development
 
 Create the backend environment file:
