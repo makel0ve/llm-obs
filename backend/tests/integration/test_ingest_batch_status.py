@@ -41,9 +41,26 @@ class FakeRateLimiter:
         response.headers["X-RateLimit-Limit"] = "1000"
 
 
+class FakeResult:
+    def __init__(self, row=None):
+        self.row = row
+
+    def mappings(self):
+        return self
+
+    def one_or_none(self):
+        return self.row
+
+
 class FakeDb:
     async def execute(self, *args, **kwargs):
-        return None
+        return FakeResult(
+            {
+                "payload_storage_mode": "all",
+                "payload_max_bytes": 262144,
+                "payload_redact_keys": "api_key,password,secret,token,authorization",
+            }
+        )
 
     async def commit(self):
         return None

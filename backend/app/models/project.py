@@ -8,6 +8,7 @@ from sqlalchemy import (
     ForeignKey,
     Integer,
     String,
+    Text,
     UniqueConstraint,
     text,
 )
@@ -31,6 +32,18 @@ class Project(Base):
 
     api_key_hash: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
     retention_days: Mapped[int] = mapped_column(Integer, default=90, nullable=False)
+    payload_storage_mode: Mapped[str] = mapped_column(
+        String(20), default="all", server_default=text("'all'"), nullable=False
+    )
+    payload_max_bytes: Mapped[int] = mapped_column(
+        Integer, default=262144, server_default=text("262144"), nullable=False
+    )
+    payload_redact_keys: Mapped[str] = mapped_column(
+        Text,
+        default="api_key,password,secret,token,authorization",
+        server_default=text("'api_key,password,secret,token,authorization'"),
+        nullable=False,
+    )
     is_active: Mapped[bool] = mapped_column(
         Boolean, nullable=False, server_default=text("true")
     )
