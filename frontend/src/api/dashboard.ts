@@ -69,6 +69,40 @@ export type AnalyticsTrace = {
   started_at?: string | null
 }
 
+export type ErrorRatePoint = {
+  bucket: string
+  span_count?: number | string | null
+  error_count?: number | string | null
+  error_rate_pct?: number | string | null
+}
+
+export type ErrorMessageGroup = {
+  error_message: string
+  error_count?: number | string | null
+  last_seen_at?: string | null
+}
+
+export type ErrorsByModel = {
+  model: string
+  span_count?: number | string | null
+  error_count?: number | string | null
+  error_rate_pct?: number | string | null
+}
+
+export type ErrorsByProvider = {
+  provider: string
+  span_count?: number | string | null
+  error_count?: number | string | null
+  error_rate_pct?: number | string | null
+}
+
+export type FailedTrace = {
+  trace_id: string
+  started_at?: string | null
+  error_count?: number | string | null
+  error_message?: string | null
+}
+
 export type AnalyticsResponse = {
   cost_by_model: CostByModel[]
   cost_by_provider: CostByProvider[]
@@ -77,6 +111,11 @@ export type AnalyticsResponse = {
   latency_by_provider: LatencyByProvider[]
   top_expensive_traces: AnalyticsTrace[]
   slowest_traces: AnalyticsTrace[]
+  error_rate_trend: ErrorRatePoint[]
+  top_error_messages: ErrorMessageGroup[]
+  errors_by_model: ErrorsByModel[]
+  errors_by_provider: ErrorsByProvider[]
+  recent_failed_traces: FailedTrace[]
 }
 
 export type TraceSummary = {
