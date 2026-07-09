@@ -1,5 +1,7 @@
 import gzip
 import json
+from collections.abc import Mapping
+from typing import Any, cast
 
 import aioboto3
 import structlog
@@ -8,19 +10,72 @@ from app.core.config import settings
 
 log = structlog.get_logger()
 S3_THRESHOLD_BYTES = 4 * 1024
+DEFAULT_PAYLOAD_MAX_BYTES = 256 * 1024
+DEFAULT_REDACT_KEYS = "api_key,password,secret,token,authorization"
+REDACTED_VALUE = "[redacted]"
+
+
+def parse_redact_keys(value: str | None) -> set[str]:
+    if not value:
+        value = DEFAULT_REDACT_KEYS
+
+    return {item.strip().lower() for item in value.split(",") if item.strip()}
+
+
+def redact_payload(value: Any, redact_keys: set[str]) -> Any:
+    if isinstance(value, list):
+        return [redact_payload(item, redact_keys) for item in value]
+
+    if isinstance(value, Mapping):
+        redacted: dict[str, Any] = {}
+        for key, item in value.items():
+            key_text = str(key)
+            if key_text.lower() in redact_keys:
+                redacted[key_text] = REDACTED_VALUE
+            else:
+                redacted[key_text] = redact_payload(item, redact_keys)
+        return redacted
+
+    return value
+
+
+def should_store_payload(mode: str, has_error: bool) -> bool:
+    if mode == "none":
+        return False
+    if mode == "errors":
+        return has_error
+    return True
 
 
 class StorageService:
-    def __init__(self):
+    def __init__(self) -> None:
         self._session = aioboto3.Session()
 
     async def store_payload(
-        self, project_id: str, span_id: str, messages: list[dict], output: str | None
+        self,
+        project_id: str,
+        span_id: str,
+        messages: list[dict[str, Any]],
+        output: str | None,
+        max_bytes: int | None = DEFAULT_PAYLOAD_MAX_BYTES,
+        redact_keys: set[str] | None = None,
     ) -> str | None:
-        payload = json.dumps(
-            {"messages": messages, "output": output}, ensure_ascii=False
-        )
+        payload_data = {"messages": messages, "output": output}
+        if redact_keys:
+            payload_data = redact_payload(payload_data, redact_keys)
+
+        payload = json.dumps(payload_data, ensure_ascii=False)
         payload_bytes = payload.encode("utf-8")
+        if max_bytes is not None and len(payload_bytes) > max_bytes:
+            log.info(
+                "payload_dropped_by_size",
+                project_id=project_id,
+                span_id=span_id,
+                payload_bytes=len(payload_bytes),
+                max_bytes=max_bytes,
+            )
+            return None
+
         if len(payload_bytes) < S3_THRESHOLD_BYTES:
             return None
 
@@ -48,7 +103,7 @@ class StorageService:
             log.error("s3_store_failed", span_id=span_id, error=str(e))
             return None
 
-    async def get_payload(self, s3_key: str) -> dict | None:
+    async def get_payload(self, s3_key: str) -> dict[str, Any] | None:
         try:
             async with self._session.client(
                 "s3",
@@ -58,7 +113,7 @@ class StorageService:
             ) as s3:
                 response = await s3.get_object(Bucket=settings.s3_bucket, Key=s3_key)
                 data = gzip.decompress(await response["Body"].read())
-                return json.loads(data)
+                return cast(dict[str, Any], json.loads(data))
 
         except Exception as e:
             log.error("s3_get_failed", key=s3_key, error=str(e))

@@ -4,11 +4,13 @@ import { api } from '../api/client'
 import {
   createProjectApiKey,
   dashboardQueryKeys,
+  getProjectSettings,
   listProjectApiKeys,
   revokeProjectApiKey,
   rotateProjectApiKey,
   updateProjectSettings,
   type ApiKeyScope,
+  type PayloadStorageMode,
 } from '../api/dashboard'
 
 type CopyState = 'idle' | 'copied' | 'failed'
@@ -17,11 +19,22 @@ type ApiKeyDraft = {
   description: string
   scope: ApiKeyScope
 }
+type PayloadPrivacyDraft = {
+  payload_storage_mode: PayloadStorageMode | null
+  payload_max_bytes: string | null
+  payload_redact_keys: string | null
+}
 
 const scopeOptions: Array<{ value: ApiKeyScope; label: string }> = [
   { value: 'ingest', label: 'Ingest only' },
   { value: 'read', label: 'Read only' },
   { value: 'read_write', label: 'Read/write' },
+]
+
+const payloadModeOptions: Array<{ value: PayloadStorageMode; label: string; help: string }> = [
+  { value: 'all', label: 'Store all large payloads', help: 'Keep stored objects for spans that exceed the inline threshold.' },
+  { value: 'errors', label: 'Store only error payloads', help: 'Keep payload objects only for failed spans.' },
+  { value: 'none', label: 'Do not store payloads', help: 'Drop payload objects before S3 storage.' },
 ]
 
 function CopyButton({ value, label = 'Copy' }: { value: string; label?: string }) {
@@ -103,9 +116,15 @@ function formatScope(scope: ApiKeyScope) {
 
 export function ProjectSettings({ projectId }: { projectId: string }) {
   const queryClient = useQueryClient()
-  const [retentionDays, setRetentionDays] = useState('90')
+  const [retentionDays, setRetentionDays] = useState<string | null>(null)
   const [savedRetentionDays, setSavedRetentionDays] = useState<number | null>(null)
   const [settingsStatus, setSettingsStatus] = useState<'idle' | 'saving' | 'success' | 'error'>('idle')
+  const [privacyDraft, setPrivacyDraft] = useState<PayloadPrivacyDraft>({
+    payload_storage_mode: null,
+    payload_max_bytes: null,
+    payload_redact_keys: null,
+  })
+  const [privacyStatus, setPrivacyStatus] = useState<'idle' | 'saving' | 'success' | 'error'>('idle')
   const [rotateStatus, setRotateStatus] = useState<'idle' | 'rotating' | 'success' | 'error'>('idle')
   const [newApiKey, setNewApiKey] = useState('')
   const [keyDraft, setKeyDraft] = useState<ApiKeyDraft>({
@@ -115,6 +134,12 @@ export function ProjectSettings({ projectId }: { projectId: string }) {
   })
   const [keyError, setKeyError] = useState('')
   const [createdApiKey, setCreatedApiKey] = useState('')
+
+  const settingsQuery = useQuery({
+    queryKey: dashboardQueryKeys.projectSettings(projectId),
+    queryFn: () => getProjectSettings(projectId),
+    enabled: !!projectId,
+  })
 
   const apiKeysQuery = useQuery({
     queryKey: dashboardQueryKeys.apiKeys(projectId),
@@ -160,18 +185,49 @@ async def call_llm(prompt: str) -> str:
 
 await call_llm("Hello")
 await llm_obs.shutdown()`
+  const retentionValue = retentionDays ?? String(settingsQuery.data?.retention_days ?? 90)
+  const payloadModeValue = privacyDraft.payload_storage_mode ?? settingsQuery.data?.payload_storage_mode ?? 'all'
+  const payloadMaxBytesValue = privacyDraft.payload_max_bytes ?? String(settingsQuery.data?.payload_max_bytes ?? 262144)
+  const payloadRedactKeysValue =
+    privacyDraft.payload_redact_keys ??
+    settingsQuery.data?.payload_redact_keys ??
+    'api_key,password,secret,token,authorization'
 
   const updateRetention = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     setSettingsStatus('saving')
 
     try {
-      const days = Number(retentionDays)
-      const response = await updateProjectSettings(projectId, days)
+      const days = Number(retentionValue)
+      const response = await updateProjectSettings(projectId, { retention_days: days })
+      setRetentionDays(String(response.retention_days))
       setSavedRetentionDays(response.retention_days)
       setSettingsStatus('success')
     } catch {
       setSettingsStatus('error')
+    }
+  }
+
+  const updatePayloadPrivacy = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    setPrivacyStatus('saving')
+
+    try {
+      const maxBytes = Number(payloadMaxBytesValue)
+      const response = await updateProjectSettings(projectId, {
+        payload_storage_mode: payloadModeValue,
+        payload_max_bytes: maxBytes,
+        payload_redact_keys: payloadRedactKeysValue,
+      })
+      setPrivacyDraft({
+        payload_storage_mode: response.payload_storage_mode,
+        payload_max_bytes: String(response.payload_max_bytes),
+        payload_redact_keys: response.payload_redact_keys,
+      })
+      await queryClient.invalidateQueries({ queryKey: dashboardQueryKeys.projectSettings(projectId) })
+      setPrivacyStatus('success')
+    } catch {
+      setPrivacyStatus('error')
     }
   }
 
@@ -247,7 +303,7 @@ await llm_obs.shutdown()`
                 type="number"
                 min={7}
                 max={365}
-                value={retentionDays}
+                value={retentionValue}
                 onChange={event => setRetentionDays(event.target.value)}
                 className="mt-2 min-h-10 w-full rounded-md border border-gray-300 bg-white px-3 text-sm text-gray-900"
                 required
@@ -306,6 +362,95 @@ await llm_obs.shutdown()`
             </div>
           )}
         </div>
+      </section>
+
+      <section className="rounded-lg border border-gray-200 bg-white p-4">
+        <h2 className="text-lg font-semibold text-gray-950">Payload privacy</h2>
+        <p className="mt-1 text-sm text-gray-500">Control how sensitive LLM input and output payloads are stored.</p>
+        {settingsQuery.isError && (
+          <div className="mt-4">
+            <Alert tone="error">Could not load payload privacy settings.</Alert>
+          </div>
+        )}
+        <form onSubmit={updatePayloadPrivacy} className="mt-4 space-y-4">
+          <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(240px,1fr)_220px]">
+            <div>
+              <span className="text-sm font-medium text-gray-700">Payload storage</span>
+              <div className="mt-2 grid grid-cols-1 gap-2 rounded-md border border-gray-200 bg-gray-50 p-1 sm:grid-cols-3">
+                {payloadModeOptions.map(option => {
+                  const selected = option.value === payloadModeValue
+
+                  return (
+                    <button
+                      key={option.value}
+                      type="button"
+                      onClick={() => setPrivacyDraft(current => ({
+                        ...current,
+                        payload_storage_mode: option.value,
+                      }))}
+                      className={`min-h-10 rounded px-3 text-left text-sm font-medium transition sm:text-center ${
+                        selected
+                          ? 'bg-gray-900 text-white shadow-sm'
+                          : 'text-gray-700 hover:bg-white hover:text-gray-950'
+                      }`}
+                    >
+                      {option.label}
+                    </button>
+                  )
+                })}
+              </div>
+              <span className="mt-1 block text-xs text-gray-500">
+                {payloadModeOptions.find(option => option.value === payloadModeValue)?.help}
+              </span>
+            </div>
+            <label className="block">
+              <span className="text-sm font-medium text-gray-700">Max payload bytes</span>
+              <input
+                type="number"
+                min={0}
+                max={10 * 1024 * 1024}
+                value={payloadMaxBytesValue}
+                onChange={event => setPrivacyDraft(current => ({
+                  ...current,
+                  payload_max_bytes: event.target.value,
+                }))}
+                className="mt-2 min-h-10 w-full rounded-md border border-gray-300 bg-white px-3 text-sm text-gray-900"
+                required
+              />
+            </label>
+          </div>
+          <label className="block">
+            <span className="text-sm font-medium text-gray-700">Redact keys</span>
+            <input
+              value={payloadRedactKeysValue}
+              onChange={event => setPrivacyDraft(current => ({
+                ...current,
+                payload_redact_keys: event.target.value,
+              }))}
+              className="mt-2 min-h-10 w-full rounded-md border border-gray-300 bg-white px-3 text-sm text-gray-900"
+              placeholder="api_key,password,secret,token,authorization"
+              maxLength={1000}
+            />
+            <span className="mt-1 block text-xs text-gray-500">Comma-separated field names are matched case-insensitively before payload storage.</span>
+          </label>
+          <button
+            type="submit"
+            disabled={privacyStatus === 'saving' || settingsQuery.isLoading}
+            className="min-h-10 rounded-md bg-gray-900 px-4 text-sm font-medium text-white hover:bg-gray-700 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {privacyStatus === 'saving' ? 'Saving...' : 'Save payload privacy'}
+          </button>
+        </form>
+        {privacyStatus === 'success' && (
+          <div className="mt-4">
+            <Alert tone="success">Payload privacy settings updated.</Alert>
+          </div>
+        )}
+        {privacyStatus === 'error' && (
+          <div className="mt-4">
+            <Alert tone="error">Could not update payload privacy settings.</Alert>
+          </div>
+        )}
       </section>
 
       <section className="space-y-4">

@@ -14,6 +14,7 @@ from app.schemas.projects import (
     ProjectApiKeyCreate,
     ProjectApiKeyCreateResponse,
     ProjectApiKeyRecord,
+    ProjectSettings,
     ProjectSettingsUpdate,
 )
 from app.services.audit import log_audit
@@ -208,23 +209,72 @@ async def revoke_api_key(
     return {"revoked": True}
 
 
-@router.patch("/{project_id}/settings")
-async def update_settings(
-    project_id: str,
-    body: ProjectSettingsUpdate,
-    user: dict[str, Any] = Depends(get_current_user),
-) -> dict[str, int]:
+@router.get("/{project_id}/settings", response_model=ProjectSettings)
+async def get_settings(
+    project_id: str, user: dict[str, Any] = Depends(get_current_user)
+) -> dict[str, Any]:
     require_admin(user)
 
     async with get_db() as db:
         result = await db.execute(
             text(
-                "UPDATE projects SET retention_days = :days "
-                "WHERE id = :id AND org_id = :org RETURNING id"
+                """
+                SELECT retention_days, payload_storage_mode, payload_max_bytes,
+                    payload_redact_keys
+                FROM projects
+                WHERE id = :id AND org_id = :org
+                """
             ),
-            {"days": body.retention_days, "id": project_id, "org": user["org_id"]},
+            {"id": project_id, "org": user["org_id"]},
         )
-        if not result.one_or_none():
+        row = result.mappings().one_or_none()
+        if not row:
+            raise HTTPException(404, "Project not found")
+
+    return dict(row)
+
+
+@router.patch("/{project_id}/settings")
+async def update_settings(
+    project_id: str,
+    body: ProjectSettingsUpdate,
+    user: dict[str, Any] = Depends(get_current_user),
+) -> dict[str, Any]:
+    require_admin(user)
+    values = body.model_dump(exclude_unset=True)
+    if not values:
+        raise HTTPException(400, "No settings provided")
+
+    redact_keys = values.get("payload_redact_keys")
+    if isinstance(redact_keys, str):
+        values["payload_redact_keys"] = redact_keys.strip()
+
+    allowed_fields = {
+        "retention_days",
+        "payload_storage_mode",
+        "payload_max_bytes",
+        "payload_redact_keys",
+    }
+    if not set(values).issubset(allowed_fields):
+        raise HTTPException(400, "Unsupported settings field")
+
+    set_clause = ", ".join(f"{field} = :{field}" for field in values)
+
+    async with get_db() as db:
+        result = await db.execute(
+            text(
+                f"""
+                UPDATE projects
+                SET {set_clause}
+                WHERE id = :id AND org_id = :org
+                RETURNING retention_days, payload_storage_mode, payload_max_bytes,
+                    payload_redact_keys
+                """
+            ),
+            values | {"id": project_id, "org": user["org_id"]},
+        )
+        row = result.mappings().one_or_none()
+        if not row:
             raise HTTPException(404, "Project not found")
 
         await db.commit()
@@ -234,7 +284,7 @@ async def update_settings(
         user_id=user["sub"],
         action="project.settings.update",
         resource_id=project_id,
-        metadata={"retention_days": body.retention_days},
+        metadata=values,
     )
 
-    return {"retention_days": body.retention_days}
+    return dict(row)
