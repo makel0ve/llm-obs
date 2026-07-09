@@ -71,6 +71,11 @@ curl -X POST http://localhost:8000/v1/projects/YOUR_PROJECT_ID/rotate-key \
 
 The rotation response returns the replacement key once.
 
+For operational procedures after the first launch, see
+[docs/runbooks.md](docs/runbooks.md). It covers local development, production
+Docker Compose, environment variables, migrations, upgrades, rollbacks and
+post-deploy smoke checks.
+
 ---
 
 ## SDK Integration
@@ -434,7 +439,6 @@ handle their own errors without triggering that redirect.
 ## Known Limitations (v1)
 
 - Dashboard shows one project per login session (multi-project selector coming in v2)
-- Model pricing must be configured via SQL (admin UI coming in v2)
 - Dead Letter Queue is implemented but not automatically connected to retry middleware
 - Frontend component/unit tests are not configured yet
 - OpenAI and Anthropic integration tests require real API keys
@@ -445,7 +449,6 @@ handle their own errors without triggering that redirect.
 
 - [ ] Registration and user management UI
 - [ ] Multi-project selector in dashboard
-- [ ] Admin UI for model pricing
 - [ ] DLQ integration with retry middleware
 - [ ] Trace waterfall visualization in frontend
 - [ ] Provider integration tests with mocked OpenAI and Anthropic clients
