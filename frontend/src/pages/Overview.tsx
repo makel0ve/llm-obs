@@ -21,6 +21,10 @@ import {
   type AnalyticsTrace,
   type CostByModel,
   type CostByProvider,
+  type ErrorMessageGroup,
+  type ErrorsByModel,
+  type ErrorsByProvider,
+  type FailedTrace,
   type LatencyByModel,
   type LatencyByProvider,
   type Period,
@@ -43,6 +47,13 @@ function formatBucket(value: string, period: Period) {
 }
 
 function traceHref(trace: AnalyticsTrace) {
+  const params = new URLSearchParams()
+  if (trace.started_at) params.set('started_at', trace.started_at)
+  const query = params.toString()
+  return `/traces/${trace.trace_id}${query ? `?${query}` : ''}`
+}
+
+function failedTraceHref(trace: FailedTrace) {
   const params = new URLSearchParams()
   if (trace.started_at) params.set('started_at', trace.started_at)
   const query = params.toString()
@@ -248,6 +259,198 @@ function TraceRankingTable({
   )
 }
 
+function ErrorBreakdownTable({
+  title,
+  label,
+  rows,
+}: {
+  title: string
+  label: string
+  rows: Array<ErrorsByModel | ErrorsByProvider>
+}) {
+  return (
+    <div className="overflow-hidden rounded-lg border border-gray-200 bg-white">
+      <div className="border-b border-gray-100 px-4 py-3">
+        <h2 className="text-sm font-semibold text-gray-950">{title}</h2>
+      </div>
+      <div className="overflow-x-auto">
+        <table className="min-w-full divide-y divide-gray-100 text-sm">
+          <thead className="bg-gray-50 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">
+            <tr>
+              <th className="px-4 py-3">{label}</th>
+              <th className="px-4 py-3">Error rate</th>
+              <th className="px-4 py-3">Errors</th>
+              <th className="px-4 py-3">Spans</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-gray-100">
+            {rows.length === 0 ? (
+              <tr>
+                <td className="px-4 py-4 text-gray-500" colSpan={4}>
+                  No data
+                </td>
+              </tr>
+            ) : (
+              rows.map(row => {
+                const value = 'model' in row ? row.model : row.provider
+                return (
+                  <tr key={value}>
+                    <td className="px-4 py-3 font-medium text-gray-950">{value}</td>
+                    <td className="px-4 py-3 text-gray-700">{Number(row.error_rate_pct ?? 0).toFixed(2)}%</td>
+                    <td className="px-4 py-3 text-gray-700">{formatNumber(row.error_count)}</td>
+                    <td className="px-4 py-3 text-gray-700">{formatNumber(row.span_count)}</td>
+                  </tr>
+                )
+              })
+            )}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  )
+}
+
+function ErrorMessagesTable({ rows }: { rows: ErrorMessageGroup[] }) {
+  return (
+    <div className="overflow-hidden rounded-lg border border-gray-200 bg-white">
+      <div className="border-b border-gray-100 px-4 py-3">
+        <h2 className="text-sm font-semibold text-gray-950">Top error messages</h2>
+      </div>
+      <div className="overflow-x-auto">
+        <table className="min-w-full divide-y divide-gray-100 text-sm">
+          <thead className="bg-gray-50 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">
+            <tr>
+              <th className="px-4 py-3">Message</th>
+              <th className="px-4 py-3">Errors</th>
+              <th className="px-4 py-3">Last seen</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-gray-100">
+            {rows.length === 0 ? (
+              <tr>
+                <td className="px-4 py-4 text-gray-500" colSpan={3}>
+                  No data
+                </td>
+              </tr>
+            ) : (
+              rows.map(row => (
+                <tr key={`${row.error_message}-${row.last_seen_at ?? ''}`}>
+                  <td className="max-w-[34rem] px-4 py-3 text-gray-950">
+                    <div className="truncate" title={row.error_message}>
+                      {row.error_message}
+                    </div>
+                  </td>
+                  <td className="px-4 py-3 text-gray-700">{formatNumber(row.error_count)}</td>
+                  <td className="whitespace-nowrap px-4 py-3 text-gray-700">
+                    {row.last_seen_at ? format(new Date(row.last_seen_at), 'dd MMM HH:mm') : '-'}
+                  </td>
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  )
+}
+
+function FailedTracesTable({ rows }: { rows: FailedTrace[] }) {
+  return (
+    <div className="overflow-hidden rounded-lg border border-gray-200 bg-white">
+      <div className="border-b border-gray-100 px-4 py-3">
+        <h2 className="text-sm font-semibold text-gray-950">Recent failed traces</h2>
+      </div>
+      <div className="overflow-x-auto">
+        <table className="min-w-full divide-y divide-gray-100 text-sm">
+          <thead className="bg-gray-50 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">
+            <tr>
+              <th className="px-4 py-3">Trace</th>
+              <th className="px-4 py-3">Errors</th>
+              <th className="px-4 py-3">Last error</th>
+              <th className="px-4 py-3">Started</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-gray-100">
+            {rows.length === 0 ? (
+              <tr>
+                <td className="px-4 py-4 text-gray-500" colSpan={4}>
+                  No data
+                </td>
+              </tr>
+            ) : (
+              rows.map(trace => (
+                <tr key={trace.trace_id}>
+                  <td className="px-4 py-3">
+                    <Link className="font-medium text-blue-600 hover:text-blue-700" to={failedTraceHref(trace)}>
+                      {trace.trace_id.slice(0, 8)}
+                    </Link>
+                  </td>
+                  <td className="px-4 py-3 text-gray-700">{formatNumber(trace.error_count)}</td>
+                  <td className="max-w-[28rem] px-4 py-3 text-gray-700">
+                    <div className="truncate" title={trace.error_message ?? ''}>
+                      {trace.error_message ?? '-'}
+                    </div>
+                  </td>
+                  <td className="whitespace-nowrap px-4 py-3 text-gray-700">
+                    {trace.started_at ? format(new Date(trace.started_at), 'dd MMM HH:mm') : '-'}
+                  </td>
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  )
+}
+
+function ErrorAnalyticsSections({
+  analytics,
+  period,
+}: {
+  analytics?: AnalyticsResponse
+  period: Period
+}) {
+  return (
+    <div className="space-y-4">
+      <ChartCard title="Error rate trend">
+        <ResponsiveLineChart
+          chartKey={`error-rate-${period}`}
+          data={analytics?.error_rate_trend ?? []}
+          height={220}
+          yAxisTickFormatter={value => `${Number(value).toFixed(0)}%`}
+        >
+          <XAxis dataKey="bucket" tickFormatter={value => formatBucket(value, period)} />
+          <Tooltip
+            formatter={value => [`${Number(value ?? 0).toFixed(2)}%`, 'Error rate']}
+            labelFormatter={value => format(new Date(value), 'dd MMM HH:mm')}
+          />
+          <Line
+            type="linear"
+            dataKey="error_rate_pct"
+            stroke="#dc2626"
+            dot={false}
+            strokeWidth={2}
+            isAnimationActive
+            animationDuration={450}
+            animationEasing="ease-out"
+          />
+        </ResponsiveLineChart>
+      </ChartCard>
+
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+        <ErrorBreakdownTable title="Errors by model" label="Model" rows={analytics?.errors_by_model ?? []} />
+        <ErrorBreakdownTable title="Errors by provider" label="Provider" rows={analytics?.errors_by_provider ?? []} />
+      </div>
+
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+        <ErrorMessagesTable rows={analytics?.top_error_messages ?? []} />
+        <FailedTracesTable rows={analytics?.recent_failed_traces ?? []} />
+      </div>
+    </div>
+  )
+}
+
 function AnalyticsSections({
   analytics,
   period,
@@ -428,6 +631,7 @@ export function Overview({ projectId }: { projectId: string }) {
               />
             </ResponsiveLineChart>
           </ChartCard>
+          <ErrorAnalyticsSections analytics={analytics} period={period} />
           <AnalyticsSections analytics={analytics} period={period} />
         </>
       )}
