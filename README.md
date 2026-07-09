@@ -71,6 +71,11 @@ curl -X POST http://localhost:8000/v1/projects/YOUR_PROJECT_ID/rotate-key \
 
 The rotation response returns the replacement key once.
 
+Admins can control sensitive payload storage in Project Settings. Large
+input/output payload objects can be stored for all spans, only failed spans, or
+not stored at all. The same section also sets the maximum stored payload size
+and comma-separated field names that are redacted before any S3/MinIO write.
+
 For operational procedures after the first launch, see
 [docs/runbooks.md](docs/runbooks.md). It covers local development, production
 Docker Compose, environment variables, migrations, upgrades, rollbacks and

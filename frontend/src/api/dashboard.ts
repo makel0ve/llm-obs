@@ -6,6 +6,7 @@ export type AlertMetric = 'latency_p95' | 'error_rate' | 'cost_hourly' | 'anomal
 export type AlertCondition = 'gt' | 'lt' | 'anomaly'
 export type UserRole = 'admin' | 'member' | 'viewer'
 export type ApiKeyScope = 'ingest' | 'read' | 'read_write'
+export type PayloadStorageMode = 'all' | 'errors' | 'none'
 
 export type AuthResponse = {
   access_token: string
@@ -168,6 +169,15 @@ export type TraceDetailResponse = {
   spans: TraceSpan[]
 }
 
+export type ProjectSettings = {
+  retention_days: number
+  payload_storage_mode: PayloadStorageMode
+  payload_max_bytes: number
+  payload_redact_keys: string
+}
+
+export type ProjectSettingsUpdate = Partial<ProjectSettings>
+
 export type AlertRule = {
   id: string
   project_id: string
@@ -296,6 +306,7 @@ export const dashboardQueryKeys = {
   pricing: (provider: string, model: string, includeExpired: boolean) =>
     ['pricing', provider, model, includeExpired] as const,
   users: () => ['users'] as const,
+  projectSettings: (projectId: string) => ['project-settings', projectId] as const,
   apiKeys: (projectId: string) => ['api-keys', projectId] as const,
 }
 
@@ -404,10 +415,13 @@ export async function resolveAlertEvent(eventId: string) {
   await api.post(`/v1/alerts/events/${eventId}/resolve`)
 }
 
-export async function updateProjectSettings(projectId: string, retentionDays: number) {
-  const response = await api.patch<{ retention_days: number }>(`/v1/projects/${projectId}/settings`, {
-    retention_days: retentionDays,
-  })
+export async function getProjectSettings(projectId: string) {
+  const response = await api.get<ProjectSettings>(`/v1/projects/${projectId}/settings`)
+  return response.data
+}
+
+export async function updateProjectSettings(projectId: string, payload: ProjectSettingsUpdate) {
+  const response = await api.patch<ProjectSettings>(`/v1/projects/${projectId}/settings`, payload)
   return response.data
 }
 

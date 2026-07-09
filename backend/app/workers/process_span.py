@@ -2,6 +2,7 @@ import json
 import time
 import uuid
 from datetime import datetime
+from typing import Any, TypedDict
 
 import structlog
 from dateutil.parser import parse as parse_dt
@@ -21,13 +22,55 @@ from app.services.anomaly import AnomalyService
 from app.services.cost import CostService
 from app.services.ingest import BatchStatusService, bulk_insert_spans
 from app.services.notifications import NotificationService
-from app.services.storage import StorageService
+from app.services.storage import (
+    DEFAULT_PAYLOAD_MAX_BYTES,
+    DEFAULT_REDACT_KEYS,
+    StorageService,
+    parse_redact_keys,
+    should_store_payload,
+)
 
 log = structlog.get_logger()
 
 
+class PayloadPrivacySettings(TypedDict):
+    payload_storage_mode: str
+    payload_max_bytes: int
+    payload_redact_keys: str
+
+
+async def load_payload_privacy_settings(
+    db: Any, project_id: str
+) -> PayloadPrivacySettings:
+    result = await db.execute(
+        text(
+            """
+            SELECT payload_storage_mode, payload_max_bytes, payload_redact_keys
+            FROM projects
+            WHERE id = :project_id
+            """
+        ),
+        {"project_id": project_id},
+    )
+    row = result.mappings().one_or_none()
+    if not row:
+        return {
+            "payload_storage_mode": "all",
+            "payload_max_bytes": DEFAULT_PAYLOAD_MAX_BYTES,
+            "payload_redact_keys": DEFAULT_REDACT_KEYS,
+        }
+
+    return {
+        "payload_storage_mode": row["payload_storage_mode"] or "all",
+        "payload_max_bytes": row["payload_max_bytes"] or DEFAULT_PAYLOAD_MAX_BYTES,
+        "payload_redact_keys": row["payload_redact_keys"] or DEFAULT_REDACT_KEYS,
+    }
+
+
 @broker.task(retry_on_error=True, max_retries=3)
-async def process_span_batch(batch_id: str, project_id: str, spans: list[dict]) -> None:
+async def process_span_batch(
+    batch_id: str, project_id: str, spans: list[dict[str, Any]]
+) -> None:
     log.info("processing_batch", batch_id=batch_id, count=len(spans))
     started_at_monotonic = time.perf_counter()
     cost_svc = CostService()
@@ -38,7 +81,13 @@ async def process_span_batch(batch_id: str, project_id: str, spans: list[dict]) 
 
     try:
         async with get_db(project_id=project_id) as db:
-            prepared_spans = []
+            payload_settings = await load_payload_privacy_settings(db, project_id)
+            payload_mode = str(payload_settings["payload_storage_mode"])
+            payload_max_bytes = int(payload_settings["payload_max_bytes"])
+            payload_redact_keys = parse_redact_keys(
+                str(payload_settings["payload_redact_keys"])
+            )
+            prepared_spans: list[dict[str, Any]] = []
             failed_count = 0
             for span_data in spans:
                 try:
@@ -56,12 +105,18 @@ async def process_span_batch(batch_id: str, project_id: str, spans: list[dict]) 
                         at_time=started_at,
                     )
 
-                    s3_key = await storage_svc.store_payload(
-                        project_id=project_id,
-                        span_id=span_data["span_id"],
-                        messages=span_data.get("input_messages", []),
-                        output=span_data.get("output"),
-                    )
+                    s3_key = None
+                    if should_store_payload(
+                        payload_mode, has_error=bool(span_data.get("error"))
+                    ):
+                        s3_key = await storage_svc.store_payload(
+                            project_id=project_id,
+                            span_id=span_data["span_id"],
+                            messages=span_data.get("input_messages", []),
+                            output=span_data.get("output"),
+                            max_bytes=payload_max_bytes,
+                            redact_keys=payload_redact_keys,
+                        )
 
                     prepared_spans.append(
                         {
@@ -95,7 +150,7 @@ async def process_span_batch(batch_id: str, project_id: str, spans: list[dict]) 
 
             await bulk_insert_spans(prepared_spans, db)
 
-            trace_map: dict = {}
+            trace_map: dict[Any, dict[str, Any]] = {}
             for span in prepared_spans:
                 tid = span["trace_id"]
                 if (
@@ -216,7 +271,7 @@ async def update_trace_aggregates(
 
 
 @broker.task
-async def check_batch_anomalies(project_id: str, spans: list[dict]) -> None:
+async def check_batch_anomalies(project_id: str, spans: list[dict[str, Any]]) -> None:
     anomaly_svc = AnomalyService()
     notification_svc = NotificationService()
 

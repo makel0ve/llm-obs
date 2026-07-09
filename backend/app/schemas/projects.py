@@ -4,10 +4,21 @@ from typing import Literal
 from pydantic import BaseModel, Field
 
 ApiKeyScope = Literal["ingest", "read", "read_write"]
+PayloadStorageMode = Literal["all", "errors", "none"]
+
+
+class ProjectSettings(BaseModel):
+    retention_days: int
+    payload_storage_mode: PayloadStorageMode
+    payload_max_bytes: int
+    payload_redact_keys: str
 
 
 class ProjectSettingsUpdate(BaseModel):
-    retention_days: int = Field(ge=7, le=365)
+    retention_days: int | None = Field(default=None, ge=7, le=365)
+    payload_storage_mode: PayloadStorageMode | None = None
+    payload_max_bytes: int | None = Field(default=None, ge=0, le=10 * 1024 * 1024)
+    payload_redact_keys: str | None = Field(default=None, max_length=1000)
 
 
 class ProjectApiKeyCreate(BaseModel):
