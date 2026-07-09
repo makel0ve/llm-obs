@@ -6,6 +6,7 @@ from sqlalchemy import text
 
 from app.core.auth import get_current_user
 from app.core.db import get_db
+from app.core.rbac import require_admin
 from app.core.redis import get_redis
 from app.schemas.projects import ProjectSettingsUpdate
 from app.services.audit import log_audit
@@ -15,6 +16,8 @@ router = APIRouter(prefix="/v1/projects", tags=["projects"])
 
 @router.post("/{project_id}/rotate-key")
 async def rotate_api_key(project_id: str, user=Depends(get_current_user)):
+    require_admin(user)
+
     raw_key = f"llmobs_{secrets.token_urlsafe(32)}"
     new_hash = hashlib.sha256(raw_key.encode()).hexdigest()
 
@@ -59,6 +62,8 @@ async def rotate_api_key(project_id: str, user=Depends(get_current_user)):
 async def update_settings(
     project_id: str, body: ProjectSettingsUpdate, user=Depends(get_current_user)
 ):
+    require_admin(user)
+
     async with get_db() as db:
         result = await db.execute(
             text(

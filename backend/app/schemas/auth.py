@@ -15,6 +15,7 @@ class LoginRequest(BaseModel):
 class TokenResponse(BaseModel):
     access_token: str
     token_type: str
+    role: str
 
 
 class RegisterResponse(TokenResponse):

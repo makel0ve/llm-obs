@@ -20,6 +20,7 @@ from app.api.v1 import (
     pricing,
     projects,
     traces,
+    users,
 )
 from app.core.config import settings
 from app.core.metrics import setup_metrics
@@ -101,6 +102,7 @@ for router in [
     pricing.router,
     auth.router,
     projects.router,
+    users.router,
     health.router,
     otlp.router,
 ]:

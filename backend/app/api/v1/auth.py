@@ -77,6 +77,7 @@ async def register(body: RegisterRequest):
     return {
         "access_token": create_access_token(user_id, org_id, "admin"),
         "token_type": "bearer",
+        "role": "admin",
         "api_key": raw_key,
         "project_id": project_id,
     }
@@ -116,5 +117,6 @@ async def login(body: LoginRequest):
             str(user["id"]), str(user["org_id"]), user["role"]
         ),
         "token_type": "bearer",
+        "role": user["role"],
         "project_id": str(project["id"]) if project else None,
     }
