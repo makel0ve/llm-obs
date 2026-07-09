@@ -1,6 +1,7 @@
 import hashlib
 import json
 from datetime import UTC, datetime, timedelta
+from typing import Any, Literal, cast
 
 from fastapi import Depends, Header, HTTPException, Query
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
@@ -16,6 +17,7 @@ pwd_context = CryptContext(
     schemes=["bcrypt"], deprecated="auto", bcrypt__rounds=12, truncate_error=False
 )
 bearer_scheme = HTTPBearer(auto_error=False)
+ApiKeyScope = Literal["ingest", "read", "read_write"]
 
 
 def hash_password(password: str) -> str:
@@ -41,9 +43,15 @@ def create_access_token(user_id: str, org_id: str, role: str) -> str:
     )
 
 
+def api_key_allows(scope: str | None, required_scope: ApiKeyScope) -> bool:
+    if scope == "read_write":
+        return True
+    return scope == required_scope
+
+
 async def get_current_user(
     creds: HTTPAuthorizationCredentials | None = Depends(bearer_scheme),
-) -> dict:
+) -> dict[str, Any]:
     if not creds:
         raise HTTPException(status_code=401, detail="Not authenticated")
 
@@ -65,7 +73,8 @@ async def get_current_user(
 async def get_project_from_api_key(
     creds: HTTPAuthorizationCredentials | None = Depends(bearer_scheme),
     x_api_key: str | None = Header(default=None, alias="X-API-Key"),
-) -> dict:
+    required_scope: ApiKeyScope = "ingest",
+) -> dict[str, Any]:
     api_key = x_api_key or (creds.credentials if creds else None)
     if not api_key:
         raise HTTPException(status_code=401, detail="API key required")
@@ -76,23 +85,50 @@ async def get_project_from_api_key(
 
     cached = await redis.get(cache_key)
     if cached:
-        return json.loads(cached)
+        cached_project = cast(dict[str, Any], json.loads(cached))
+        if not api_key_allows(cached_project.get("scope"), required_scope):
+            raise HTTPException(status_code=403, detail="API key scope denied")
+        return cached_project
 
     async with get_db() as db:
         r = await db.execute(
             text(
-                "SELECT id, org_id, name FROM projects "
-                "WHERE api_key_hash = :h AND is_active = true"
+                """
+                SELECT p.id, p.org_id, p.name, 'read_write' AS scope,
+                    NULL AS api_key_id, true AS legacy
+                FROM projects p
+                WHERE p.api_key_hash = :h AND p.is_active = true
+                UNION ALL
+                SELECT p.id, p.org_id, p.name, pak.scope,
+                    pak.id AS api_key_id, false AS legacy
+                FROM project_api_keys pak
+                JOIN projects p ON p.id = pak.project_id
+                WHERE pak.key_hash = :h
+                    AND pak.is_active = true
+                    AND pak.revoked_at IS NULL
+                    AND p.is_active = true
+                LIMIT 1
+                """
             ),
             {"h": key_hash},
         )
-        project = r.mappings().one_or_none()
+        project_row = r.mappings().one_or_none()
 
-    if not project:
+        if project_row and project_row["api_key_id"]:
+            await db.execute(
+                text("UPDATE project_api_keys SET last_used_at = :now WHERE id = :id"),
+                {"id": project_row["api_key_id"], "now": datetime.now(UTC)},
+            )
+            await db.commit()
+
+    if not project_row:
         raise HTTPException(status_code=401, detail="Invalid API key")
 
-    pd = dict(project)
-    await redis.setex(cache_key, 300, json.dumps(pd, default=str))
+    pd: dict[str, Any] = dict(project_row)
+    if not api_key_allows(pd.get("scope"), required_scope):
+        raise HTTPException(status_code=403, detail="API key scope denied")
+
+    await redis.setex(cache_key, 60, json.dumps(pd, default=str))
 
     return pd
 
@@ -101,9 +137,11 @@ async def get_project_from_token_or_api_key(
     creds: HTTPAuthorizationCredentials | None = Depends(bearer_scheme),
     x_api_key: str | None = Header(default=None, alias="X-API-Key"),
     project_id: str | None = Query(default=None),
-) -> dict:
+) -> dict[str, Any]:
     if x_api_key:
-        return await get_project_from_api_key(creds=None, x_api_key=x_api_key)
+        return await get_project_from_api_key(
+            creds=None, x_api_key=x_api_key, required_scope="read"
+        )
 
     if creds and project_id:
         try:

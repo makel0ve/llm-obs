@@ -1,4 +1,5 @@
 import json
+from typing import Any
 
 import structlog
 from sqlalchemy import text
@@ -13,7 +14,7 @@ async def log_audit(
     action: str,
     user_id: str | None = None,
     resource_id: str | None = None,
-    metadata: dict | None = None,
+    metadata: dict[str, Any] | None = None,
 ) -> None:
     try:
         async with get_db() as db:
