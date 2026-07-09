@@ -249,29 +249,45 @@ async def update_settings(
     if isinstance(redact_keys, str):
         values["payload_redact_keys"] = redact_keys.strip()
 
-    allowed_fields = {
-        "retention_days",
-        "payload_storage_mode",
-        "payload_max_bytes",
-        "payload_redact_keys",
-    }
-    if not set(values).issubset(allowed_fields):
-        raise HTTPException(400, "Unsupported settings field")
-
-    set_clause = ", ".join(f"{field} = :{field}" for field in values)
-
     async with get_db() as db:
         result = await db.execute(
             text(
-                f"""
+                """
                 UPDATE projects
-                SET {set_clause}
+                SET retention_days = CASE
+                        WHEN :update_retention_days THEN :retention_days
+                        ELSE retention_days
+                    END,
+                    payload_storage_mode = CASE
+                        WHEN :update_payload_storage_mode
+                        THEN :payload_storage_mode
+                        ELSE payload_storage_mode
+                    END,
+                    payload_max_bytes = CASE
+                        WHEN :update_payload_max_bytes THEN :payload_max_bytes
+                        ELSE payload_max_bytes
+                    END,
+                    payload_redact_keys = CASE
+                        WHEN :update_payload_redact_keys THEN :payload_redact_keys
+                        ELSE payload_redact_keys
+                    END
                 WHERE id = :id AND org_id = :org
                 RETURNING retention_days, payload_storage_mode, payload_max_bytes,
                     payload_redact_keys
                 """
             ),
-            values | {"id": project_id, "org": user["org_id"]},
+            {
+                "id": project_id,
+                "org": user["org_id"],
+                "update_retention_days": "retention_days" in values,
+                "retention_days": values.get("retention_days"),
+                "update_payload_storage_mode": "payload_storage_mode" in values,
+                "payload_storage_mode": values.get("payload_storage_mode"),
+                "update_payload_max_bytes": "payload_max_bytes" in values,
+                "payload_max_bytes": values.get("payload_max_bytes"),
+                "update_payload_redact_keys": "payload_redact_keys" in values,
+                "payload_redact_keys": values.get("payload_redact_keys"),
+            },
         )
         row = result.mappings().one_or_none()
         if not row:
