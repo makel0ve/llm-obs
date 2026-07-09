@@ -1,8 +1,28 @@
 import { useState, type FormEvent, type ReactNode } from 'react'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from '../api/client'
-import { rotateProjectApiKey, updateProjectSettings } from '../api/dashboard'
+import {
+  createProjectApiKey,
+  dashboardQueryKeys,
+  listProjectApiKeys,
+  revokeProjectApiKey,
+  rotateProjectApiKey,
+  updateProjectSettings,
+  type ApiKeyScope,
+} from '../api/dashboard'
 
 type CopyState = 'idle' | 'copied' | 'failed'
+type ApiKeyDraft = {
+  name: string
+  description: string
+  scope: ApiKeyScope
+}
+
+const scopeOptions: Array<{ value: ApiKeyScope; label: string }> = [
+  { value: 'ingest', label: 'Ingest only' },
+  { value: 'read', label: 'Read only' },
+  { value: 'read_write', label: 'Read/write' },
+]
 
 function CopyButton({ value, label = 'Copy' }: { value: string; label?: string }) {
   const [state, setState] = useState<CopyState>('idle')
@@ -62,12 +82,73 @@ function Alert({
   return <div className={`rounded-lg border p-4 text-sm ${classes}`}>{children}</div>
 }
 
+function formatDateTime(value?: string | null) {
+  if (!value) return '-'
+
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return '-'
+
+  return new Intl.DateTimeFormat(undefined, {
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(date)
+}
+
+function formatScope(scope: ApiKeyScope) {
+  return scopeOptions.find(option => option.value === scope)?.label ?? scope
+}
+
 export function ProjectSettings({ projectId }: { projectId: string }) {
+  const queryClient = useQueryClient()
   const [retentionDays, setRetentionDays] = useState('90')
   const [savedRetentionDays, setSavedRetentionDays] = useState<number | null>(null)
   const [settingsStatus, setSettingsStatus] = useState<'idle' | 'saving' | 'success' | 'error'>('idle')
   const [rotateStatus, setRotateStatus] = useState<'idle' | 'rotating' | 'success' | 'error'>('idle')
   const [newApiKey, setNewApiKey] = useState('')
+  const [keyDraft, setKeyDraft] = useState<ApiKeyDraft>({
+    name: '',
+    description: '',
+    scope: 'ingest',
+  })
+  const [keyError, setKeyError] = useState('')
+  const [createdApiKey, setCreatedApiKey] = useState('')
+
+  const apiKeysQuery = useQuery({
+    queryKey: dashboardQueryKeys.apiKeys(projectId),
+    queryFn: () => listProjectApiKeys(projectId),
+    enabled: !!projectId,
+  })
+
+  const invalidateApiKeys = async () => {
+    await queryClient.invalidateQueries({ queryKey: dashboardQueryKeys.apiKeys(projectId) })
+  }
+
+  const createKey = useMutation({
+    mutationFn: () => createProjectApiKey(projectId, {
+      name: keyDraft.name.trim(),
+      description: keyDraft.description.trim() || null,
+      scope: keyDraft.scope,
+    }),
+    onSuccess: async result => {
+      setCreatedApiKey(result.api_key)
+      setKeyDraft({ name: '', description: '', scope: 'ingest' })
+      setKeyError('')
+      await invalidateApiKeys()
+    },
+    onError: () => {
+      setCreatedApiKey('')
+      setKeyError('Could not create API key.')
+    },
+  })
+
+  const revokeKey = useMutation({
+    mutationFn: (keyId: string) => revokeProjectApiKey(projectId, keyId),
+    onSuccess: invalidateApiKeys,
+    onError: () => setKeyError('Could not revoke API key.'),
+  })
 
   const endpoint = api.defaults.baseURL ?? 'http://localhost:8000'
   const envVars = `LLM_OBS_API_KEY=llmobs_your_key_here\nLLM_OBS_ENDPOINT=${endpoint}`
@@ -105,6 +186,19 @@ await llm_obs.shutdown()`
     } catch {
       setRotateStatus('error')
     }
+  }
+
+  const submitCreateKey = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    setCreatedApiKey('')
+
+    if (!keyDraft.name.trim()) {
+      setKeyError('Key name is required.')
+      return
+    }
+
+    setKeyError('')
+    createKey.mutate()
   }
 
   if (!projectId) {
@@ -180,8 +274,8 @@ await llm_obs.shutdown()`
         </div>
 
         <div className="rounded-lg border border-gray-200 bg-white p-4">
-          <h2 className="text-lg font-semibold text-gray-950">API key</h2>
-          <p className="mt-1 text-sm text-gray-500">Rotate the project ingest key if it was lost or exposed.</p>
+          <h2 className="text-lg font-semibold text-gray-950">Legacy API key</h2>
+          <p className="mt-1 text-sm text-gray-500">Rotate the original project key if it was lost or exposed.</p>
           <button
             type="button"
             onClick={rotateApiKey}
@@ -211,6 +305,145 @@ await llm_obs.shutdown()`
               </div>
             </div>
           )}
+        </div>
+      </section>
+
+      <section className="space-y-4">
+        <div>
+          <h2 className="text-lg font-semibold text-gray-950">Managed API keys</h2>
+          <p className="mt-1 text-sm text-gray-500">Create scoped keys for ingestion and read-only integrations.</p>
+        </div>
+
+        <div className="rounded-lg border border-gray-200 bg-white p-4">
+          <form onSubmit={submitCreateKey} className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(180px,1fr)_minmax(180px,1fr)_180px_auto]">
+            <label className="block">
+              <span className="text-sm font-medium text-gray-700">Name</span>
+              <input
+                value={keyDraft.name}
+                onChange={event => setKeyDraft(current => ({ ...current, name: event.target.value }))}
+                className="mt-2 min-h-10 w-full rounded-md border border-gray-300 bg-white px-3 text-sm text-gray-900"
+                maxLength={100}
+                placeholder="Production ingest"
+                required
+              />
+            </label>
+            <label className="block">
+              <span className="text-sm font-medium text-gray-700">Description</span>
+              <input
+                value={keyDraft.description}
+                onChange={event => setKeyDraft(current => ({ ...current, description: event.target.value }))}
+                className="mt-2 min-h-10 w-full rounded-md border border-gray-300 bg-white px-3 text-sm text-gray-900"
+                maxLength={500}
+                placeholder="Optional"
+              />
+            </label>
+            <label className="block">
+              <span className="text-sm font-medium text-gray-700">Scope</span>
+              <select
+                value={keyDraft.scope}
+                onChange={event => setKeyDraft(current => ({ ...current, scope: event.target.value as ApiKeyScope }))}
+                className="mt-2 min-h-10 w-full rounded-md border border-gray-300 bg-white px-3 text-sm text-gray-900"
+              >
+                {scopeOptions.map(option => (
+                  <option key={option.value} value={option.value}>{option.label}</option>
+                ))}
+              </select>
+            </label>
+            <div className="flex items-end">
+              <button
+                type="submit"
+                disabled={createKey.isPending}
+                className="min-h-10 w-full rounded-md bg-gray-900 px-4 text-sm font-medium text-white hover:bg-gray-700 disabled:cursor-not-allowed disabled:opacity-60 xl:w-auto"
+              >
+                {createKey.isPending ? 'Creating...' : 'Create key'}
+              </button>
+            </div>
+          </form>
+          <div className="mt-4 space-y-3">
+            {keyError && <Alert tone="error">{keyError}</Alert>}
+            {createdApiKey && (
+              <div className="space-y-3">
+                <Alert tone="warning">Save this API key now. It is shown once and cannot be recovered later.</Alert>
+                <div className="rounded-lg border border-gray-200 bg-gray-50 p-3">
+                  <div className="mb-2 flex items-center justify-between gap-3">
+                    <span className="text-sm font-medium text-gray-700">New API key</span>
+                    <CopyButton value={createdApiKey} />
+                  </div>
+                  <code className="block overflow-x-auto rounded-md bg-gray-950 p-3 text-sm text-gray-100">
+                    {createdApiKey}
+                  </code>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+
+        <div className="overflow-hidden rounded-lg border border-gray-200 bg-white">
+          <div className="overflow-x-auto">
+            <table className="min-w-[920px] w-full text-left text-sm">
+              <thead className="border-b border-gray-200 bg-gray-50 text-xs uppercase tracking-wide text-gray-500">
+                <tr>
+                  <th scope="col" className="px-4 py-3 font-medium">Name</th>
+                  <th scope="col" className="px-4 py-3 font-medium">Scope</th>
+                  <th scope="col" className="px-4 py-3 font-medium">Created</th>
+                  <th scope="col" className="px-4 py-3 font-medium">Last used</th>
+                  <th scope="col" className="px-4 py-3 font-medium">Status</th>
+                  <th scope="col" className="px-4 py-3 text-right font-medium">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {apiKeysQuery.isLoading && (
+                  <tr>
+                    <td colSpan={6} className="px-4 py-6 text-gray-600">Loading API keys...</td>
+                  </tr>
+                )}
+                {apiKeysQuery.isError && (
+                  <tr>
+                    <td colSpan={6} className="px-4 py-6 text-red-700">Could not load API keys.</td>
+                  </tr>
+                )}
+                {!apiKeysQuery.isLoading && !apiKeysQuery.isError && (apiKeysQuery.data ?? []).length === 0 && (
+                  <tr>
+                    <td colSpan={6} className="px-4 py-6 text-gray-600">No managed API keys yet.</td>
+                  </tr>
+                )}
+                {(apiKeysQuery.data ?? []).map(key => (
+                  <tr key={key.id} className="align-top hover:bg-gray-50">
+                    <td className="px-4 py-3">
+                      <div className="font-medium text-gray-900">{key.name}</div>
+                      {key.description && <div className="mt-1 text-xs text-gray-500">{key.description}</div>}
+                    </td>
+                    <td className="px-4 py-3 text-gray-700">{formatScope(key.scope)}</td>
+                    <td className="whitespace-nowrap px-4 py-3 text-gray-700">{formatDateTime(key.created_at)}</td>
+                    <td className="whitespace-nowrap px-4 py-3 text-gray-700">{formatDateTime(key.last_used_at)}</td>
+                    <td className="px-4 py-3">
+                      <span
+                        className={`inline-flex min-h-6 items-center rounded-md px-2 text-xs font-medium ${
+                          key.revoked_at || !key.is_active
+                            ? 'bg-gray-100 text-gray-600 ring-1 ring-gray-200'
+                            : 'bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200'
+                        }`}
+                      >
+                        {key.revoked_at || !key.is_active ? 'revoked' : 'active'}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 text-right">
+                      {!key.revoked_at && key.is_active && (
+                        <button
+                          type="button"
+                          onClick={() => revokeKey.mutate(key.id)}
+                          disabled={revokeKey.isPending}
+                          className="min-h-9 rounded-md border border-red-200 bg-white px-3 text-sm font-medium text-red-700 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-60"
+                        >
+                          Revoke
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
       </section>
     </div>

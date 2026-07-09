@@ -5,6 +5,7 @@ export type StatusFilter = 'all' | 'ok' | 'error'
 export type AlertMetric = 'latency_p95' | 'error_rate' | 'cost_hourly' | 'anomaly'
 export type AlertCondition = 'gt' | 'lt' | 'anomaly'
 export type UserRole = 'admin' | 'member' | 'viewer'
+export type ApiKeyScope = 'ingest' | 'read' | 'read_write'
 
 export type AuthResponse = {
   access_token: string
@@ -261,6 +262,27 @@ export type InviteAcceptPayload = {
   password: string
 }
 
+export type ProjectApiKey = {
+  id: string
+  name: string
+  description?: string | null
+  scope: ApiKeyScope
+  is_active: boolean
+  created_at?: string | null
+  last_used_at?: string | null
+  revoked_at?: string | null
+}
+
+export type ProjectApiKeyCreate = {
+  name: string
+  description?: string | null
+  scope: ApiKeyScope
+}
+
+export type ProjectApiKeyCreateResponse = ProjectApiKey & {
+  api_key: string
+}
+
 export const dashboardQueryKeys = {
   overview: (projectId: string, period: Period) => ['metrics', 'overview', projectId, period] as const,
   timeseries: (projectId: string, period: Period) => ['metrics', 'timeseries', projectId, period] as const,
@@ -274,6 +296,7 @@ export const dashboardQueryKeys = {
   pricing: (provider: string, model: string, includeExpired: boolean) =>
     ['pricing', provider, model, includeExpired] as const,
   users: () => ['users'] as const,
+  apiKeys: (projectId: string) => ['api-keys', projectId] as const,
 }
 
 function projectParams(projectId: string) {
@@ -391,6 +414,20 @@ export async function updateProjectSettings(projectId: string, retentionDays: nu
 export async function rotateProjectApiKey(projectId: string) {
   const response = await api.post<{ api_key: string }>(`/v1/projects/${projectId}/rotate-key`)
   return response.data
+}
+
+export async function listProjectApiKeys(projectId: string) {
+  const response = await api.get<ProjectApiKey[]>(`/v1/projects/${projectId}/api-keys`)
+  return response.data
+}
+
+export async function createProjectApiKey(projectId: string, payload: ProjectApiKeyCreate) {
+  const response = await api.post<ProjectApiKeyCreateResponse>(`/v1/projects/${projectId}/api-keys`, payload)
+  return response.data
+}
+
+export async function revokeProjectApiKey(projectId: string, keyId: string) {
+  await api.post(`/v1/projects/${projectId}/api-keys/${keyId}/revoke`)
 }
 
 export async function listPricing({
