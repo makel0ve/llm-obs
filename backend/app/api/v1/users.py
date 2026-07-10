@@ -2,6 +2,7 @@ import hashlib
 import secrets
 import uuid
 from datetime import UTC, datetime, timedelta
+from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import text
@@ -10,6 +11,7 @@ from app.core.auth import create_access_token, get_current_user, hash_password
 from app.core.db import get_db
 from app.core.rbac import require_admin
 from app.schemas.users import UserInviteAccept, UserInviteCreate, UserRoleUpdate
+from app.services.audit import log_audit
 
 router = APIRouter(prefix="/v1/users", tags=["users"])
 INVITE_TTL_HOURS = 24
@@ -20,7 +22,7 @@ def hash_invite_token(token: str) -> str:
 
 
 @router.get("")
-async def list_users(user=Depends(get_current_user)):
+async def list_users(user: dict[str, Any] = Depends(get_current_user)) -> list[Any]:
     require_admin(user)
 
     async with get_db() as db:
@@ -36,11 +38,13 @@ async def list_users(user=Depends(get_current_user)):
             {"org": user["org_id"]},
         )
 
-        return result.mappings().all()
+        return [dict(row) for row in result.mappings().all()]
 
 
 @router.post("/invites", status_code=201)
-async def create_invite(body: UserInviteCreate, user=Depends(get_current_user)):
+async def create_invite(
+    body: UserInviteCreate, user: dict[str, Any] = Depends(get_current_user)
+) -> dict[str, Any]:
     require_admin(user)
 
     async with get_db() as db:
@@ -80,11 +84,20 @@ async def create_invite(body: UserInviteCreate, user=Depends(get_current_user)):
 
             invite = dict(result.mappings().one())
             invite["invite_token"] = raw_token
-            return invite
+
+    await log_audit(
+        org_id=user["org_id"],
+        user_id=user["sub"],
+        action="user.invite.create",
+        resource_id=invite["id"],
+        metadata={"email": body.email, "role": body.role},
+    )
+
+    return invite
 
 
 @router.post("/invites/accept")
-async def accept_invite(body: UserInviteAccept):
+async def accept_invite(body: UserInviteAccept) -> dict[str, Any]:
     token_hash = hash_invite_token(body.token)
     now = datetime.now(UTC)
 
@@ -150,6 +163,14 @@ async def accept_invite(body: UserInviteAccept):
             )
             default_project = project.mappings().one_or_none()
 
+    await log_audit(
+        org_id=str(invite["org_id"]),
+        user_id=user_id,
+        action="user.invite.accept",
+        resource_id=str(invite["id"]),
+        metadata={"email": invite["email"], "role": invite["role"]},
+    )
+
     return {
         "access_token": create_access_token(
             user_id, str(invite["org_id"]), invite["role"]
@@ -162,8 +183,10 @@ async def accept_invite(body: UserInviteAccept):
 
 @router.patch("/{user_id}/role")
 async def update_user_role(
-    user_id: str, body: UserRoleUpdate, user=Depends(get_current_user)
-):
+    user_id: str,
+    body: UserRoleUpdate,
+    user: dict[str, Any] = Depends(get_current_user),
+) -> Any:
     require_admin(user)
 
     if user_id == user["sub"] and body.role != "admin":
@@ -174,7 +197,7 @@ async def update_user_role(
             current = await db.execute(
                 text(
                     """
-                    SELECT id, role
+                    SELECT id, email, role
                     FROM users
                     WHERE id = :id AND org_id = :org AND is_active = true
                     FOR UPDATE
@@ -214,11 +237,27 @@ async def update_user_role(
                 {"id": user_id, "org": user["org_id"], "role": body.role},
             )
 
-            return result.mappings().one()
+            updated = result.mappings().one()
+
+    await log_audit(
+        org_id=user["org_id"],
+        user_id=user["sub"],
+        action="user.role.update",
+        resource_id=user_id,
+        metadata={
+            "email": target["email"],
+            "old_role": target["role"],
+            "new_role": body.role,
+        },
+    )
+
+    return updated
 
 
 @router.delete("/{user_id}", status_code=204)
-async def delete_user(user_id: str, user=Depends(get_current_user)):
+async def delete_user(
+    user_id: str, user: dict[str, Any] = Depends(get_current_user)
+) -> None:
     require_admin(user)
 
     if user_id == user["sub"]:
@@ -229,7 +268,7 @@ async def delete_user(user_id: str, user=Depends(get_current_user)):
             current = await db.execute(
                 text(
                     """
-                    SELECT id, role
+                    SELECT id, email, role
                     FROM users
                     WHERE id = :id AND org_id = :org AND is_active = true
                     FOR UPDATE
@@ -269,3 +308,11 @@ async def delete_user(user_id: str, user=Depends(get_current_user)):
             )
             if not result.one_or_none():
                 raise HTTPException(404, "User not found")
+
+    await log_audit(
+        org_id=user["org_id"],
+        user_id=user["sub"],
+        action="user.delete",
+        resource_id=user_id,
+        metadata={"email": target["email"], "role": target["role"]},
+    )

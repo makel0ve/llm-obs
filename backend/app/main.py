@@ -11,6 +11,7 @@ from starlette.responses import Response
 
 from app.api.v1 import (
     alerts,
+    audit,
     auth,
     failed_tasks,
     health,
@@ -98,6 +99,7 @@ for router in [
     traces.router,
     metrics.router,
     alerts.router,
+    audit.router,
     failed_tasks.router,
     pricing.router,
     auth.router,

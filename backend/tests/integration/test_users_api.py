@@ -95,7 +95,7 @@ class FakeDb:
         if "SELECT id FROM projects" in sql:
             return FakeResult(row={"id": str(uuid4())})
 
-        if "SELECT id, role" in sql:
+        if "SELECT id, email, role" in sql:
             return FakeResult(row=self.target_user)
 
         if "SELECT count(*) AS count" in sql:
@@ -151,6 +151,10 @@ def _patch_db(monkeypatch, db):
     monkeypatch.setattr(users_api, "get_db", fake_get_db)
 
 
+async def _noop_log_audit(**kwargs):
+    return None
+
+
 @pytest.mark.asyncio
 async def test_list_users_requires_admin():
     with pytest.raises(HTTPException) as exc_info:
@@ -177,6 +181,12 @@ async def test_create_invite_uses_admin_org_and_returns_token(monkeypatch):
     db = FakeDb()
     _patch_db(monkeypatch, db)
     monkeypatch.setattr(users_api.secrets, "token_urlsafe", lambda size: "raw-token")
+    audit_events = []
+
+    async def fake_log_audit(**kwargs):
+        audit_events.append(kwargs)
+
+    monkeypatch.setattr(users_api, "log_audit", fake_log_audit)
 
     result = await create_invite(
         UserInviteCreate(email="viewer@example.com", role="viewer"),
@@ -188,12 +198,22 @@ async def test_create_invite_uses_admin_org_and_returns_token(monkeypatch):
     insert_params = db.params[-1]
     assert insert_params["org"] == org_id
     assert insert_params["token_hash"] == users_api.hash_invite_token("raw-token")
+    assert audit_events == [
+        {
+            "org_id": org_id,
+            "user_id": audit_events[0]["user_id"],
+            "action": "user.invite.create",
+            "resource_id": result["id"],
+            "metadata": {"email": "viewer@example.com", "role": "viewer"},
+        }
+    ]
 
 
 @pytest.mark.asyncio
 async def test_create_invite_rejects_duplicate_email(monkeypatch):
     db = FakeDb(existing_email=True)
     _patch_db(monkeypatch, db)
+    monkeypatch.setattr(users_api, "log_audit", _noop_log_audit)
 
     with pytest.raises(HTTPException) as exc_info:
         await create_invite(
@@ -216,6 +236,7 @@ async def test_accept_invite_hashes_password_and_returns_token(monkeypatch):
     }
     db = FakeDb(target_user=invite)
     _patch_db(monkeypatch, db)
+    monkeypatch.setattr(users_api, "log_audit", _noop_log_audit)
     monkeypatch.setattr(
         users_api, "hash_password", lambda password: f"hashed:{password}"
     )
@@ -248,6 +269,7 @@ async def test_accept_invite_rejects_expired_invite(monkeypatch):
     }
     db = FakeDb(target_user=invite)
     _patch_db(monkeypatch, db)
+    monkeypatch.setattr(users_api, "log_audit", _noop_log_audit)
 
     with pytest.raises(HTTPException) as exc_info:
         await accept_invite(
@@ -263,7 +285,10 @@ async def test_accept_invite_rejects_expired_invite(monkeypatch):
 @pytest.mark.asyncio
 async def test_update_user_role_keeps_at_least_one_admin(monkeypatch):
     admin_id = str(uuid4())
-    db = FakeDb(target_user={"id": admin_id, "role": "admin"}, admin_count=1)
+    db = FakeDb(
+        target_user={"id": admin_id, "email": "admin@example.com", "role": "admin"},
+        admin_count=1,
+    )
     _patch_db(monkeypatch, db)
 
     with pytest.raises(HTTPException) as exc_info:
@@ -303,7 +328,10 @@ async def test_delete_user_rejects_self_delete():
 @pytest.mark.asyncio
 async def test_delete_user_keeps_at_least_one_admin(monkeypatch):
     admin_id = str(uuid4())
-    db = FakeDb(target_user={"id": admin_id, "role": "admin"}, admin_count=1)
+    db = FakeDb(
+        target_user={"id": admin_id, "email": "admin@example.com", "role": "admin"},
+        admin_count=1,
+    )
     _patch_db(monkeypatch, db)
 
     with pytest.raises(HTTPException) as exc_info:
@@ -316,8 +344,11 @@ async def test_delete_user_keeps_at_least_one_admin(monkeypatch):
 async def test_delete_user_scopes_to_admin_org(monkeypatch):
     org_id = str(uuid4())
     member_id = str(uuid4())
-    db = FakeDb(target_user={"id": member_id, "role": "member"})
+    db = FakeDb(
+        target_user={"id": member_id, "email": "member@example.com", "role": "member"}
+    )
     _patch_db(monkeypatch, db)
+    monkeypatch.setattr(users_api, "log_audit", _noop_log_audit)
 
     await delete_user(member_id, user=_admin(org_id=org_id))
 
