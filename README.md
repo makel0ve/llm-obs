@@ -15,13 +15,17 @@ LLM Obs is a self-hosted platform for monitoring LLM calls. Your data never leav
 
 ## Features
 
-- **Python SDK** — `@trace` decorator and auto-patching for OpenAI, Anthropic
-- **Cost tracking** — per model, per project, with historical pricing support
-- **Latency metrics** — average, P95 and P99 with time series charts
-- **Trace API** — query traces and spans, with optional stored input/output payloads
-- **Alerts API** — email and Slack notifications with configurable thresholds
+- **Python SDK** — `@trace` decorator and async OpenAI/Anthropic patching
+- **Overview dashboard** — spans, P95 latency, error rate, cost and trend charts
+- **Trace explorer** — filter recent traces, inspect spans and load stored payloads on demand
+- **Cost tracking** — per model and provider with editable historical pricing records
+- **Alerts** — latency, error-rate and cost rules with email or Slack targets
+- **User management** — admin-created invites, role changes and guarded deletion
+- **Audit log** — governance events for settings, users and API key changes
+- **Payload privacy** — control large payload storage, max object size and redaction keys
+- **Managed API keys** — scoped ingest/read/read-write keys with one-time reveal and revoke
 - **OpenTelemetry** — OTLP HTTP endpoint for existing instrumentation
-- **Multi-tenant** — organizations, projects, API keys
+- **Multi-tenant foundation** — organizations, projects, users and project API keys
 - **Data retention** — automatic cleanup with per-project policies
 - **Self-hosted** — Docker Compose, with experimental Helm manifests
 
@@ -29,38 +33,62 @@ LLM Obs is a self-hosted platform for monitoring LLM calls. Your data never leav
 
 ## Quick Start
 
+This path starts a local stack and sends one safe demo trace. It does not call
+an external LLM provider.
+
 ```bash
 git clone https://github.com/makel0ve/llm-obs
 cd llm-obs
 
-# Copy and fill in environment variables
-cp backend/.env.example backend/.env.prod
-cp infra/.env.example infra/.env
+# Copy local development environment variables
+cp backend/.env.example backend/.env
 
-# Generate SECRET_KEY
-python3 -c "import secrets; print(secrets.token_hex(32))"
-
-# In backend/.env.prod, set ENVIRONMENT=production and use PgBouncer:
-# DATABASE_URL=postgresql+asyncpg://<POSTGRES_USER>:<POSTGRES_PASSWORD>@pgbouncer:6432/<POSTGRES_DB>
-
-# Start
-docker compose --env-file infra/.env -f infra/docker-compose.prod.yml up -d
+# Start the local stack
+docker compose -f infra/docker-compose.yml up -d
 
 # Apply migrations
-docker compose --env-file infra/.env -f infra/docker-compose.prod.yml exec backend alembic upgrade head
+docker compose -f infra/docker-compose.yml exec backend alembic upgrade head
 
-# Create first user
-curl -X POST http://localhost:8000/v1/auth/register \
-  -H "Content-Type: application/json" \
-  -d '{"email": "admin@example.com", "password": "yourpassword", "org_name": "My Org"}'
-
-# Open dashboard
+# Open dashboard and create the first account
 open http://localhost:3000
 ```
 
-The first registration response includes the default project API key. The
-dashboard Create account flow shows the same key after signup. Save it before
-dismissing or refreshing the page: API keys are shown only once.
+The first account creates an organization, default project and default project
+API key. Save the key when it is shown. API keys are displayed once.
+
+Send the first trace from the host:
+
+```bash
+cd sdk
+pip install -e .
+cd ..
+
+export LLM_OBS_API_KEY=llmobs_your_key_here
+export LLM_OBS_ENDPOINT=http://localhost:8000
+python examples/sdk_smoke_demo.py
+```
+
+Open `http://localhost:3000`, use the `1h` or `24h` range, and check Overview
+or Traces. The demo trace name is `examples.sdk_smoke_demo`.
+
+For a production-style Docker Compose start, copy `backend/.env.example` to
+`backend/.env.prod`, copy `infra/.env.example` to `infra/.env`, set a strong
+`SECRET_KEY`, keep PostgreSQL/MinIO credentials consistent, and run:
+
+```bash
+docker compose --env-file infra/.env -f infra/docker-compose.prod.yml up -d
+docker compose --env-file infra/.env -f infra/docker-compose.prod.yml exec backend alembic upgrade head
+```
+
+Register the first admin through the dashboard or API:
+
+```bash
+curl -X POST http://localhost:8000/v1/auth/register \
+  -H "Content-Type: application/json" \
+  -d '{"email": "admin@example.com", "password": "yourpassword", "org_name": "My Org"}'
+```
+
+The registration response includes the default project API key.
 
 If the key is lost or exposed, rotate it with the Project API:
 
@@ -82,6 +110,13 @@ Docker Compose, environment variables, migrations, upgrades, rollbacks and
 post-deploy smoke checks. Backup and restore procedures live in
 [docs/backup-restore.md](docs/backup-restore.md).
 
+Product and integration documentation:
+
+- [Architecture](docs/architecture.md)
+- [SDK integration guide](docs/sdk-integration.md)
+- [Troubleshooting](docs/troubleshooting.md)
+- [Roadmap and known limitations](docs/roadmap.md)
+
 ---
 
 ## SDK Integration
@@ -100,7 +135,8 @@ cd sdk
 pip install -e .
 ```
 
-Full SDK examples and troubleshooting live in [sdk/README.md](sdk/README.md).
+Full SDK examples live in [sdk/README.md](sdk/README.md) and the public
+integration guide is in [docs/sdk-integration.md](docs/sdk-integration.md).
 
 ### Basic usage — decorator
 
@@ -316,28 +352,8 @@ For Slack notifications add `notify_slack_webhook` with your Slack incoming webh
 
 ## Architecture
 
-```
-SDK (Python)
-    │  HTTP batch
-    ▼
-Ingest API (FastAPI)
-    │  Redis queue
-    ▼
-Worker (Taskiq)
-    ├── Process spans → PostgreSQL + MinIO (S3)
-    ├── Update trace aggregates
-    └── Check alert rules → Email / Slack
-
-Dashboard (React + Vite)
-    │  REST API
-    ▼
-Query API (FastAPI)
-    └── PostgreSQL (with PgBouncer)
-
-Scheduler (Taskiq)
-    ├── Data retention (daily)
-    └── Partition management (monthly)
-```
+See [docs/architecture.md](docs/architecture.md) for the service map, ingest
+flow, storage boundaries, dashboard APIs and operational components.
 
 ---
 
@@ -431,9 +447,11 @@ docker compose -f infra/docker-compose.yml run --rm \
 
 ## Current Dashboard Scope
 
-The current frontend includes account creation/sign-in, overview metrics,
-trace listing/detail pages, alert rule/event management, project settings,
-API key rotation and onboarding empty states for new projects.
+The current frontend includes account creation/sign-in, invite acceptance,
+overview metrics and charts, trace listing/detail pages, alert rule/event
+management, pricing records, user and role management, audit log, project
+settings, payload privacy controls, legacy key rotation, managed API keys and
+onboarding empty states for new projects.
 
 Dashboard API calls are routed through typed frontend helpers in
 `frontend/src/api/dashboard.ts`. Authentication failures from protected API
@@ -442,23 +460,12 @@ handle their own errors without triggering that redirect.
 
 ---
 
-## Known Limitations (v1)
+## Roadmap and Limitations
 
-- Dashboard shows one project per login session (multi-project selector coming in v2)
-- Dead Letter Queue is implemented but not automatically connected to retry middleware
-- Frontend component/unit tests are not configured yet
-- OpenAI and Anthropic integration tests require real API keys
-
----
-
-## Roadmap (v2)
-
-- [ ] Registration and user management UI
-- [ ] Multi-project selector in dashboard
-- [ ] DLQ integration with retry middleware
-- [ ] Trace waterfall visualization in frontend
-- [ ] Provider integration tests with mocked OpenAI and Anthropic clients
-- [ ] Production-ready Kubernetes Helm chart
+Current limitations and planned work are tracked in
+[docs/roadmap.md](docs/roadmap.md). The short version: the dashboard works with
+one active project per login session, frontend component tests are not
+configured yet, and Helm manifests are still experimental.
 
 ---
 
