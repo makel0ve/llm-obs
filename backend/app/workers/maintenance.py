@@ -69,12 +69,40 @@ async def create_next_month_partition() -> None:
             await db.execute(
                 text(
                     f"""
+                    ALTER TABLE traces_{suffix} ENABLE ROW LEVEL SECURITY
+                    """,
+                )
+            )
+            await db.execute(
+                text(
+                    f"""
+                    ALTER TABLE traces_{suffix} FORCE ROW LEVEL SECURITY
+                    """,
+                )
+            )
+            await db.execute(
+                text(
+                    f"""
                     CREATE TABLE IF NOT EXISTS spans_{suffix}
                     PARTITION OF spans
                     FOR VALUES FROM (:start_str) TO (:end_str)
                     """,
                 ),
                 {"start_str": str(start_str), "end_str": str(end_str)},
+            )
+            await db.execute(
+                text(
+                    f"""
+                    ALTER TABLE spans_{suffix} ENABLE ROW LEVEL SECURITY
+                    """,
+                )
+            )
+            await db.execute(
+                text(
+                    f"""
+                    ALTER TABLE spans_{suffix} FORCE ROW LEVEL SECURITY
+                    """,
+                )
             )
             await db.commit()
             log.info(

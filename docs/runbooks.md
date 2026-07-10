@@ -94,6 +94,12 @@ Use real values in the URL. Keep `POSTGRES_DB`, `POSTGRES_USER`,
 `POSTGRES_PASSWORD`, `MINIO_ROOT_USER` and `MINIO_ROOT_PASSWORD` consistent
 between `infra/.env` and `backend/.env.prod`.
 
+For tenant isolation, the runtime role used by `DATABASE_URL` must not be a
+PostgreSQL superuser and must not have `BYPASSRLS`. `FORCE ROW LEVEL SECURITY`
+does not protect rows from superuser or `BYPASSRLS` roles. If a deployment uses
+a bootstrap/admin Postgres role to initialize the database, create a separate
+application role for `DATABASE_URL` before accepting tenant data.
+
 Validate compose configuration before starting:
 
 ```bash
@@ -129,7 +135,7 @@ Backend settings are loaded from `backend/.env.prod` in production.
 | --- | --- | --- |
 | `ENVIRONMENT` | Runtime mode | Set to `production`. |
 | `SECRET_KEY` | JWT signing secret | Use a random 32+ character value. |
-| `DATABASE_URL` | SQLAlchemy async URL | Use PgBouncer at `pgbouncer:6432` in production compose. |
+| `DATABASE_URL` | SQLAlchemy async URL | Use PgBouncer at `pgbouncer:6432` in production compose. The role must not be superuser or `BYPASSRLS`. |
 | `DATABASE_POOL_SIZE` | Backend DB pool size | Keep conservative when using PgBouncer. |
 | `DATABASE_MAX_OVERFLOW` | Backend DB overflow connections | Keep conservative when using PgBouncer. |
 | `REDIS_URL` | Redis URL | Use `redis://redis:6379/0` in compose. |
