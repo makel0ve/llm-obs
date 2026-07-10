@@ -1,6 +1,19 @@
 # CHANGELOG
 
 
+## v0.18.0 (2026-07-10)
+
+### Chores
+
+- Trigger ci for release sync
+  ([`4f57e41`](https://github.com/makel0ve/llm-obs/commit/4f57e41c70b51716e0c7c2d585ce022925c36115))
+
+### Features
+
+- Add audit log UI
+  ([`7f2c36d`](https://github.com/makel0ve/llm-obs/commit/7f2c36d85a05853c30b60dc8f154a915c83cc4f5))
+
+
 ## v0.17.0 (2026-07-09)
 
 ### Bug Fixes
