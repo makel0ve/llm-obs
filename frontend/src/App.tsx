@@ -12,6 +12,7 @@ const Alerts = lazy(() => import('./pages/Alerts').then(module => ({ default: mo
 const ProjectSettings = lazy(() => import('./pages/ProjectSettings').then(module => ({ default: module.ProjectSettings })))
 const Pricing = lazy(() => import('./pages/Pricing').then(module => ({ default: module.Pricing })))
 const Users = lazy(() => import('./pages/Users').then(module => ({ default: module.Users })))
+const AuditLog = lazy(() => import('./pages/AuditLog').then(module => ({ default: module.AuditLog })))
 const AcceptInvite = lazy(() => import('./pages/AcceptInvite').then(module => ({ default: module.AcceptInvite })))
 
 type AuthMode = 'login' | 'register'
@@ -28,6 +29,7 @@ const dashboardNavItems: DashboardNavItem[] = [
   { label: 'Alerts', path: '/alerts' },
   { label: 'Pricing', path: '/pricing', adminOnly: true },
   { label: 'Users', path: '/users', adminOnly: true },
+  { label: 'Audit Log', path: '/audit-log', adminOnly: true },
   { label: 'Project Settings', path: '/project-settings', adminOnly: true },
 ]
 
@@ -337,6 +339,7 @@ export default function App() {
             <Route path="alerts" element={<LazyPage><Alerts projectId={projectId} role={role} /></LazyPage>} />
             <Route path="pricing" element={<AdminRoute role={role}><LazyPage><Pricing /></LazyPage></AdminRoute>} />
             <Route path="users" element={<AdminRoute role={role}><LazyPage><Users role={role} /></LazyPage></AdminRoute>} />
+            <Route path="audit-log" element={<AdminRoute role={role}><LazyPage><AuditLog /></LazyPage></AdminRoute>} />
             <Route path="project-settings" element={<AdminRoute role={role}><LazyPage><ProjectSettings projectId={projectId} /></LazyPage></AdminRoute>} />
           </Route>
           <Route path="*" element={<Navigate to="/" replace />} />

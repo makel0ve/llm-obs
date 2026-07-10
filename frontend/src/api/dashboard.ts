@@ -272,6 +272,21 @@ export type InviteAcceptPayload = {
   password: string
 }
 
+export type AuditLogEvent = {
+  id: number
+  action: string
+  user_id?: string | null
+  user_email?: string | null
+  resource_id?: string | null
+  metadata: Record<string, unknown>
+  created_at: string
+}
+
+export type AuditLogResponse = {
+  events: AuditLogEvent[]
+  next_cursor?: string | null
+}
+
 export type ProjectApiKey = {
   id: string
   name: string
@@ -306,6 +321,8 @@ export const dashboardQueryKeys = {
   pricing: (provider: string, model: string, includeExpired: boolean) =>
     ['pricing', provider, model, includeExpired] as const,
   users: () => ['users'] as const,
+  auditEvents: (action: string, userId: string, fromDt: string, toDt: string, cursor: string) =>
+    ['audit-events', action, userId, fromDt, toDt, cursor] as const,
   projectSettings: (projectId: string) => ['project-settings', projectId] as const,
   apiKeys: (projectId: string) => ['api-keys', projectId] as const,
 }
@@ -501,4 +518,29 @@ export async function updateOrganizationUserRole(userId: string, role: UserRole)
 
 export async function deleteOrganizationUser(userId: string) {
   await api.delete(`/v1/users/${userId}`)
+}
+
+export async function listAuditEvents({
+  action,
+  userId,
+  fromDt,
+  toDt,
+  cursor,
+}: {
+  action: string
+  userId: string
+  fromDt: string
+  toDt: string
+  cursor?: string | null
+}) {
+  const params = new URLSearchParams()
+  params.set('page_size', '50')
+  if (action.trim()) params.set('action', action.trim())
+  if (userId) params.set('user_id', userId)
+  if (fromDt) params.set('from_dt', new Date(fromDt).toISOString())
+  if (toDt) params.set('to_dt', new Date(toDt).toISOString())
+  if (cursor) params.set('cursor', cursor)
+
+  const response = await api.get<AuditLogResponse>(`/v1/audit/events?${params.toString()}`)
+  return response.data
 }
