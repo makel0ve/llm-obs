@@ -1,6 +1,30 @@
 # CHANGELOG
 
 
+## v0.18.1 (2026-07-10)
+
+### Bug Fixes
+
+- Harden trace row level security
+  ([`bc78c6e`](https://github.com/makel0ve/llm-obs/commit/bc78c6e4b6d9afbe1e3295b54d7d6778797bb19b))
+
+### Chores
+
+- Ignore second development plan
+  ([`9deb215`](https://github.com/makel0ve/llm-obs/commit/9deb21556f372c847166180b2f5781dfa3c64c60))
+
+- Trigger ci for release sync
+  ([`926a201`](https://github.com/makel0ve/llm-obs/commit/926a201a651458c4dbacc1537a69b5cb9a443925))
+
+### Documentation
+
+- Document tenant isolation audit
+  ([`ac1ee75`](https://github.com/makel0ve/llm-obs/commit/ac1ee754a155568f6605c1f42fb93d97ac82dc79))
+
+- Refresh product documentation
+  ([`bc80ada`](https://github.com/makel0ve/llm-obs/commit/bc80adac1ec970d009f17f769e4e626937a7c904))
+
+
 ## v0.18.0 (2026-07-10)
 
 ### Chores
