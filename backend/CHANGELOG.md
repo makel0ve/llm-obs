@@ -1,6 +1,24 @@
 # CHANGELOG
 
 
+## v0.18.2 (2026-07-12)
+
+### Bug Fixes
+
+- Tighten project API scoping
+  ([`b9022a5`](https://github.com/makel0ve/llm-obs/commit/b9022a5bd126fd553e079c24d83b0fcb064ab0d9))
+
+### Chores
+
+- Trigger ci for release sync
+  ([`646037c`](https://github.com/makel0ve/llm-obs/commit/646037c910b040fb3c485119548e393c84c2a631))
+
+### Testing
+
+- Cover tenant isolation boundaries
+  ([`f4fbe08`](https://github.com/makel0ve/llm-obs/commit/f4fbe08c77387698dd9a471f59b5edfba1caa5c5))
+
+
 ## v0.18.1 (2026-07-10)
 
 ### Bug Fixes
