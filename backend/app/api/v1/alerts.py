@@ -83,7 +83,10 @@ async def create_rule(body: AlertRuleCreate, user=Depends(get_current_user)):
 
 @router.patch("/rules/{rule_id}")
 async def update_rule(
-    rule_id: str, body: AlertRuleUpdate, user=Depends(get_current_user)
+    rule_id: str,
+    body: AlertRuleUpdate,
+    project_id: str,
+    user=Depends(get_current_user),
 ):
     require_member(user)
 
@@ -102,11 +105,20 @@ async def update_rule(
                 text(
                     f"""
                 UPDATE alert_rules SET {set_clause}
-                WHERE id = :rule_id AND project_id IN
-                (SELECT id FROM projects WHERE org_id = :org) RETURNING id
+                WHERE id = :rule_id
+                    AND project_id = :project_id
+                    AND project_id IN (
+                        SELECT id FROM projects WHERE org_id = :org
+                    )
+                RETURNING id
                 """  # nosec B608
                 ),
-                {**updates, "rule_id": rule_id, "org": user["org_id"]},
+                {
+                    **updates,
+                    "rule_id": rule_id,
+                    "project_id": project_id,
+                    "org": user["org_id"],
+                },
             )
             if not result.one_or_none():
                 raise HTTPException(404, "Rule not found")
@@ -115,7 +127,7 @@ async def update_rule(
 
 
 @router.delete("/rules/{rule_id}", status_code=204)
-async def delete_rule(rule_id: str, user=Depends(get_current_user)):
+async def delete_rule(rule_id: str, project_id: str, user=Depends(get_current_user)):
     require_member(user)
 
     async with get_db() as db:
@@ -123,11 +135,16 @@ async def delete_rule(rule_id: str, user=Depends(get_current_user)):
             result = await db.execute(
                 text(
                     """
-                DELETE FROM alert_rules WHERE id = :id AND project_id IN
-                (SELECT id FROM projects WHERE org_id = :org) RETURNING id
+                DELETE FROM alert_rules
+                WHERE id = :id
+                    AND project_id = :project_id
+                    AND project_id IN (
+                        SELECT id FROM projects WHERE org_id = :org
+                    )
+                RETURNING id
                 """
                 ),
-                {"id": rule_id, "org": user["org_id"]},
+                {"id": rule_id, "project_id": project_id, "org": user["org_id"]},
             )
             if not result.one_or_none():
                 raise HTTPException(404, "Rule not found")
@@ -160,7 +177,7 @@ async def list_events(project_id: str, user=Depends(get_current_user)):
 
 
 @router.post("/events/{event_id}/resolve")
-async def resolve_event(event_id: str, user=Depends(get_current_user)):
+async def resolve_event(event_id: str, project_id: str, user=Depends(get_current_user)):
     require_member(user)
 
     async with get_db() as db:
@@ -170,13 +187,21 @@ async def resolve_event(event_id: str, user=Depends(get_current_user)):
                     """
                 UPDATE alert_events SET resolved_at = :now
                 WHERE id = :id AND rule_id IN (
-                    SELECT id FROM alert_rules WHERE project_id IN (
-                        SELECT id FROM projects WHERE org_id = :org
+                    SELECT id FROM alert_rules
+                    WHERE project_id = :project_id
+                        AND project_id IN (
+                            SELECT id FROM projects WHERE org_id = :org
+                        )
                     )
                 ) RETURNING id
                 """
                 ),
-                {"id": event_id, "org": user["org_id"], "now": datetime.now(UTC)},
+                {
+                    "id": event_id,
+                    "project_id": project_id,
+                    "org": user["org_id"],
+                    "now": datetime.now(UTC),
+                },
             )
             if not result.one_or_none():
                 raise HTTPException(404, "Event not found")
