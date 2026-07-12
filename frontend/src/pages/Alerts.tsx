@@ -207,17 +207,18 @@ export function Alerts({ projectId, role }: { projectId: string; role: UserRole 
   })
 
   const patchRule = useMutation({
-    mutationFn: ({ ruleId, payload }: { ruleId: string; payload: AlertRuleUpdate }) => updateAlertRule(ruleId, payload),
+    mutationFn: ({ ruleId, payload }: { ruleId: string; payload: AlertRuleUpdate }) =>
+      updateAlertRule(projectId, ruleId, payload),
     onSuccess: invalidateAlerts,
   })
 
   const deleteRule = useMutation({
-    mutationFn: deleteAlertRule,
+    mutationFn: (ruleId: string) => deleteAlertRule(projectId, ruleId),
     onSuccess: invalidateAlerts,
   })
 
   const resolveEvent = useMutation({
-    mutationFn: resolveAlertEvent,
+    mutationFn: (eventId: string) => resolveAlertEvent(projectId, eventId),
     onSuccess: invalidateAlerts,
   })
 
