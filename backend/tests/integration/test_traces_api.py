@@ -14,12 +14,15 @@ async def test_unauthenticated_returns_401(client):
 async def test_data_isolation_between_projects(client, db_session):
     project_a = await create_test_project(db_session)
     project_b = await create_test_project(db_session)
-    await create_test_span(db_session, project_id=project_b.id, count=5)
+    span_a = await create_test_span(db_session, project_id=project_a.id, count=1)
+    span_b = await create_test_span(db_session, project_id=project_b.id, count=5)
 
     r = await client.get("/v1/traces", headers={"X-API-Key": project_a.raw_key})
 
     assert r.status_code == 200
-    assert r.json()["traces"] == []
+    trace_ids = {item["id"] for item in r.json()["traces"]}
+    assert trace_ids == {span_a[0]["trace_id"]}
+    assert span_b[0]["trace_id"] not in trace_ids
 
 
 @pytest.mark.asyncio
@@ -33,6 +36,24 @@ async def test_idor_protection_on_trace_detail(client, db_session):
     )
 
     assert r.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_metrics_overview_isolation_between_projects(client, db_session):
+    project_a = await create_test_project(db_session)
+    project_b = await create_test_project(db_session)
+    await create_test_span(db_session, project_id=project_a.id, count=1)
+    await create_test_span(db_session, project_id=project_b.id, count=5)
+
+    r = await client.get(
+        "/v1/metrics/overview",
+        params={"period": "24h"},
+        headers={"X-API-Key": project_a.raw_key},
+    )
+
+    assert r.status_code == 200
+    assert r.json()["total_spans"] == 1
+    assert r.json()["total_tokens"] == 150
 
 
 @pytest.mark.asyncio

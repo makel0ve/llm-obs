@@ -105,6 +105,31 @@ async def create_test_project(db_session) -> TestProject:
 async def create_test_span(db_session, project_id: str, count: int = 1) -> list[dict]:
     spans = []
     trace_id = str(uuid.uuid4())
+    trace_started_at = datetime.now(UTC)
+
+    await db_session.execute(
+        text(
+            """
+        INSERT INTO traces (
+            id, project_id, started_at, ended_at, total_tokens,
+            total_cost_usd, span_count, status
+        ) VALUES (
+            :id, :project_id, :started_at, :ended_at, :total_tokens,
+            :total_cost_usd, :span_count, :status
+        )
+        """
+        ),
+        {
+            "id": trace_id,
+            "project_id": project_id,
+            "started_at": trace_started_at,
+            "ended_at": trace_started_at,
+            "total_tokens": 150 * count,
+            "total_cost_usd": f"{0.001 * count:.8f}",
+            "span_count": count,
+            "status": "ok",
+        },
+    )
 
     for _ in range(count):
         span_id = str(uuid.uuid4())
