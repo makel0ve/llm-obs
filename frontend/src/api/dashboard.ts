@@ -415,12 +415,12 @@ export async function createAlertRule(payload: AlertRuleCreate) {
   await api.post('/v1/alerts/rules', payload)
 }
 
-export async function updateAlertRule(ruleId: string, payload: AlertRuleUpdate) {
-  await api.patch(`/v1/alerts/rules/${ruleId}`, payload)
+export async function updateAlertRule(projectId: string, ruleId: string, payload: AlertRuleUpdate) {
+  await api.patch(`/v1/alerts/rules/${ruleId}?${projectParams(projectId).toString()}`, payload)
 }
 
-export async function deleteAlertRule(ruleId: string) {
-  await api.delete(`/v1/alerts/rules/${ruleId}`)
+export async function deleteAlertRule(projectId: string, ruleId: string) {
+  await api.delete(`/v1/alerts/rules/${ruleId}?${projectParams(projectId).toString()}`)
 }
 
 export async function listAlertEvents(projectId: string) {
@@ -428,8 +428,8 @@ export async function listAlertEvents(projectId: string) {
   return response.data
 }
 
-export async function resolveAlertEvent(eventId: string) {
-  await api.post(`/v1/alerts/events/${eventId}/resolve`)
+export async function resolveAlertEvent(projectId: string, eventId: string) {
+  await api.post(`/v1/alerts/events/${eventId}/resolve?${projectParams(projectId).toString()}`)
 }
 
 export async function getProjectSettings(projectId: string) {
