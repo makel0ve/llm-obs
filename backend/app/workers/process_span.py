@@ -123,6 +123,9 @@ async def process_span_batch(
                             "id": uuid.UUID(span_data["span_id"]),
                             "trace_id": uuid.UUID(span_data["trace_id"]),
                             "project_id": uuid.UUID(project_id),
+                            "parent_span_id": uuid.UUID(span_data["parent_span_id"])
+                            if span_data.get("parent_span_id")
+                            else None,
                             "name": span_data.get("name", "llm_call"),
                             "provider": span_data["provider"],
                             "model": span_data["model"],
