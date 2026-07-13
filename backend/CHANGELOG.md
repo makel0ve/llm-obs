@@ -1,6 +1,19 @@
 # CHANGELOG
 
 
+## v0.23.0 (2026-07-13)
+
+### Chores
+
+- Trigger ci for release sync
+  ([`a17abb0`](https://github.com/makel0ve/llm-obs/commit/a17abb07560189d59c4f019d01d9eebfb13679d6))
+
+### Features
+
+- Add admin project switcher
+  ([`d434204`](https://github.com/makel0ve/llm-obs/commit/d43420484ee43f5df9fd796270f3c128a4ab23df))
+
+
 ## v0.22.0 (2026-07-13)
 
 ### Chores
