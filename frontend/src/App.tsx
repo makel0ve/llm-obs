@@ -1,12 +1,14 @@
-import { QueryClient, QueryClientProvider, useQuery } from '@tanstack/react-query'
+import { QueryClient, QueryClientProvider, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { lazy, Suspense, useEffect, useMemo, useState, type FormEvent, type ReactNode } from 'react'
 import { BrowserRouter, Routes, Route, Navigate, NavLink, Outlet } from 'react-router-dom'
 import { api } from './api/client'
 import {
+  createProject,
   dashboardQueryKeys,
   listProjects,
   loginUser,
   registerUser,
+  type ProjectCreateResponse,
   type ProjectRecord,
   type UserRole,
 } from './api/dashboard'
@@ -155,6 +157,96 @@ function ProjectSwitcher({
   )
 }
 
+function ProjectCreatePanel({
+  error,
+  isCreating,
+  onCancel,
+  onCreate,
+}: {
+  error: string
+  isCreating: boolean
+  onCancel: () => void
+  onCreate: (name: string) => void
+}) {
+  const [name, setName] = useState('')
+
+  const handleSubmit = (event: FormEvent) => {
+    event.preventDefault()
+    const trimmed = name.trim()
+    if (trimmed) {
+      onCreate(trimmed)
+    }
+  }
+
+  return (
+    <div className="border-b border-gray-200 bg-white px-4 py-4 sm:px-6">
+      <form onSubmit={handleSubmit} className="flex flex-col gap-3 md:flex-row md:items-end">
+        <label className="min-w-0 flex-1">
+          <span className="text-xs font-medium text-gray-600">Project name</span>
+          <input
+            value={name}
+            onChange={event => setName(event.target.value)}
+            minLength={1}
+            maxLength={255}
+            required
+            autoFocus
+            className="mt-1 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 placeholder-gray-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100"
+            placeholder="Production API"
+          />
+        </label>
+        <div className="flex gap-2">
+          <button
+            type="submit"
+            disabled={isCreating}
+            className="rounded-md bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+          >
+            {isCreating ? 'Creating...' : 'Create project'}
+          </button>
+          <button
+            type="button"
+            onClick={onCancel}
+            className="rounded-md border border-gray-200 bg-white px-3 py-2 text-sm font-medium text-gray-600 hover:bg-gray-100 hover:text-gray-950"
+          >
+            Cancel
+          </button>
+        </div>
+      </form>
+      {error && <p className="mt-2 text-sm text-red-600">{error}</p>}
+    </div>
+  )
+}
+
+function OneTimeApiKeyBanner({
+  title,
+  apiKey,
+  onDismiss,
+}: {
+  title: string
+  apiKey: string
+  onDismiss: () => void
+}) {
+  return (
+    <div className="border-b border-blue-100 bg-blue-50 px-4 py-4 sm:px-6">
+      <div className="flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
+        <div className="min-w-0 space-y-2">
+          <p className="text-sm font-medium text-blue-950">{title}</p>
+          <code className="block max-w-full overflow-x-auto rounded-md border border-blue-200 bg-white px-3 py-2 text-sm text-blue-950">
+            {apiKey}
+          </code>
+          <p className="text-xs text-blue-800">This key is shown once. Store it before dismissing.</p>
+        </div>
+        <button
+          type="button"
+          onClick={onDismiss}
+          className="w-full rounded-md bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-700 sm:w-auto"
+        >
+          Dismiss
+        </button>
+      </div>
+    </div>
+  )
+}
+
 function LoginPage({
   onLogin,
 }: {
@@ -267,6 +359,10 @@ function Dashboard({
   onDismissApiKey: () => void
   onLogout: () => void
 }) {
+  const queryClient = useQueryClient()
+  const [showCreateProject, setShowCreateProject] = useState(false)
+  const [createProjectError, setCreateProjectError] = useState('')
+  const [createdProjectKey, setCreatedProjectKey] = useState<ProjectCreateResponse | null>(null)
   const projectsQuery = useQuery({
     queryKey: dashboardQueryKeys.projects(),
     queryFn: listProjects,
@@ -291,6 +387,24 @@ function Dashboard({
     projectsQuery.isLoading,
     role,
   ])
+  const createProjectMutation = useMutation({
+    mutationFn: createProject,
+    onSuccess: async project => {
+      setCreateProjectError('')
+      setShowCreateProject(false)
+      setCreatedProjectKey(project)
+      await queryClient.invalidateQueries({ queryKey: dashboardQueryKeys.projects() })
+      onProjectChange(project.id)
+    },
+    onError: error => {
+      const status = error && typeof error === 'object' && 'response' in error
+        ? (error.response as { status?: number } | undefined)?.status
+        : undefined
+      setCreateProjectError(
+        status === 409 ? 'Project name already exists' : 'Could not create project'
+      )
+    },
+  })
 
   return (
     <div className="min-h-screen bg-gray-50 text-gray-950">
@@ -307,13 +421,27 @@ function Dashboard({
               onProjectChange={onProjectChange}
             />
           </div>
-          <button
-            type="button"
-            onClick={onLogout}
-            className="rounded-md border border-gray-200 bg-white px-3 py-2 text-sm font-medium text-gray-600 hover:bg-gray-100 hover:text-gray-950"
-          >
-            Logout
-          </button>
+          <div className="flex shrink-0 items-center gap-2">
+            {role === 'admin' && (
+              <button
+                type="button"
+                onClick={() => {
+                  setCreateProjectError('')
+                  setShowCreateProject(value => !value)
+                }}
+                className="rounded-md bg-gray-900 px-3 py-2 text-sm font-medium text-white hover:bg-gray-700"
+              >
+                New project
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={onLogout}
+              className="rounded-md border border-gray-200 bg-white px-3 py-2 text-sm font-medium text-gray-600 hover:bg-gray-100 hover:text-gray-950"
+            >
+              Logout
+            </button>
+          </div>
         </div>
         <DashboardNav role={role} variant="mobile" />
       </header>
@@ -323,25 +451,30 @@ function Dashboard({
           <DashboardNav role={role} />
         </aside>
         <main className="min-w-0 flex-1">
+          {showCreateProject && role === 'admin' && (
+            <ProjectCreatePanel
+              error={createProjectError}
+              isCreating={createProjectMutation.isPending}
+              onCancel={() => {
+                setCreateProjectError('')
+                setShowCreateProject(false)
+              }}
+              onCreate={name => createProjectMutation.mutate({ name })}
+            />
+          )}
           {registrationApiKey && (
-            <div className="border-b border-blue-100 bg-blue-50 px-4 py-4 sm:px-6">
-              <div className="flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
-                <div className="min-w-0 space-y-2">
-                  <p className="text-sm font-medium text-blue-950">Default project API key</p>
-                  <code className="block max-w-full overflow-x-auto rounded-md border border-blue-200 bg-white px-3 py-2 text-sm text-blue-950">
-                    {registrationApiKey}
-                  </code>
-                  <p className="text-xs text-blue-800">This key is shown once. Store it before dismissing.</p>
-                </div>
-                <button
-                  type="button"
-                  onClick={onDismissApiKey}
-                  className="w-full rounded-md bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-700 sm:w-auto"
-                >
-                  Dismiss
-                </button>
-              </div>
-            </div>
+            <OneTimeApiKeyBanner
+              title="Default project API key"
+              apiKey={registrationApiKey}
+              onDismiss={onDismissApiKey}
+            />
+          )}
+          {createdProjectKey && (
+            <OneTimeApiKeyBanner
+              title={`${createdProjectKey.name} API key`}
+              apiKey={createdProjectKey.api_key}
+              onDismiss={() => setCreatedProjectKey(null)}
+            />
           )}
           <div className="min-w-0">
             <Outlet />
