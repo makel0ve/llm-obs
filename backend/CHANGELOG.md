@@ -1,6 +1,19 @@
 # CHANGELOG
 
 
+## v0.22.0 (2026-07-13)
+
+### Chores
+
+- Trigger ci for release sync
+  ([`1aa55c5`](https://github.com/makel0ve/llm-obs/commit/1aa55c57f9a7dd6049db62c614839bcc6556c77f))
+
+### Features
+
+- Add organization project API
+  ([`3776d0e`](https://github.com/makel0ve/llm-obs/commit/3776d0ecb7f08cf8b2d0bbc20799bbeb2cc6d335))
+
+
 ## v0.21.0 (2026-07-13)
 
 ### Chores
