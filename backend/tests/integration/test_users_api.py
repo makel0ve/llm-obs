@@ -387,7 +387,11 @@ async def test_viewer_cannot_create_alert_rule(monkeypatch):
         raise AssertionError("db should not be used")
         yield
 
+    async def deny_project_access(project_id, user, required_role="viewer"):
+        raise HTTPException(status_code=403, detail="Project access denied")
+
     monkeypatch.setattr(alerts_api, "get_db", fail_get_db)
+    monkeypatch.setattr(alerts_api, "get_project_for_user", deny_project_access)
 
     with pytest.raises(HTTPException) as exc_info:
         await create_rule(

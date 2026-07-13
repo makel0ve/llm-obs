@@ -1,12 +1,12 @@
 import uuid
 from datetime import UTC, datetime
+from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import text
 
-from app.core.auth import get_current_user
+from app.core.auth import get_current_user, get_project_for_user
 from app.core.db import get_db
-from app.core.rbac import require_member
 from app.schemas.alerts import AlertRuleCreate, AlertRuleUpdate
 
 router = APIRouter(prefix="/v1/alerts", tags=["alerts"])
@@ -19,15 +19,12 @@ ALLOWED_UPDATE_FIELDS = {
 
 
 @router.get("/rules")
-async def list_rules(project_id: str, user=Depends(get_current_user)):
-    async with get_db() as db:
-        project = await db.execute(
-            text("SELECT id FROM projects WHERE id = :pid AND org_id = :org"),
-            {"pid": project_id, "org": user["org_id"]},
-        )
-        if not project.one_or_none():
-            raise HTTPException(404, "Project not found")
+async def list_rules(
+    project_id: str, user: dict[str, Any] = Depends(get_current_user)
+) -> Any:
+    await get_project_for_user(project_id, user, required_role="viewer")
 
+    async with get_db() as db:
         result = await db.execute(
             text(
                 "SELECT * FROM alert_rules WHERE project_id = :pid "
@@ -40,18 +37,13 @@ async def list_rules(project_id: str, user=Depends(get_current_user)):
 
 
 @router.post("/rules", status_code=201)
-async def create_rule(body: AlertRuleCreate, user=Depends(get_current_user)):
-    require_member(user)
+async def create_rule(
+    body: AlertRuleCreate, user: dict[str, Any] = Depends(get_current_user)
+) -> dict[str, str]:
+    await get_project_for_user(body.project_id, user, required_role="member")
 
     async with get_db() as db:
         async with db.begin():
-            project = await db.execute(
-                text("SELECT id FROM projects WHERE id = :pid AND org_id = :org"),
-                {"pid": body.project_id, "org": user["org_id"]},
-            )
-            if not project.one_or_none():
-                raise HTTPException(404, "Project not found")
-
             rule_id = str(uuid.uuid4())
             await db.execute(
                 text(
@@ -86,9 +78,9 @@ async def update_rule(
     rule_id: str,
     body: AlertRuleUpdate,
     project_id: str,
-    user=Depends(get_current_user),
-):
-    require_member(user)
+    user: dict[str, Any] = Depends(get_current_user),
+) -> dict[str, bool]:
+    await get_project_for_user(project_id, user, required_role="member")
 
     updates = {
         k: v
@@ -107,9 +99,6 @@ async def update_rule(
                 UPDATE alert_rules SET {set_clause}
                 WHERE id = :rule_id
                     AND project_id = :project_id
-                    AND project_id IN (
-                        SELECT id FROM projects WHERE org_id = :org
-                    )
                 RETURNING id
                 """  # nosec B608
                 ),
@@ -117,7 +106,6 @@ async def update_rule(
                     **updates,
                     "rule_id": rule_id,
                     "project_id": project_id,
-                    "org": user["org_id"],
                 },
             )
             if not result.one_or_none():
@@ -127,8 +115,12 @@ async def update_rule(
 
 
 @router.delete("/rules/{rule_id}", status_code=204)
-async def delete_rule(rule_id: str, project_id: str, user=Depends(get_current_user)):
-    require_member(user)
+async def delete_rule(
+    rule_id: str,
+    project_id: str,
+    user: dict[str, Any] = Depends(get_current_user),
+) -> None:
+    await get_project_for_user(project_id, user, required_role="member")
 
     async with get_db() as db:
         async with db.begin():
@@ -138,28 +130,22 @@ async def delete_rule(rule_id: str, project_id: str, user=Depends(get_current_us
                 DELETE FROM alert_rules
                 WHERE id = :id
                     AND project_id = :project_id
-                    AND project_id IN (
-                        SELECT id FROM projects WHERE org_id = :org
-                    )
                 RETURNING id
                 """
                 ),
-                {"id": rule_id, "project_id": project_id, "org": user["org_id"]},
+                {"id": rule_id, "project_id": project_id},
             )
             if not result.one_or_none():
                 raise HTTPException(404, "Rule not found")
 
 
 @router.get("/events")
-async def list_events(project_id: str, user=Depends(get_current_user)):
-    async with get_db() as db:
-        project = await db.execute(
-            text("SELECT id FROM projects WHERE id = :pid AND org_id = :org"),
-            {"pid": project_id, "org": user["org_id"]},
-        )
-        if not project.one_or_none():
-            raise HTTPException(404, "Project not found")
+async def list_events(
+    project_id: str, user: dict[str, Any] = Depends(get_current_user)
+) -> Any:
+    await get_project_for_user(project_id, user, required_role="viewer")
 
+    async with get_db() as db:
         result = await db.execute(
             text(
                 """
@@ -177,8 +163,12 @@ async def list_events(project_id: str, user=Depends(get_current_user)):
 
 
 @router.post("/events/{event_id}/resolve")
-async def resolve_event(event_id: str, project_id: str, user=Depends(get_current_user)):
-    require_member(user)
+async def resolve_event(
+    event_id: str,
+    project_id: str,
+    user: dict[str, Any] = Depends(get_current_user),
+) -> dict[str, bool]:
+    await get_project_for_user(project_id, user, required_role="member")
 
     async with get_db() as db:
         async with db.begin():
@@ -189,17 +179,12 @@ async def resolve_event(event_id: str, project_id: str, user=Depends(get_current
                 WHERE id = :id AND rule_id IN (
                     SELECT id FROM alert_rules
                     WHERE project_id = :project_id
-                        AND project_id IN (
-                            SELECT id FROM projects WHERE org_id = :org
-                        )
-                    )
                 ) RETURNING id
                 """
                 ),
                 {
                     "id": event_id,
                     "project_id": project_id,
-                    "org": user["org_id"],
                     "now": datetime.now(UTC),
                 },
             )
