@@ -1,6 +1,19 @@
 # CHANGELOG
 
 
+## v0.21.0 (2026-07-13)
+
+### Chores
+
+- Trigger ci for release sync
+  ([`fb5645a`](https://github.com/makel0ve/llm-obs/commit/fb5645acdf2c563b0cf93960706870561837290c))
+
+### Features
+
+- Show trace span hierarchy
+  ([`4d7af07`](https://github.com/makel0ve/llm-obs/commit/4d7af0740c7c09963d022ebbb348ed28394103ba))
+
+
 ## v0.20.0 (2026-07-13)
 
 ### Chores
