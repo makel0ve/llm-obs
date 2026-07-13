@@ -16,6 +16,7 @@ class SpanData:
     provider: str
     model: str
     input_messages: list[dict]
+    parent_span_id: str | None = None
     output: str | None = None
     error: str | None = None
     input_tokens: int = 0
@@ -143,6 +144,7 @@ class LLMTracer:
         return {
             "span_id": span.span_id,
             "trace_id": span.trace_id,
+            "parent_span_id": span.parent_span_id,
             "name": span.name,
             "provider": span.provider,
             "model": span.model,

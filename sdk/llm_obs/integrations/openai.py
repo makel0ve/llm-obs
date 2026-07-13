@@ -73,13 +73,13 @@ def patch_openai(client):
                         provider="openai",
                         model=model,
                         input_messages=messages,
+                        parent_span_id=parent_span_id,
                         output=_extract_output(response),
                         error=error_str,
                         input_tokens=input_tokens,
                         output_tokens=output_tokens,
                         latency_ms=latency_ms,
                         started_at=started_at,
-                        metadata={"parent_span_id": parent_span_id},
                     )
                 )
 
