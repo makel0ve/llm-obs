@@ -1,3 +1,5 @@
+import json
+
 import pytest
 import httpx
 import respx
@@ -78,7 +80,10 @@ async def test_nested_traces_share_trace_id():
 
     await outer()
     assert len(tracer._buffer) == 2
-    assert tracer._buffer[0].trace_id == tracer._buffer[1].trace_id
+    inner_span, outer_span = tracer._buffer
+    assert inner_span.trace_id == outer_span.trace_id
+    assert inner_span.parent_span_id == outer_span.span_id
+    assert outer_span.parent_span_id is None
 
 
 @pytest.mark.asyncio
@@ -125,7 +130,36 @@ async def test_flush_sends_http():
 
         await tracer._flush()
         assert route.called
+        payload = json.loads(route.calls.last.request.content)
+        assert payload["spans"][0]["parent_span_id"] is None
         assert len(tracer._buffer) == 0
+
+
+@pytest.mark.asyncio
+async def test_flush_sends_parent_span_id():
+    tracer = llm_obs.init(api_key="test", endpoint="http://server")
+
+    with respx.mock:
+        route = respx.post("http://server/v1/ingest").mock(
+            return_value=httpx.Response(202, json={"batch_id": "b1"})
+        )
+
+        tracer.record(
+            SpanData(
+                trace_id="t1",
+                span_id="child",
+                parent_span_id="parent",
+                name="test",
+                provider="openai",
+                model="gpt-4o",
+                input_messages=[],
+                latency_ms=100,
+            )
+        )
+
+        await tracer._flush()
+        payload = json.loads(route.calls.last.request.content)
+        assert payload["spans"][0]["parent_span_id"] == "parent"
 
 
 def make_span(name: str = "test") -> SpanData:
