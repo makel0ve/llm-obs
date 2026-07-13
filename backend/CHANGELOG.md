@@ -1,6 +1,19 @@
 # CHANGELOG
 
 
+## v0.25.0 (2026-07-13)
+
+### Chores
+
+- Trigger ci for release sync
+  ([`844b174`](https://github.com/makel0ve/llm-obs/commit/844b17431f417326a60788ae3c92a503cdf69e22))
+
+### Features
+
+- Add project membership schema
+  ([`2ed7902`](https://github.com/makel0ve/llm-obs/commit/2ed79024cbb03176be2be15ceff10c10ab33749a))
+
+
 ## v0.24.0 (2026-07-13)
 
 ### Chores
