@@ -1,6 +1,19 @@
 # CHANGELOG
 
 
+## v0.19.0 (2026-07-13)
+
+### Chores
+
+- Trigger ci for release sync
+  ([`e4b3a5d`](https://github.com/makel0ve/llm-obs/commit/e4b3a5d1a27e24c2faef4c68128b20e04141bec8))
+
+### Features
+
+- Propagate SDK parent spans
+  ([`3e9a3b0`](https://github.com/makel0ve/llm-obs/commit/3e9a3b0625bc3269378a9846e8586ceae6ee3243))
+
+
 ## v0.18.2 (2026-07-12)
 
 ### Bug Fixes
