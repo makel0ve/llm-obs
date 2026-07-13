@@ -1,6 +1,7 @@
 import uuid
 from datetime import datetime
 from decimal import Decimal
+from typing import Any
 
 from sqlalchemy import TIMESTAMP, UUID, Float, Integer, Numeric, String, Text
 from sqlalchemy.dialects.postgresql import JSONB
@@ -32,6 +33,6 @@ class Span(Base):
         TIMESTAMP(timezone=True), primary_key=True, nullable=False
     )
     payload_s3_key: Mapped[str | None] = mapped_column(String(500))
-    metadata_: Mapped[dict] = mapped_column(
+    metadata_: Mapped[dict[str, Any]] = mapped_column(
         "metadata", JSONB, default=dict, nullable=False
     )
