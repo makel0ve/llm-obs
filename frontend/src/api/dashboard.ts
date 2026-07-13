@@ -176,6 +176,13 @@ export type ProjectSettings = {
   payload_redact_keys: string
 }
 
+export type ProjectRecord = ProjectSettings & {
+  id: string
+  name: string
+  is_active: boolean
+  created_at?: string | null
+}
+
 export type ProjectSettingsUpdate = Partial<ProjectSettings>
 
 export type AlertRule = {
@@ -325,6 +332,7 @@ export const dashboardQueryKeys = {
     ['audit-events', action, userId, fromDt, toDt, cursor] as const,
   projectSettings: (projectId: string) => ['project-settings', projectId] as const,
   apiKeys: (projectId: string) => ['api-keys', projectId] as const,
+  projects: () => ['projects'] as const,
 }
 
 function projectParams(projectId: string) {
@@ -434,6 +442,11 @@ export async function resolveAlertEvent(projectId: string, eventId: string) {
 
 export async function getProjectSettings(projectId: string) {
   const response = await api.get<ProjectSettings>(`/v1/projects/${projectId}/settings`)
+  return response.data
+}
+
+export async function listProjects() {
+  const response = await api.get<ProjectRecord[]>('/v1/projects')
   return response.data
 }
 
