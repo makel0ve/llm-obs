@@ -183,6 +183,15 @@ export type ProjectRecord = ProjectSettings & {
   created_at?: string | null
 }
 
+export type ProjectCreate = {
+  name: string
+}
+
+export type ProjectCreateResponse = ProjectRecord & {
+  api_key: string
+  note: string
+}
+
 export type ProjectSettingsUpdate = Partial<ProjectSettings>
 
 export type AlertRule = {
@@ -447,6 +456,11 @@ export async function getProjectSettings(projectId: string) {
 
 export async function listProjects() {
   const response = await api.get<ProjectRecord[]>('/v1/projects')
+  return response.data
+}
+
+export async function createProject(payload: ProjectCreate) {
+  const response = await api.post<ProjectCreateResponse>('/v1/projects', payload)
   return response.data
 }
 
