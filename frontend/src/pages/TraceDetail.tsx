@@ -98,13 +98,84 @@ function getTimelineBounds(spans: TraceSpan[]) {
   }
 }
 
+type SpanHierarchyRow = {
+  span: TraceSpan
+  depth: number
+  childCount: number
+  hasKnownParent: boolean
+}
+
+function getSpanStart(span: TraceSpan) {
+  const start = new Date(span.started_at).getTime()
+  return Number.isFinite(start) ? start : 0
+}
+
+function buildSpanHierarchy(spans: TraceSpan[]): SpanHierarchyRow[] {
+  const nodes = new Map<string, { span: TraceSpan; children: TraceSpan[] }>()
+
+  for (const span of spans) {
+    nodes.set(span.id, { span, children: [] })
+  }
+
+  for (const span of spans) {
+    if (!span.parent_span_id || span.parent_span_id === span.id) continue
+
+    const parent = nodes.get(span.parent_span_id)
+    if (parent) {
+      parent.children.push(span)
+    }
+  }
+
+  const sortedSpans = [...spans].sort((a, b) => getSpanStart(a) - getSpanStart(b))
+  const rows: SpanHierarchyRow[] = []
+  const visited = new Set<string>()
+
+  const visit = (span: TraceSpan, depth: number) => {
+    if (visited.has(span.id)) return
+
+    visited.add(span.id)
+    const children = nodes.get(span.id)?.children ?? []
+    const sortedChildren = [...children].sort((a, b) => getSpanStart(a) - getSpanStart(b))
+
+    rows.push({
+      span,
+      depth,
+      childCount: sortedChildren.length,
+      hasKnownParent: Boolean(span.parent_span_id && nodes.has(span.parent_span_id)),
+    })
+
+    for (const child of sortedChildren) {
+      visit(child, depth + 1)
+    }
+  }
+
+  for (const span of sortedSpans) {
+    const hasKnownParent = Boolean(span.parent_span_id && nodes.has(span.parent_span_id))
+    if (!hasKnownParent) {
+      visit(span, 0)
+    }
+  }
+
+  for (const span of sortedSpans) {
+    visit(span, 0)
+  }
+
+  return rows
+}
+
 function SpanRow({
   span,
+  depth,
+  childCount,
+  hasKnownParent,
   minStart,
   duration,
   includePayload,
 }: {
   span: TraceSpan
+  depth: number
+  childCount: number
+  hasKnownParent: boolean
   minStart: number
   duration: number
   includePayload: boolean
@@ -113,14 +184,29 @@ function SpanRow({
   const latency = Math.max(1, Number(span.latency_ms ?? 0))
   const offsetPct = Number.isFinite(start) ? Math.max(0, ((start - minStart) / duration) * 100) : 0
   const widthPct = Math.max(2, Math.min(100 - offsetPct, (latency / duration) * 100))
+  const indentPx = Math.min(depth, 6) * 24
 
   return (
-    <div className="rounded-lg border border-gray-200 bg-white p-4">
+    <div
+      className="relative rounded-lg border border-gray-200 bg-white p-4"
+      style={{ marginLeft: `${indentPx}px` }}
+    >
+      {depth > 0 && (
+        <div className="absolute bottom-4 left-[-13px] top-4 w-px bg-gray-200" />
+      )}
       <div className="flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
             <h2 className="text-base font-semibold text-gray-950">{span.name}</h2>
             <StatusBadge status={span.status} />
+            <span className="inline-flex min-h-7 items-center rounded-md bg-gray-100 px-2 text-xs font-medium text-gray-700">
+              {depth === 0 ? 'Root span' : `Depth ${depth}`}
+            </span>
+            {childCount > 0 && (
+              <span className="inline-flex min-h-7 items-center rounded-md bg-blue-50 px-2 text-xs font-medium text-blue-700 ring-1 ring-blue-100">
+                {childCount} child{childCount === 1 ? '' : 'ren'}
+              </span>
+            )}
           </div>
           <p className="mt-1 break-all text-xs text-gray-500">{span.id}</p>
         </div>
@@ -166,7 +252,9 @@ function SpanRow({
           </div>
           <div>
             <div className="text-xs text-gray-500">Parent span</div>
-            <div className="truncate font-medium text-gray-900">{span.parent_span_id ?? '-'}</div>
+            <div className="truncate font-medium text-gray-900">
+              {hasKnownParent ? span.parent_span_id : span.parent_span_id ?? '-'}
+            </div>
           </div>
         </div>
       </div>
@@ -218,6 +306,10 @@ export function TraceDetail({ projectId }: { projectId: string }) {
 
   const timeline = useMemo(
     () => getTimelineBounds(query.data?.spans ?? []),
+    [query.data?.spans],
+  )
+  const spanRows = useMemo(
+    () => buildSpanHierarchy(query.data?.spans ?? []),
     [query.data?.spans],
   )
   const payloadCount = useMemo(
@@ -307,17 +399,20 @@ export function TraceDetail({ projectId }: { projectId: string }) {
           <div className="space-y-4">
             <div>
               <h2 className="text-lg font-semibold text-gray-950">Spans</h2>
-              <p className="mt-1 text-sm text-gray-500">Chronological order with relative waterfall timing.</p>
+              <p className="mt-1 text-sm text-gray-500">Parent-child order with relative waterfall timing.</p>
             </div>
             {query.data.spans.length === 0 ? (
               <div className="rounded-lg border border-dashed border-gray-300 bg-white p-6 text-sm text-gray-600">
                 No spans are attached to this trace.
               </div>
             ) : (
-              query.data.spans.map(span => (
+              spanRows.map(({ span, depth, childCount, hasKnownParent }) => (
                 <SpanRow
                   key={`${span.id}-${span.started_at}`}
                   span={span}
+                  depth={depth}
+                  childCount={childCount}
+                  hasKnownParent={hasKnownParent}
                   minStart={timeline.minStart}
                   duration={timeline.duration}
                   includePayload={includePayload}
