@@ -1,6 +1,19 @@
 # CHANGELOG
 
 
+## v0.24.0 (2026-07-13)
+
+### Chores
+
+- Trigger ci for release sync
+  ([`bcda6ff`](https://github.com/makel0ve/llm-obs/commit/bcda6ff9d17ba825dce6fc505ac084600b2fb95b))
+
+### Features
+
+- Add project creation UI
+  ([`73d9141`](https://github.com/makel0ve/llm-obs/commit/73d9141b56e3ea34c457a42c915b0e05e6525dd7))
+
+
 ## v0.23.0 (2026-07-13)
 
 ### Chores
