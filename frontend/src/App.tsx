@@ -1,8 +1,15 @@
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { lazy, Suspense, useState, type FormEvent, type ReactNode } from 'react'
+import { QueryClient, QueryClientProvider, useQuery } from '@tanstack/react-query'
+import { lazy, Suspense, useEffect, useMemo, useState, type FormEvent, type ReactNode } from 'react'
 import { BrowserRouter, Routes, Route, Navigate, NavLink, Outlet } from 'react-router-dom'
 import { api } from './api/client'
-import { loginUser, registerUser, type UserRole } from './api/dashboard'
+import {
+  dashboardQueryKeys,
+  listProjects,
+  loginUser,
+  registerUser,
+  type ProjectRecord,
+  type UserRole,
+} from './api/dashboard'
 
 const queryClient = new QueryClient()
 const Overview = lazy(() => import('./pages/Overview').then(module => ({ default: module.Overview })))
@@ -92,6 +99,59 @@ function DashboardNav({ role, variant = 'desktop' }: { role: UserRole; variant?:
         </NavLink>
       ))}
     </nav>
+  )
+}
+
+function ProjectSwitcher({
+  projectId,
+  projects,
+  isLoading,
+  isError,
+  role,
+  onProjectChange,
+}: {
+  projectId: string
+  projects: ProjectRecord[]
+  isLoading: boolean
+  isError: boolean
+  role: UserRole
+  onProjectChange: (projectId: string) => void
+}) {
+  if (role !== 'admin') {
+    return (
+      <div className="truncate text-xs text-gray-500">
+        Project {projectId || 'not selected'}
+      </div>
+    )
+  }
+
+  if (isLoading) {
+    return <div className="text-xs text-gray-500">Loading projects...</div>
+  }
+
+  if (isError) {
+    return <div className="text-xs text-red-600">Projects unavailable</div>
+  }
+
+  if (projects.length === 0) {
+    return <div className="text-xs text-amber-700">No active project</div>
+  }
+
+  return (
+    <label className="mt-1 block">
+      <span className="sr-only">Active project</span>
+      <select
+        value={projectId}
+        onChange={event => onProjectChange(event.target.value)}
+        className="max-w-full rounded-md border border-gray-200 bg-white px-2 py-1 text-xs font-medium text-gray-700 shadow-sm hover:border-gray-300 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100"
+      >
+        {projects.map(project => (
+          <option key={project.id} value={project.id}>
+            {project.name}
+          </option>
+        ))}
+      </select>
+    </label>
   )
 }
 
@@ -196,22 +256,56 @@ function Dashboard({
   projectId,
   registrationApiKey,
   role,
+  onProjectChange,
   onDismissApiKey,
   onLogout,
 }: {
   projectId: string
   registrationApiKey: string
   role: UserRole
+  onProjectChange: (projectId: string) => void
   onDismissApiKey: () => void
   onLogout: () => void
 }) {
+  const projectsQuery = useQuery({
+    queryKey: dashboardQueryKeys.projects(),
+    queryFn: listProjects,
+    enabled: role === 'admin',
+    retry: false,
+  })
+  const projects = useMemo(() => projectsQuery.data ?? [], [projectsQuery.data])
+
+  useEffect(() => {
+    if (role !== 'admin' || projectsQuery.isLoading || projectsQuery.isError) return
+    if (projects.length === 0) return
+
+    const selectedExists = projects.some(project => project.id === projectId)
+    if (!selectedExists) {
+      onProjectChange(projects[0].id)
+    }
+  }, [
+    onProjectChange,
+    projectId,
+    projects,
+    projectsQuery.isError,
+    projectsQuery.isLoading,
+    role,
+  ])
+
   return (
     <div className="min-h-screen bg-gray-50 text-gray-950">
       <header className="sticky top-0 z-20 border-b border-gray-200 bg-white">
         <div className="flex min-h-16 items-center justify-between gap-4 px-4 sm:px-6">
           <div className="min-w-0">
             <div className="text-base font-semibold text-gray-950">LLM Obs</div>
-            <div className="truncate text-xs text-gray-500">Project {projectId || 'not selected'}</div>
+            <ProjectSwitcher
+              projectId={projectId}
+              projects={projects}
+              isLoading={projectsQuery.isLoading}
+              isError={projectsQuery.isError}
+              role={role}
+              onProjectChange={onProjectChange}
+            />
           </div>
           <button
             type="button"
@@ -298,6 +392,11 @@ export default function App() {
     setRegistrationApiKey(apiKey ?? '')
   }
 
+  const handleProjectChange = (pid: string) => {
+    localStorage.setItem('projectId', pid)
+    setProjectId(pid)
+  }
+
   const handleLogout = () => {
     localStorage.removeItem('token')
     localStorage.removeItem('projectId')
@@ -328,6 +427,7 @@ export default function App() {
                 projectId={projectId}
                 registrationApiKey={registrationApiKey}
                 role={role}
+                onProjectChange={handleProjectChange}
                 onDismissApiKey={() => setRegistrationApiKey('')}
                 onLogout={handleLogout}
               />
