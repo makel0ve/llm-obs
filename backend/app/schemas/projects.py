@@ -7,6 +7,32 @@ ApiKeyScope = Literal["ingest", "read", "read_write"]
 PayloadStorageMode = Literal["all", "errors", "none"]
 
 
+class ProjectRecord(BaseModel):
+    id: str
+    name: str
+    is_active: bool
+    created_at: datetime | None = None
+    retention_days: int
+    payload_storage_mode: PayloadStorageMode
+    payload_max_bytes: int
+    payload_redact_keys: str
+
+
+class ProjectCreate(BaseModel):
+    name: str = Field(min_length=1, max_length=255)
+    retention_days: int = Field(default=90, ge=7, le=365)
+    payload_storage_mode: PayloadStorageMode = "all"
+    payload_max_bytes: int = Field(default=262144, ge=0, le=10 * 1024 * 1024)
+    payload_redact_keys: str = Field(
+        default="api_key,password,secret,token,authorization", max_length=1000
+    )
+
+
+class ProjectCreateResponse(ProjectRecord):
+    api_key: str
+    note: str
+
+
 class ProjectSettings(BaseModel):
     retention_days: int
     payload_storage_mode: PayloadStorageMode

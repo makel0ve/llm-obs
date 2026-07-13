@@ -14,6 +14,9 @@ from app.schemas.projects import (
     ProjectApiKeyCreate,
     ProjectApiKeyCreateResponse,
     ProjectApiKeyRecord,
+    ProjectCreate,
+    ProjectCreateResponse,
+    ProjectRecord,
     ProjectSettings,
     ProjectSettingsUpdate,
 )
@@ -25,6 +28,106 @@ router = APIRouter(prefix="/v1/projects", tags=["projects"])
 def serialize_api_key_record(row: Any) -> dict[str, Any]:
     record = dict(row)
     record["id"] = str(record["id"])
+    return record
+
+
+def serialize_project_record(row: Any) -> dict[str, Any]:
+    record = dict(row)
+    record["id"] = str(record["id"])
+    return record
+
+
+@router.get("", response_model=list[ProjectRecord])
+async def list_projects(
+    user: dict[str, Any] = Depends(get_current_user),
+) -> list[dict[str, Any]]:
+    require_admin(user)
+
+    async with get_db() as db:
+        result = await db.execute(
+            text(
+                """
+                SELECT id, name, is_active, created_at, retention_days,
+                    payload_storage_mode, payload_max_bytes, payload_redact_keys
+                FROM projects
+                WHERE org_id = :org
+                ORDER BY created_at ASC, name ASC
+                """
+            ),
+            {"org": user["org_id"]},
+        )
+
+    return [serialize_project_record(row) for row in result.mappings().all()]
+
+
+@router.post("", status_code=201, response_model=ProjectCreateResponse)
+async def create_project(
+    body: ProjectCreate,
+    user: dict[str, Any] = Depends(get_current_user),
+) -> dict[str, Any]:
+    require_admin(user)
+
+    name = body.name.strip()
+    if not name:
+        raise HTTPException(400, "Project name is required")
+
+    raw_key = f"llmobs_{secrets.token_urlsafe(32)}"
+    key_hash = hashlib.sha256(raw_key.encode()).hexdigest()
+
+    async with get_db() as db:
+        async with db.begin():
+            exists = await db.execute(
+                text(
+                    """
+                    SELECT 1
+                    FROM projects
+                    WHERE org_id = :org AND name = :name
+                    """
+                ),
+                {"org": user["org_id"], "name": name},
+            )
+            if exists.one_or_none():
+                raise HTTPException(409, "Project already exists")
+
+            result = await db.execute(
+                text(
+                    """
+                    INSERT INTO projects (
+                        id, org_id, name, api_key_hash, retention_days,
+                        payload_storage_mode, payload_max_bytes, payload_redact_keys
+                    )
+                    VALUES (
+                        :id, :org, :name, :api_key_hash, :retention_days,
+                        :payload_storage_mode, :payload_max_bytes,
+                        :payload_redact_keys
+                    )
+                    RETURNING id, name, is_active, created_at, retention_days,
+                        payload_storage_mode, payload_max_bytes, payload_redact_keys
+                    """
+                ),
+                {
+                    "id": str(uuid.uuid4()),
+                    "org": user["org_id"],
+                    "name": name,
+                    "api_key_hash": key_hash,
+                    "retention_days": body.retention_days,
+                    "payload_storage_mode": body.payload_storage_mode,
+                    "payload_max_bytes": body.payload_max_bytes,
+                    "payload_redact_keys": body.payload_redact_keys.strip(),
+                },
+            )
+            record = serialize_project_record(result.mappings().one())
+
+    await log_audit(
+        org_id=user["org_id"],
+        user_id=user["sub"],
+        action="project.create",
+        resource_id=record["id"],
+        metadata={"name": name},
+    )
+
+    record["api_key"] = raw_key
+    record["note"] = "Save this key — it won't be shown again"
     return record
 
 
