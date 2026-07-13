@@ -81,7 +81,7 @@ async def test_openai_patch_records_success_usage_output_and_parent_span():
     assert provider_span.input_tokens == 12
     assert provider_span.output_tokens == 7
     assert provider_span.trace_id == parent_span.trace_id
-    assert provider_span.metadata["parent_span_id"] == parent_span.span_id
+    assert provider_span.parent_span_id == parent_span.span_id
     assert provider_span.error is None
 
 
@@ -134,7 +134,7 @@ async def test_anthropic_patch_records_success_usage_output_and_parent_span():
     assert provider_span.input_tokens == 15
     assert provider_span.output_tokens == 9
     assert provider_span.trace_id == parent_span.trace_id
-    assert provider_span.metadata["parent_span_id"] == parent_span.span_id
+    assert provider_span.parent_span_id == parent_span.span_id
     assert provider_span.metadata["system"] == "You are concise."
     assert provider_span.error is None
 

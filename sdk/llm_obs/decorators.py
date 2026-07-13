@@ -65,13 +65,11 @@ def trace(name: str | None = None, metadata: dict | None = None):
                                 provider="custom",
                                 model="unknown",
                                 input_messages=[],
+                                parent_span_id=parent_span_id,
                                 error=error_str,
                                 latency_ms=latency_ms,
                                 started_at=started_at,
-                                metadata={
-                                    **(metadata or {}),
-                                    "parent_span_id": parent_span_id,
-                                },
+                                metadata=metadata or {},
                             )
                         )
 
