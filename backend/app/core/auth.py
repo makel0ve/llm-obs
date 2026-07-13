@@ -18,6 +18,8 @@ pwd_context = CryptContext(
 )
 bearer_scheme = HTTPBearer(auto_error=False)
 ApiKeyScope = Literal["ingest", "read", "read_write"]
+ProjectRole = Literal["viewer", "member"]
+PROJECT_ROLE_LEVELS: dict[ProjectRole, int] = {"viewer": 0, "member": 1}
 
 
 def hash_password(password: str) -> str:
@@ -47,6 +49,12 @@ def api_key_allows(scope: str | None, required_scope: ApiKeyScope) -> bool:
     if scope == "read_write":
         return True
     return scope == required_scope
+
+
+def project_role_allows(role: str | None, required_role: ProjectRole) -> bool:
+    current_level = PROJECT_ROLE_LEVELS.get(cast(ProjectRole, role), -1)
+    required_level = PROJECT_ROLE_LEVELS[required_role]
+    return current_level >= required_level
 
 
 async def get_current_user(
@@ -133,6 +141,44 @@ async def get_project_from_api_key(
     return pd
 
 
+async def get_project_for_user(
+    project_id: str,
+    user: dict[str, Any],
+    required_role: ProjectRole = "viewer",
+) -> dict[str, Any]:
+    async with get_db() as db:
+        r = await db.execute(
+            text(
+                """
+                SELECT p.id, p.org_id, p.name, pm.role AS project_role
+                FROM projects p
+                LEFT JOIN project_memberships pm
+                    ON pm.project_id = p.id AND pm.user_id = :user_id
+                WHERE p.id = :pid AND p.org_id = :org AND p.is_active = true
+                """
+            ),
+            {
+                "pid": project_id,
+                "org": user["org_id"],
+                "user_id": user["sub"],
+            },
+        )
+        project = r.mappings().one_or_none()
+
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    result = dict(project)
+    if user.get("role") == "admin":
+        result["project_role"] = "admin"
+        return result
+
+    if not project_role_allows(result.get("project_role"), required_role):
+        raise HTTPException(status_code=403, detail="Project access denied")
+
+    return result
+
+
 async def get_project_from_token_or_api_key(
     creds: HTTPAuthorizationCredentials | None = Depends(bearer_scheme),
     x_api_key: str | None = Header(default=None, alias="X-API-Key"),
@@ -151,23 +197,18 @@ async def get_project_from_token_or_api_key(
                 algorithms=[settings.jwt_algorithm],
             )
             org_id = payload.get("org_id")
-            if not org_id:
+            sub = payload.get("sub")
+            if not org_id or not sub:
                 raise HTTPException(status_code=401)
 
-            async with get_db() as db:
-                r = await db.execute(
-                    text(
-                        "SELECT id, org_id, name FROM projects "
-                        "WHERE id = :pid AND org_id = :org AND is_active = true"
-                    ),
-                    {"pid": project_id, "org": org_id},
-                )
-                project = r.mappings().one_or_none()
-
-            if not project:
-                raise HTTPException(status_code=404, detail="Project not found")
-
-            return dict(project)
+            return await get_project_for_user(
+                project_id,
+                {
+                    "sub": sub,
+                    "org_id": org_id,
+                    "role": payload.get("role"),
+                },
+            )
 
         except JWTError:
             raise HTTPException(status_code=401, detail="Invalid token")
