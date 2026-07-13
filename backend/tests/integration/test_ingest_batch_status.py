@@ -199,6 +199,8 @@ async def test_worker_marks_batch_processed(monkeypatch, fake_redis):
     project_id = str(uuid4())
     batch_id = str(uuid4())
     span = make_span_payload()
+    span["parent_span_id"] = str(uuid4())
+    inserted_spans = []
     await BatchStatusService(redis=fake_redis).create_accepted(
         project_id=project_id, batch_id=batch_id, accepted=1
     )
@@ -216,13 +218,19 @@ async def test_worker_marks_batch_processed(monkeypatch, fake_redis):
     async def fake_get_redis():
         return fake_redis
 
+    async def fake_bulk_insert_spans(spans: list[dict], db) -> int:
+        inserted_spans.extend(spans)
+        return len(spans)
+
     monkeypatch.setattr(process_span_module, "get_redis", fake_get_redis)
     monkeypatch.setattr(process_span_module, "get_db", fake_get_db)
     monkeypatch.setattr(process_span_module.CostService, "calculate", fake_cost)
     monkeypatch.setattr(
         process_span_module.StorageService, "store_payload", fake_store_payload
     )
-    monkeypatch.setattr(process_span_module, "bulk_insert_spans", _bulk_insert_spans)
+    monkeypatch.setattr(
+        process_span_module, "bulk_insert_spans", fake_bulk_insert_spans
+    )
     monkeypatch.setattr(process_span_module.update_trace_aggregates, "kiq", _noop_kiq)
     monkeypatch.setattr(process_span_module.check_batch_anomalies, "kiq", _noop_kiq)
 
@@ -243,6 +251,7 @@ async def test_worker_marks_batch_processed(monkeypatch, fake_redis):
         processed_before + 1
     )
     assert _counter_value(spans_ingested, "openai", "gpt-4o", "ok") == (span_before + 1)
+    assert str(inserted_spans[0]["parent_span_id"]) == span["parent_span_id"]
 
 
 @pytest.mark.asyncio
