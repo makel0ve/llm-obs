@@ -1,6 +1,19 @@
 # CHANGELOG
 
 
+## v0.20.0 (2026-07-13)
+
+### Chores
+
+- Trigger ci for release sync
+  ([`e256174`](https://github.com/makel0ve/llm-obs/commit/e2561748cd5b82bcc639b74be455d3464da71577))
+
+### Features
+
+- Persist parent span ids
+  ([`357b203`](https://github.com/makel0ve/llm-obs/commit/357b20395311bb36f763294dae83d4c947ebec47))
+
+
 ## v0.19.0 (2026-07-13)
 
 ### Chores
