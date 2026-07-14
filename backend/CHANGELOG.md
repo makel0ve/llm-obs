@@ -1,6 +1,19 @@
 # CHANGELOG
 
 
+## v0.34.0 (2026-07-14)
+
+### Chores
+
+- Trigger ci for release sync
+  ([`3bc4b2e`](https://github.com/makel0ve/llm-obs/commit/3bc4b2ee769e82e00d7a05766a54ed91263052e9))
+
+### Features
+
+- Add SDK diagnostics
+  ([`bcb9c39`](https://github.com/makel0ve/llm-obs/commit/bcb9c3970cc30e29975b67162cabfc3c6f90b6c4))
+
+
 ## v0.33.0 (2026-07-14)
 
 ### Chores
