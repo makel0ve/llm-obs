@@ -7,7 +7,11 @@ import pytest
 from fastapi import HTTPException
 
 from app.api.v1 import failed_tasks as failed_tasks_api
-from app.api.v1.failed_tasks import list_failed_tasks, resolve_failed_task
+from app.api.v1.failed_tasks import (
+    list_failed_tasks,
+    resolve_failed_task,
+    retry_failed_task,
+)
 from app.services.failed_tasks import record_failed_task, summarize_task_args
 
 
@@ -27,10 +31,11 @@ class FakeResult:
 
 
 class FakeDb:
-    def __init__(self, *, org_id=None, rows=None, project_exists=True):
+    def __init__(self, *, org_id=None, rows=None, project_exists=True, retry_row=None):
         self.org_id = org_id
         self.rows = rows or []
         self.project_exists = project_exists
+        self.retry_row = retry_row
         self.params = []
         self.committed = False
 
@@ -45,6 +50,9 @@ class FakeDb:
         if "SELECT id FROM projects" in sql:
             row = {"id": params["pid"]} if self.project_exists else None
             return FakeResult(one=row)
+
+        if "SELECT id, task_name, project_id, task_args, resolved" in sql:
+            return FakeResult(one=self.retry_row)
 
         if "SELECT id, task_name" in sql:
             return FakeResult(rows=self.rows)
@@ -208,3 +216,73 @@ async def test_resolve_failed_task_scopes_to_user_org(monkeypatch):
     assert result.resolved is True
     assert db.params[-1] == {"task_id": 42, "org": org_id}
     assert db.committed is True
+
+
+@pytest.mark.asyncio
+async def test_retry_failed_task_requeues_retryable_span_batch(monkeypatch):
+    org_id = str(uuid4())
+    project_id = str(uuid4())
+    spans = [{"span_id": str(uuid4()), "provider": "openai"}]
+    db = FakeDb(
+        retry_row={
+            "id": 42,
+            "task_name": "process_span_batch",
+            "project_id": project_id,
+            "task_args": json.dumps(
+                {"batch_id": "batch-1", "project_id": project_id, "spans": spans}
+            ),
+            "resolved": False,
+        }
+    )
+    enqueued = {}
+
+    class FakeProcessSpanBatch:
+        async def kiq(self, **kwargs):
+            enqueued.update(kwargs)
+
+    @asynccontextmanager
+    async def fake_get_db():
+        yield db
+
+    monkeypatch.setattr(failed_tasks_api, "get_db", fake_get_db)
+    monkeypatch.setattr(failed_tasks_api, "process_span_batch", FakeProcessSpanBatch())
+
+    result = await retry_failed_task(task_id=42, user=_user(org_id=org_id))
+
+    assert result.retried is True
+    assert enqueued == {
+        "batch_id": "batch-1",
+        "project_id": project_id,
+        "spans": spans,
+    }
+    assert db.params[-1] == {"task_id": 42, "org": org_id}
+    assert db.committed is True
+
+
+@pytest.mark.asyncio
+async def test_retry_failed_task_rejects_summary_only_task_args(monkeypatch):
+    org_id = str(uuid4())
+    project_id = str(uuid4())
+    db = FakeDb(
+        retry_row={
+            "id": 42,
+            "task_name": "process_span_batch",
+            "project_id": project_id,
+            "task_args": json.dumps(
+                {"batch_id": "batch-1", "project_id": project_id, "span_count": 2}
+            ),
+            "resolved": False,
+        }
+    )
+
+    @asynccontextmanager
+    async def fake_get_db():
+        yield db
+
+    monkeypatch.setattr(failed_tasks_api, "get_db", fake_get_db)
+
+    with pytest.raises(HTTPException) as exc_info:
+        await retry_failed_task(task_id=42, user=_user(org_id=org_id))
+
+    assert exc_info.value.status_code == 409
+    assert "payload is not available" in exc_info.value.detail

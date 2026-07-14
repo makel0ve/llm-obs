@@ -38,6 +38,11 @@ diagnostics table shows task name, safe argument summaries, error text, attempts
 and resolution state. It does not show full prompts, model outputs or secret
 values.
 
+Retry is available only when the failed-task record still contains a complete
+safe payload for the background task. Summary-only records, including records
+that only show `batch_id`, `project_id` and `span_count`, cannot be retried
+because the original spans are not stored there.
+
 ## Auth Or Redirect Loop
 
 - Clear stale local storage or log out and log in again.
