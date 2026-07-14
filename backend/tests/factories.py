@@ -28,8 +28,13 @@ async def test_engine():
     await engine.dispose()
 
 
-@pytest.fixture(autouse=True, scope="session")
-async def patch_app_engine(test_engine):
+@pytest.fixture(autouse=True)
+async def patch_app_engine(request):
+    if request.node.path.name == "test_config.py":
+        yield
+        return
+
+    test_engine = request.getfixturevalue("test_engine")
     original_engine = db_module.engine
     original_factory = db_module.session_factory
     db_module.engine = test_engine
