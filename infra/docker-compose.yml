@@ -58,7 +58,7 @@ services:
     build:
       context: ../backend
       target: development
-    command: taskiq worker app.core.taskiq:broker app.workers.process_span app.workers.maintenance app.workers.dlq
+    command: taskiq worker app.core.taskiq:broker app.workers.process_span app.workers.maintenance app.workers.dlq app.workers.health
     depends_on:
       postgres:
         condition: service_healthy
@@ -77,6 +77,21 @@ services:
       - "1025:1025"
       - "8025:8025"
     restart: unless-stopped
+
+  scheduler:
+    build:
+      context: ../backend
+      target: development
+    command: taskiq scheduler app.core.taskiq:scheduler app.workers.maintenance app.workers.health
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    env_file: ../backend/.env
+    volumes:
+      - ../backend/app:/app/app
+      - ../backend/alembic:/app/alembic
 
 
   frontend:

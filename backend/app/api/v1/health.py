@@ -1,9 +1,13 @@
+from datetime import UTC, datetime
+
 import structlog
 from fastapi import APIRouter, HTTPException
 from sqlalchemy import text
 
+from app.core.config import settings
 from app.core.db import get_db
 from app.core.redis import get_redis
+from app.workers.health import WORKER_HEARTBEAT_KEY
 
 router = APIRouter(tags=["health"])
 log = structlog.get_logger()
@@ -44,3 +48,63 @@ async def readiness() -> dict:
         raise HTTPException(status_code=503, detail=checks)
 
     return {"status": "ready", "checks": checks}
+
+
+@router.get("/worker-health")
+async def worker_health() -> dict:
+    try:
+        redis = await get_redis()
+        last_seen_raw = await redis.get(WORKER_HEARTBEAT_KEY)  # type: ignore[misc]
+
+    except Exception as e:
+        log.error("worker_health_redis_failed", error=str(e))
+        raise HTTPException(
+            status_code=503,
+            detail={"status": "error", "worker": f"redis error: {e}"},
+        ) from e
+
+    max_age = settings.worker_heartbeat_max_age_seconds
+    if not last_seen_raw:
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "status": "missing",
+                "worker": {
+                    "last_seen": None,
+                    "age_seconds": None,
+                    "max_age_seconds": max_age,
+                },
+            },
+        )
+
+    try:
+        last_seen = datetime.fromisoformat(str(last_seen_raw))
+
+    except ValueError as e:
+        log.error("worker_health_invalid_heartbeat", value=str(last_seen_raw))
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "status": "invalid",
+                "worker": {
+                    "last_seen": str(last_seen_raw),
+                    "age_seconds": None,
+                    "max_age_seconds": max_age,
+                },
+            },
+        ) from e
+
+    age_seconds = max(0, int((datetime.now(UTC) - last_seen).total_seconds()))
+    payload = {
+        "last_seen": last_seen.isoformat(),
+        "age_seconds": age_seconds,
+        "max_age_seconds": max_age,
+    }
+
+    if age_seconds > max_age:
+        raise HTTPException(
+            status_code=503,
+            detail={"status": "stale", "worker": payload},
+        )
+
+    return {"status": "ok", "worker": payload}

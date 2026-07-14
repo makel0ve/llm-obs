@@ -58,7 +58,7 @@ services:
     build:
       context: ../backend
       target: production
-    command: taskiq worker app.core.taskiq:broker app.workers.process_span app.workers.maintenance app.workers.dlq
+    command: taskiq worker app.core.taskiq:broker app.workers.process_span app.workers.maintenance app.workers.dlq app.workers.health
     depends_on:
       postgres:
         condition: service_healthy
@@ -75,7 +75,7 @@ services:
     build:
       context: ../backend
       target: production
-    command: taskiq scheduler app.core.taskiq:scheduler
+    command: taskiq scheduler app.core.taskiq:scheduler app.workers.maintenance app.workers.health
     depends_on:
       postgres:
         condition: service_healthy

@@ -271,11 +271,15 @@ publishes stable counters and histograms for batch and worker visibility:
 - `llmobs_ingest_spans_dropped_total{reason="processing_error"}`
 - `llmobs_spans_ingested_total{provider,model,status}`
 
-Check backend dependencies with `/ready`; worker processing health is visible
-through the batch status API, failed task API and the metrics above.
+Check backend dependencies with `/ready`. Worker and scheduler liveness is
+visible through `/worker-health`: the scheduler enqueues a lightweight
+heartbeat task every minute, and the worker updates a Redis timestamp when it
+executes that task. The endpoint returns `503` when the heartbeat is missing or
+older than the configured threshold.
 
 ```bash
 curl http://localhost:8000/ready
+curl http://localhost:8000/worker-health
 curl http://localhost:8000/metrics | grep llmobs_ingest
 ```
 
