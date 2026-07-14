@@ -34,6 +34,8 @@ class Settings(BaseSettings):
     aws_secret_access_key: SecretStr = SecretStr("")
 
     default_retention_days: int = 90
+    worker_heartbeat_max_age_seconds: int = 180
+    worker_heartbeat_ttl_seconds: int = 300
 
     smtp_host: str = "localhost"
     smtp_port: int = 587
