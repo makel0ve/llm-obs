@@ -283,6 +283,11 @@ curl http://localhost:8000/worker-health
 curl http://localhost:8000/metrics | grep llmobs_ingest
 ```
 
+For public self-hosted deployments, terminate TLS in a reverse proxy in front of
+Compose. Route the dashboard host to frontend port `3000`, route API and health
+paths to backend port `8000`, and set `CORS_ALLOWED_ORIGINS` to the public
+dashboard origin.
+
 ---
 
 ## Configuration
