@@ -128,7 +128,25 @@ Check service status and logs:
 docker compose --env-file infra/.env -f infra/docker-compose.prod.yml ps
 docker compose --env-file infra/.env -f infra/docker-compose.prod.yml logs --tail=100 backend
 docker compose --env-file infra/.env -f infra/docker-compose.prod.yml logs --tail=100 worker
+docker compose --env-file infra/.env -f infra/docker-compose.prod.yml logs --tail=100 scheduler
 ```
+
+Production Compose exposes backend port `8000` and frontend port `3000` on the
+host. Put a reverse proxy in front of those ports for public deployments. The
+application containers do not terminate TLS themselves.
+
+Minimum reverse proxy assumptions:
+
+- terminate TLS at the proxy and forward plain HTTP to Compose services;
+- route the dashboard host to frontend port `3000`;
+- route API paths such as `/v1`, `/ready`, `/health`, `/worker-health` and
+  `/metrics` to backend port `8000`;
+- forward `Host`, `X-Forwarded-Proto` and client IP headers if the proxy
+  supports them;
+- set `CORS_ALLOWED_ORIGINS` in `backend/.env.prod` to the public dashboard
+  origin, for example `https://obs.example.com`;
+- keep backend, Postgres, Redis, PgBouncer and MinIO ports private unless there
+  is an explicit operational need to expose them.
 
 ## Environment Variables
 
@@ -260,7 +278,7 @@ Check containers:
 docker compose --env-file infra/.env -f infra/docker-compose.prod.yml ps
 ```
 
-Check backend readiness:
+Check backend liveness, dependency readiness and worker/scheduler heartbeat:
 
 ```bash
 curl -f http://localhost:8000/health
@@ -268,11 +286,22 @@ curl -f http://localhost:8000/ready
 curl -f http://localhost:8000/worker-health
 ```
 
+`/health` only proves the backend process can serve HTTP. `/ready` verifies
+Postgres and Redis. `/worker-health` verifies that the scheduler enqueued the
+heartbeat task and a worker wrote it to Redis.
+
 `/worker-health` depends on the scheduler and worker services. The scheduler
 enqueues a lightweight heartbeat task every minute, and the worker updates the
 heartbeat timestamp in Redis. A `503` response with `missing` means no
 heartbeat has been recorded yet; `stale` means the worker/scheduler path has not
 completed a heartbeat within the configured age threshold.
+
+If `/worker-health` is `missing` or `stale`, inspect both services:
+
+```bash
+docker compose --env-file infra/.env -f infra/docker-compose.prod.yml logs --tail=100 scheduler
+docker compose --env-file infra/.env -f infra/docker-compose.prod.yml logs --tail=100 worker
+```
 
 Check Prometheus metrics:
 
@@ -301,6 +330,7 @@ python examples/sdk_smoke_demo.py
 Expected result:
 
 - `/ready` returns success.
+- `/worker-health` returns success after the first scheduled heartbeat.
 - Dashboard opens.
 - Overview and Traces load without authentication loops.
 - The smoke span appears in Traces for the selected time range.
