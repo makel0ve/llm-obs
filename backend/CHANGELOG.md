@@ -1,6 +1,19 @@
 # CHANGELOG
 
 
+## v0.32.0 (2026-07-14)
+
+### Chores
+
+- Trigger ci for release sync
+  ([`a49f6c6`](https://github.com/makel0ve/llm-obs/commit/a49f6c6a496cf6376c7eddc17e4b65060d943478))
+
+### Features
+
+- Add worker health signal
+  ([`e1597b6`](https://github.com/makel0ve/llm-obs/commit/e1597b6a17b7d5c7cc7e35c6202c804b26cfbf6a))
+
+
 ## v0.31.0 (2026-07-14)
 
 ### Chores
