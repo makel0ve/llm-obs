@@ -14,8 +14,18 @@ import llm_obs  # type: ignore[import-not-found]
 
 @llm_obs.trace(name="examples.sdk_smoke_demo", metadata={"example": "sdk_smoke_demo"})
 async def demo_llm_call(prompt: str) -> str:
-    await asyncio.sleep(0.05)
-    return f"demo response for: {prompt}"
+    async with llm_obs.span(
+        "examples.sdk_smoke_demo.manual_step",
+        provider="custom",
+        model="demo-model",
+        input_messages=[{"role": "user", "content": prompt}],
+        metadata={"example": "manual_span"},
+    ) as span:
+        await asyncio.sleep(0.05)
+        response = f"demo response for: {prompt}"
+        span.set_output(response)
+        span.set_tokens(input_tokens=8, output_tokens=6)
+        return response
 
 
 async def main() -> int:

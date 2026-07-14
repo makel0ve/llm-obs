@@ -67,6 +67,51 @@ async def test_trace_records_error():
 
 
 @pytest.mark.asyncio
+async def test_manual_span_records_success_fields():
+    tracer = llm_obs.init(api_key="test", endpoint="http://test")
+
+    async with llm_obs.span(
+        "manual.llm_call",
+        provider="openai",
+        model="gpt-4o-mini",
+        input_messages=[{"role": "user", "content": "Hello"}],
+        metadata={"source": "test"},
+    ) as span:
+        span.set_output("manual response")
+        span.set_tokens(input_tokens=11, output_tokens=7)
+        span.update_metadata({"route": "chat"})
+
+    assert len(tracer._buffer) == 1
+    recorded = tracer._buffer[0]
+    assert recorded.name == "manual.llm_call"
+    assert recorded.provider == "openai"
+    assert recorded.model == "gpt-4o-mini"
+    assert recorded.input_messages == [{"role": "user", "content": "Hello"}]
+    assert recorded.output == "manual response"
+    assert recorded.input_tokens == 11
+    assert recorded.output_tokens == 7
+    assert recorded.metadata == {"source": "test", "route": "chat"}
+    assert recorded.parent_span_id is None
+    assert recorded.error is None
+    assert recorded.latency_ms >= 0
+
+
+@pytest.mark.asyncio
+async def test_manual_span_records_error_and_reraises():
+    tracer = llm_obs.init(api_key="test", endpoint="http://test")
+
+    with pytest.raises(ValueError, match="manual error"):
+        async with llm_obs.span("manual.failure"):
+            raise ValueError("manual error")
+
+    assert len(tracer._buffer) == 1
+    recorded = tracer._buffer[0]
+    assert recorded.name == "manual.failure"
+    assert recorded.error is not None
+    assert "ValueError: manual error" in recorded.error
+
+
+@pytest.mark.asyncio
 async def test_nested_traces_share_trace_id():
     tracer = llm_obs.init(api_key="test", endpoint="http://test")
 

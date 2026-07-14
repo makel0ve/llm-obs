@@ -59,6 +59,46 @@ buffered spans are flushed before Python exits. The default
 HTTP client. Use `await llm_obs.shutdown(flush=False)` when a test should
 discard buffered spans.
 
+## Manual async spans
+
+Use `llm_obs.span` when a decorator is not a good fit, for example around a
+dynamic workflow step or a provider call hidden behind another abstraction.
+
+```python
+import asyncio
+import llm_obs
+
+
+async def call_llm(prompt: str) -> str:
+    async with llm_obs.span(
+        "demo.manual_llm_call",
+        provider="custom",
+        model="demo-model",
+        input_messages=[{"role": "user", "content": prompt}],
+        metadata={"source": "manual-span"},
+    ) as span:
+        await asyncio.sleep(0.05)
+        response = f"demo response for: {prompt}"
+        span.set_output(response)
+        span.set_tokens(input_tokens=12, output_tokens=7)
+        return response
+
+
+async def main() -> None:
+    response = await call_llm("Hello")
+    print(response)
+    await llm_obs.shutdown()
+
+
+if __name__ == "__main__":
+    asyncio.run(main())
+```
+
+Manual spans preserve the same trace context as `@llm_obs.trace`, so patched
+provider calls inside the context are recorded as child spans. If the context
+raises an exception, the span is still recorded with the error and the exception
+is re-raised.
+
 ## OpenAI async patching
 
 The OpenAI package is optional. Install and create your async client in the
