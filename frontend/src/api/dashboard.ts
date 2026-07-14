@@ -552,6 +552,10 @@ export async function listFailedTasks(projectId: string, includeResolved = false
   return response.data
 }
 
+export async function retryFailedTask(taskId: number) {
+  await api.post(`/v1/failed-tasks/${taskId}/retry`)
+}
+
 export async function listPricing({
   provider,
   model,
