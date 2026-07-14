@@ -105,6 +105,35 @@ async def test_openai_patch_records_exception():
 
 
 @pytest.mark.asyncio
+async def test_openai_patch_records_parent_span_inside_manual_span():
+    tracer = llm_obs.init(api_key="test", endpoint="http://test")
+    response = SimpleNamespace(
+        choices=[
+            SimpleNamespace(message=SimpleNamespace(content="openai response")),
+        ],
+        usage=SimpleNamespace(prompt_tokens=8, completion_tokens=5),
+    )
+    completions = FakeOpenAICompletions(response=response)
+    client = patch_openai(FakeOpenAIClient(completions))
+
+    async with llm_obs.span("manual.parent") as manual_span:
+        result = await client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[{"role": "user", "content": "Hello"}],
+        )
+        manual_span.set_output(result.choices[0].message.content)
+
+    assert result is response
+    assert len(tracer._buffer) == 2
+    provider_span, parent_span = tracer._buffer
+    assert provider_span.name == "openai.chat.completions.create"
+    assert parent_span.name == "manual.parent"
+    assert provider_span.trace_id == parent_span.trace_id
+    assert provider_span.parent_span_id == parent_span.span_id
+    assert parent_span.parent_span_id is None
+
+
+@pytest.mark.asyncio
 async def test_anthropic_patch_records_success_usage_output_and_parent_span():
     tracer = llm_obs.init(api_key="test", endpoint="http://test")
     response = SimpleNamespace(

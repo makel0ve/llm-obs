@@ -92,6 +92,8 @@ def _get_tracer() -> LLMTracer:
     return tracer
 
 
+from llm_obs.decorators import ManualSpan as ManualSpan  # noqa: E402
+from llm_obs.decorators import span as span  # noqa: E402
 from llm_obs.decorators import trace as trace  # noqa: E402
 
-__all__ = ["LLMTracer", "get_tracer", "init", "shutdown", "trace"]
+__all__ = ["LLMTracer", "ManualSpan", "get_tracer", "init", "shutdown", "span", "trace"]
