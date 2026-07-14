@@ -1,6 +1,19 @@
 # CHANGELOG
 
 
+## v0.31.0 (2026-07-14)
+
+### Chores
+
+- Trigger ci for release sync
+  ([`003d233`](https://github.com/makel0ve/llm-obs/commit/003d233fc8fe0b5745170b330efa8281644fad25))
+
+### Features
+
+- Add ingestion retry workflow
+  ([`1314c41`](https://github.com/makel0ve/llm-obs/commit/1314c41260721532ba9de960aad35fa279419930))
+
+
 ## v0.30.0 (2026-07-14)
 
 ### Chores
