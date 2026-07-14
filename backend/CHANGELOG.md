@@ -1,6 +1,19 @@
 # CHANGELOG
 
 
+## v0.27.0 (2026-07-14)
+
+### Chores
+
+- Trigger ci for release sync
+  ([`c5d1af1`](https://github.com/makel0ve/llm-obs/commit/c5d1af17ad70968923c5310898772aa9e8b03f4a))
+
+### Features
+
+- Add project assignment api
+  ([`b800708`](https://github.com/makel0ve/llm-obs/commit/b80070846f03f993c5a56c22ca2685f1982a0986))
+
+
 ## v0.26.0 (2026-07-13)
 
 ### Chores
