@@ -1,6 +1,19 @@
 # CHANGELOG
 
 
+## v0.28.0 (2026-07-14)
+
+### Chores
+
+- Trigger ci for release sync
+  ([`0d6fc57`](https://github.com/makel0ve/llm-obs/commit/0d6fc57eb8346dc8a8cb07389e1130c2b760d514))
+
+### Features
+
+- Add project access management UI
+  ([`0614b66`](https://github.com/makel0ve/llm-obs/commit/0614b6605e7dfadf3e84b74578bcc3d6ca383ac2))
+
+
 ## v0.27.0 (2026-07-14)
 
 ### Chores
