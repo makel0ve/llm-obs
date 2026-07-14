@@ -11,6 +11,7 @@ import {
   listProjectMembers,
   listUsers,
   removeProjectMember,
+  retryFailedTask,
   revokeProjectApiKey,
   rotateProjectApiKey,
   updateProjectSettings,
@@ -172,6 +173,8 @@ export function ProjectSettings({ projectId }: { projectId: string }) {
   const [memberMessage, setMemberMessage] = useState('')
   const [memberError, setMemberError] = useState('')
   const [includeResolvedFailures, setIncludeResolvedFailures] = useState(false)
+  const [failureMessage, setFailureMessage] = useState('')
+  const [failureError, setFailureError] = useState('')
 
   const settingsQuery = useQuery({
     queryKey: dashboardQueryKeys.projectSettings(projectId),
@@ -241,6 +244,21 @@ export function ProjectSettings({ projectId }: { projectId: string }) {
     onError: () => {
       setMemberMessage('')
       setMemberError('Could not remove project access.')
+    },
+  })
+
+  const retryTask = useMutation({
+    mutationFn: retryFailedTask,
+    onSuccess: async () => {
+      setFailureError('')
+      setFailureMessage('Retry enqueued.')
+      await queryClient.invalidateQueries({
+        queryKey: dashboardQueryKeys.failedTasks(projectId, includeResolvedFailures),
+      })
+    },
+    onError: () => {
+      setFailureMessage('')
+      setFailureError('Could not retry this task.')
     },
   })
 
@@ -377,6 +395,12 @@ await llm_obs.shutdown()`
   const assignableUsers = (usersQuery.data ?? []).filter((user: OrganizationUser) => (
     user.is_active && !memberUserIds.has(user.id)
   ))
+
+  const canRetryFailedTask = (task: FailedTask) => (
+    !task.resolved &&
+    task.task_name === 'process_span_batch' &&
+    Array.isArray(task.task_args?.spans)
+  )
 
   if (!projectId) {
     return (
@@ -722,6 +746,8 @@ await llm_obs.shutdown()`
             {unresolvedFailedTasks.length} unresolved ingestion failure{unresolvedFailedTasks.length === 1 ? '' : 's'} found.
           </Alert>
         )}
+        {failureError && <Alert tone="error">{failureError}</Alert>}
+        {failureMessage && <Alert tone="success">{failureMessage}</Alert>}
 
         <div className="overflow-hidden rounded-lg border border-gray-200 bg-white">
           <div className="overflow-x-auto">
@@ -734,22 +760,23 @@ await llm_obs.shutdown()`
                   <th scope="col" className="px-4 py-3 font-medium">Attempts</th>
                   <th scope="col" className="px-4 py-3 font-medium">Failed at</th>
                   <th scope="col" className="px-4 py-3 font-medium">Status</th>
+                  <th scope="col" className="px-4 py-3 text-right font-medium">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
                 {failedTasksQuery.isLoading && (
                   <tr>
-                    <td colSpan={6} className="px-4 py-6 text-gray-600">Loading failed tasks...</td>
+                    <td colSpan={7} className="px-4 py-6 text-gray-600">Loading failed tasks...</td>
                   </tr>
                 )}
                 {failedTasksQuery.isError && (
                   <tr>
-                    <td colSpan={6} className="px-4 py-6 text-red-700">Could not load failed task summaries.</td>
+                    <td colSpan={7} className="px-4 py-6 text-red-700">Could not load failed task summaries.</td>
                   </tr>
                 )}
                 {!failedTasksQuery.isLoading && !failedTasksQuery.isError && failedTasks.length === 0 && (
                   <tr>
-                    <td colSpan={6} className="px-4 py-6 text-gray-600">No failed ingestion tasks found.</td>
+                    <td colSpan={7} className="px-4 py-6 text-gray-600">No failed ingestion tasks found.</td>
                   </tr>
                 )}
                 {failedTasks.map(task => (
@@ -769,6 +796,24 @@ await llm_obs.shutdown()`
                       >
                         {task.resolved ? 'resolved' : 'open'}
                       </span>
+                    </td>
+                    <td className="px-4 py-3 text-right">
+                      {canRetryFailedTask(task) ? (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setFailureMessage('')
+                            setFailureError('')
+                            retryTask.mutate(task.id)
+                          }}
+                          disabled={retryTask.isPending}
+                          className="min-h-9 rounded-md border border-blue-200 bg-white px-3 text-sm font-medium text-blue-700 hover:bg-blue-50 disabled:cursor-not-allowed disabled:opacity-60"
+                        >
+                          Retry
+                        </button>
+                      ) : (
+                        <span className="text-xs text-gray-500">Not retryable</span>
+                      )}
                     </td>
                   </tr>
                 ))}

@@ -17,3 +17,7 @@ class FailedTaskResponse(BaseModel):
 
 class FailedTaskResolveResponse(BaseModel):
     resolved: bool = Field(default=True)
+
+
+class FailedTaskRetryResponse(BaseModel):
+    retried: bool = Field(default=True)
