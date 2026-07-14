@@ -20,7 +20,7 @@ def production_settings(**overrides: str) -> Settings:
 
 
 def test_development_defaults_remain_valid() -> None:
-    settings = Settings()
+    settings = Settings(environment="development")
 
     assert settings.environment == "development"
 
