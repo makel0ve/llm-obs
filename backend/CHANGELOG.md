@@ -1,6 +1,30 @@
 # CHANGELOG
 
 
+## v0.33.0 (2026-07-14)
+
+### Chores
+
+- Trigger ci for release sync
+  ([`17ca001`](https://github.com/makel0ve/llm-obs/commit/17ca001d97515211ab1c14511b3779798ec85130))
+
+### Features
+
+- Add SDK manual spans
+  ([`a834d33`](https://github.com/makel0ve/llm-obs/commit/a834d33d74ecd9a6ecfbe0cad66b19f29368b65a))
+
+### Testing
+
+- Add frontend test tooling
+  ([`ade1346`](https://github.com/makel0ve/llm-obs/commit/ade1346474b7991832699400d7a98aa39b9e0bf8))
+
+- Cover dashboard flows
+  ([`cb8d629`](https://github.com/makel0ve/llm-obs/commit/cb8d629f0ee1135a1410d54d1029f092854c9058))
+
+- Cover frontend auth navigation
+  ([`270cac1`](https://github.com/makel0ve/llm-obs/commit/270cac16a636df648041b8a2118334ae4efb847c))
+
+
 ## v0.32.0 (2026-07-14)
 
 ### Chores
