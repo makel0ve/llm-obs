@@ -21,6 +21,35 @@ async def register_org(client, org_name: str) -> dict:
     return response.json()
 
 
+async def get_project_org_id(db_session, project_id: str) -> str:
+    result = await db_session.execute(
+        text("SELECT org_id FROM projects WHERE id = :id"),
+        {"id": project_id},
+    )
+    return str(result.mappings().one()["org_id"])
+
+
+async def create_org_user(db_session, org_id: str, *, role: str = "member") -> str:
+    user_id = str(uuid.uuid4())
+    await db_session.execute(
+        text(
+            """
+            INSERT INTO users (id, org_id, email, password_hash, role)
+            VALUES (:id, :org_id, :email, :password_hash, :role)
+            """
+        ),
+        {
+            "id": user_id,
+            "org_id": org_id,
+            "email": f"{user_id}@example.com",
+            "password_hash": "not-used",
+            "role": role,
+        },
+    )
+    await db_session.commit()
+    return user_id
+
+
 @pytest.mark.asyncio
 async def test_admin_can_create_and_list_org_projects(client, db_session):
     registration = await register_org(client, "Project API Org")
@@ -119,3 +148,126 @@ async def test_project_lifecycle_requires_admin(client, db_session):
 
     assert listed.status_code == 403
     assert created.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_admin_can_assign_update_list_and_remove_project_member(
+    client, db_session
+):
+    registration = await register_org(client, "Project Members Org")
+    admin_headers = {"Authorization": f"Bearer {registration['access_token']}"}
+    org_id = await get_project_org_id(db_session, registration["project_id"])
+    user_id = await create_org_user(db_session, org_id, role="viewer")
+    user_headers = {
+        "Authorization": f"Bearer {create_access_token(user_id, org_id, 'viewer')}"
+    }
+
+    initially_accessible = await client.get(
+        "/v1/projects/accessible", headers=user_headers
+    )
+    assigned = await client.post(
+        f"/v1/projects/{registration['project_id']}/members",
+        json={"user_id": user_id, "role": "member"},
+        headers=admin_headers,
+    )
+    listed = await client.get(
+        f"/v1/projects/{registration['project_id']}/members",
+        headers=admin_headers,
+    )
+    after_assign_accessible = await client.get(
+        "/v1/projects/accessible", headers=user_headers
+    )
+    updated = await client.post(
+        f"/v1/projects/{registration['project_id']}/members",
+        json={"user_id": user_id, "role": "viewer"},
+        headers=admin_headers,
+    )
+    removed = await client.delete(
+        f"/v1/projects/{registration['project_id']}/members/{user_id}",
+        headers=admin_headers,
+    )
+    after_remove_accessible = await client.get(
+        "/v1/projects/accessible", headers=user_headers
+    )
+
+    assert initially_accessible.status_code == 200
+    assert initially_accessible.json() == []
+    assert assigned.status_code == 201
+    assert assigned.json()["user_id"] == user_id
+    assert assigned.json()["project_role"] == "member"
+    assert listed.status_code == 200
+    assert [member["user_id"] for member in listed.json()] == [user_id]
+    assert after_assign_accessible.status_code == 200
+    assert after_assign_accessible.json()[0]["id"] == registration["project_id"]
+    assert after_assign_accessible.json()[0]["project_role"] == "member"
+    assert updated.status_code == 201
+    assert updated.json()["project_role"] == "viewer"
+    assert removed.status_code == 204
+    assert after_remove_accessible.status_code == 200
+    assert after_remove_accessible.json() == []
+
+
+@pytest.mark.asyncio
+async def test_accessible_projects_returns_all_org_projects_for_admin(client):
+    registration = await register_org(client, "Accessible Admin Org")
+    headers = {"Authorization": f"Bearer {registration['access_token']}"}
+
+    created = await client.post(
+        "/v1/projects",
+        json={"name": "Secondary"},
+        headers=headers,
+    )
+    accessible = await client.get("/v1/projects/accessible", headers=headers)
+
+    assert created.status_code == 201
+    assert accessible.status_code == 200
+    projects = {project["name"]: project for project in accessible.json()}
+    assert {"Default", "Secondary"} <= set(projects)
+    assert {project["project_role"] for project in projects.values()} == {"admin"}
+
+
+@pytest.mark.asyncio
+async def test_project_member_management_requires_admin(client, db_session):
+    registration = await register_org(client, "Project Members Admin Required Org")
+    org_id = await get_project_org_id(db_session, registration["project_id"])
+    user_id = await create_org_user(db_session, org_id, role="member")
+    member_headers = {
+        "Authorization": f"Bearer {create_access_token(user_id, org_id, 'member')}"
+    }
+
+    listed = await client.get(
+        f"/v1/projects/{registration['project_id']}/members",
+        headers=member_headers,
+    )
+    assigned = await client.post(
+        f"/v1/projects/{registration['project_id']}/members",
+        json={"user_id": user_id, "role": "viewer"},
+        headers=member_headers,
+    )
+    removed = await client.delete(
+        f"/v1/projects/{registration['project_id']}/members/{user_id}",
+        headers=member_headers,
+    )
+
+    assert listed.status_code == 403
+    assert assigned.status_code == 403
+    assert removed.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_project_member_assignment_rejects_user_from_other_org(
+    client, db_session
+):
+    org_a = await register_org(client, "Project Members Org A")
+    org_b = await register_org(client, "Project Members Org B")
+    headers_a = {"Authorization": f"Bearer {org_a['access_token']}"}
+    org_b_id = await get_project_org_id(db_session, org_b["project_id"])
+    foreign_user_id = await create_org_user(db_session, org_b_id, role="member")
+
+    assigned = await client.post(
+        f"/v1/projects/{org_a['project_id']}/members",
+        json={"user_id": foreign_user_id, "role": "viewer"},
+        headers=headers_a,
+    )
+
+    assert assigned.status_code == 404

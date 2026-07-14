@@ -5,6 +5,8 @@ from pydantic import BaseModel, Field
 
 ApiKeyScope = Literal["ingest", "read", "read_write"]
 PayloadStorageMode = Literal["all", "errors", "none"]
+ProjectMembershipRole = Literal["member", "viewer"]
+ProjectAccessRole = Literal["admin", "member", "viewer"]
 
 
 class ProjectRecord(BaseModel):
@@ -16,6 +18,10 @@ class ProjectRecord(BaseModel):
     payload_storage_mode: PayloadStorageMode
     payload_max_bytes: int
     payload_redact_keys: str
+
+
+class AccessibleProjectRecord(ProjectRecord):
+    project_role: ProjectAccessRole
 
 
 class ProjectCreate(BaseModel):
@@ -45,6 +51,21 @@ class ProjectSettingsUpdate(BaseModel):
     payload_storage_mode: PayloadStorageMode | None = None
     payload_max_bytes: int | None = Field(default=None, ge=0, le=10 * 1024 * 1024)
     payload_redact_keys: str | None = Field(default=None, max_length=1000)
+
+
+class ProjectMemberAssign(BaseModel):
+    user_id: str
+    role: ProjectMembershipRole
+
+
+class ProjectMemberRecord(BaseModel):
+    user_id: str
+    email: str
+    org_role: str
+    project_role: ProjectMembershipRole
+    is_active: bool
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
 
 
 class ProjectApiKeyCreate(BaseModel):
