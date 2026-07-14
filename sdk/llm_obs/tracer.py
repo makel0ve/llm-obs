@@ -5,7 +5,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, UTC
 from typing import Any
 
-from llm_obs.transport import HttpTransport
+from llm_obs.transport import HttpTransport, TransportDiagnostics
 
 
 @dataclass
@@ -33,6 +33,7 @@ class LLMTracer:
         endpoint: str,
         buffer_size: int = 500,
         flush_interval: float = 5.0,
+        debug: bool = False,
     ):
         self._api_key = api_key
         self._endpoint = endpoint
@@ -41,7 +42,7 @@ class LLMTracer:
         self._flush_task: asyncio.Task | None = None
         self._shutting_down = False
         self._closed = False
-        self._transport = HttpTransport(self._endpoint, self._api_key)
+        self._transport = HttpTransport(self._endpoint, self._api_key, debug=debug)
         self._atexit_registered = True
 
         atexit.register(self._sync_flush_on_exit)
@@ -139,6 +140,10 @@ class LLMTracer:
                 return False
 
         return True
+
+    @property
+    def last_flush_diagnostics(self) -> TransportDiagnostics | None:
+        return self._transport.last_diagnostics
 
     def _span_to_dict(self, span: SpanData) -> dict:
         return {

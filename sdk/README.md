@@ -25,10 +25,17 @@ patched provider call runs.
 ```bash
 export LLM_OBS_API_KEY=llmobs_your_key_here
 export LLM_OBS_ENDPOINT=http://localhost:8000
+# Optional: emit safe SDK delivery diagnostics.
+export LLM_OBS_DEBUG=1
 ```
 
 Get the API key from the dashboard after account creation, or rotate it in
 Project Settings. API keys are shown once.
+
+`LLM_OBS_DEBUG=1` enables extra SDK delivery diagnostics. Debug events and
+diagnostic objects do not include API keys, prompts, outputs or span payloads.
+They only include delivery metadata such as status code, retry count, retry
+delay, span count and failure reason.
 
 ## Basic async trace
 
@@ -205,3 +212,39 @@ If ingest returns a retryable server error, the transport retries before giving
 up. If ingest returns `429 Too Many Requests` or the final retry fails, unsent
 spans stay in the in-memory buffer for the lifetime of that tracer instead of
 being marked as successfully flushed.
+
+### Debug delivery diagnostics
+
+Enable debug mode with an environment variable:
+
+```bash
+export LLM_OBS_DEBUG=1
+```
+
+Or pass it explicitly when initializing:
+
+```python
+llm_obs.init(
+    api_key="llmobs_your_key_here",
+    endpoint="http://localhost:8000",
+    debug=True,
+)
+```
+
+After a flush attempt, inspect the last safe delivery diagnostic:
+
+```python
+diagnostics = llm_obs.get_diagnostics()
+if diagnostics and not diagnostics.ok:
+    print(diagnostics.reason, diagnostics.status_code, diagnostics.attempts)
+```
+
+Common failure reasons:
+
+- `rate_limited`: ingest returned `429`; check `retry_after` and reduce send
+  rate.
+- `http_error`: ingest returned a non-retryable HTTP error, or the final retry
+  still failed.
+- `connection_error`: the SDK could not connect to the endpoint, or the request
+  timed out after retries.
+- `unknown_failure`: the transport exited without a more specific result.
