@@ -287,9 +287,12 @@ curl http://localhost:8000/metrics | grep llmobs_ingest
 
 ## Configuration
 
-Copy `backend/.env.example` to `backend/.env.prod` and fill in the values.
+Copy `backend/.env.prod.example` to `backend/.env.prod` and fill in the values.
 For `infra/docker-compose.prod.yml`, keep database, PostgreSQL and MinIO
 credentials consistent between `backend/.env.prod` and `infra/.env`.
+Production startup validation rejects localhost service URLs, wildcard or
+localhost CORS origins, empty secrets, default MinIO credentials and unedited
+`replace-with...` placeholders.
 
 | Variable | Description | Required |
 |----------|-------------|----------|

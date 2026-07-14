@@ -89,7 +89,7 @@ services:
     env_file: ../backend/.env.prod
     environment:
       DATABASES_HOST: ${POSTGRES_HOST}
-      DATABASES_PORT: ${POSTGRES_PORT}
+      DATABASES_PORT: ${POSTGRES_PORT:-5432}
       DATABASES_DBNAME: ${POSTGRES_DB}
       DATABASES_USER: ${POSTGRES_USER}
       DATABASES_PASSWORD: ${POSTGRES_PASSWORD}

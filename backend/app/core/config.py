@@ -1,7 +1,32 @@
 import json
+from typing import Self
+from urllib.parse import urlparse
 
-from pydantic import SecretStr, ValidationInfo, field_validator
+from pydantic import SecretStr, ValidationInfo, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+PRODUCTION_PLACEHOLDER_SECRETS = {
+    "",
+    "change-me",
+    "changeme",
+    "minioadmin",
+    "minioadmin123",
+    "password",
+    "your-minio-password",
+    "your-postgres-password",
+    "your-random-32-char-secret-key-here",
+    "dev-secret-key-change-in-production-min-32-chars",
+}
+
+
+def _secret_value(value: SecretStr) -> str:
+    return value.get_secret_value()
+
+
+def _contains_localhost(value: str) -> bool:
+    parsed = urlparse(value)
+    host = parsed.hostname or value
+    return host in {"localhost", "127.0.0.1", "::1"} or host.endswith(".local")
 
 
 class Settings(BaseSettings):
@@ -80,6 +105,62 @@ class Settings(BaseSettings):
 
             return [origin.strip() for origin in v.split(",") if origin.strip()]
         return v
+
+    @model_validator(mode="after")
+    def validate_production_environment(self) -> Self:
+        if self.environment != "production":
+            return self
+
+        self._validate_production_secret("secret_key", self.secret_key, min_length=32)
+        self._validate_production_secret("aws_access_key_id", self.aws_access_key_id)
+        self._validate_production_secret(
+            "aws_secret_access_key",
+            self.aws_secret_access_key,
+        )
+        self._validate_production_url("database_url", _secret_value(self.database_url))
+        self._validate_production_url("redis_url", self.redis_url)
+        if self.s3_endpoint_url:
+            self._validate_production_url("s3_endpoint_url", self.s3_endpoint_url)
+
+        if not self.cors_allowed_origins:
+            raise ValueError("cors_allowed_origins must be set in production")
+
+        for origin in self.cors_allowed_origins:
+            if origin == "*":
+                raise ValueError(
+                    "cors_allowed_origins cannot include '*' in production"
+                )
+            if _contains_localhost(origin):
+                raise ValueError(
+                    "cors_allowed_origins cannot include localhost in production"
+                )
+
+        return self
+
+    @staticmethod
+    def _validate_production_secret(
+        name: str,
+        value: SecretStr,
+        *,
+        min_length: int = 1,
+    ) -> None:
+        secret = _secret_value(value)
+        if len(secret) < min_length:
+            raise ValueError(
+                f"{name} must be at least {min_length} characters in production"
+            )
+        lowered = secret.lower()
+        if lowered in PRODUCTION_PLACEHOLDER_SECRETS or lowered.startswith(
+            "replace-with"
+        ):
+            raise ValueError(f"{name} must not use a placeholder value in production")
+
+    @staticmethod
+    def _validate_production_url(name: str, value: str) -> None:
+        if not value:
+            raise ValueError(f"{name} must be set in production")
+        if _contains_localhost(value):
+            raise ValueError(f"{name} cannot point to localhost in production")
 
 
 settings = Settings()

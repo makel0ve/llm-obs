@@ -73,7 +73,7 @@ Create the files:
 
 ```bash
 cp infra/.env.example infra/.env
-cp backend/.env.example backend/.env.prod
+cp backend/.env.prod.example backend/.env.prod
 ```
 
 Generate a production secret:
@@ -83,6 +83,9 @@ python3 -c "import secrets; print(secrets.token_hex(32))"
 ```
 
 Set `ENVIRONMENT=production` in `backend/.env.prod`.
+Startup validation rejects common unsafe production values, including localhost
+service URLs, wildcard or localhost CORS origins, empty secrets, default MinIO
+credentials and unedited `replace-with...` placeholders.
 
 For the production compose file, the backend should connect through PgBouncer:
 
