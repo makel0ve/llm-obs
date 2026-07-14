@@ -5,9 +5,11 @@ import { api } from './api/client'
 import {
   createProject,
   dashboardQueryKeys,
+  listAccessibleProjects,
   listProjects,
   loginUser,
   registerUser,
+  type AccessibleProjectRecord,
   type ProjectCreateResponse,
   type ProjectRecord,
   type UserRole,
@@ -113,20 +115,12 @@ function ProjectSwitcher({
   onProjectChange,
 }: {
   projectId: string
-  projects: ProjectRecord[]
+  projects: Array<ProjectRecord | AccessibleProjectRecord>
   isLoading: boolean
   isError: boolean
   role: UserRole
   onProjectChange: (projectId: string) => void
 }) {
-  if (role !== 'admin') {
-    return (
-      <div className="truncate text-xs text-gray-500">
-        Project {projectId || 'not selected'}
-      </div>
-    )
-  }
-
   if (isLoading) {
     return <div className="text-xs text-gray-500">Loading projects...</div>
   }
@@ -136,7 +130,7 @@ function ProjectSwitcher({
   }
 
   if (projects.length === 0) {
-    return <div className="text-xs text-amber-700">No active project</div>
+    return <div className="text-xs text-amber-700">{role === 'admin' ? 'No active project' : 'No project access'}</div>
   }
 
   return (
@@ -149,11 +143,54 @@ function ProjectSwitcher({
       >
         {projects.map(project => (
           <option key={project.id} value={project.id}>
-            {project.name}
+            {'project_role' in project ? `${project.name} (${project.project_role})` : project.name}
           </option>
         ))}
       </select>
     </label>
+  )
+}
+
+function NoProjectAccess({ role, isLoading, isError }: { role: UserRole; isLoading: boolean; isError: boolean }) {
+  if (isLoading) {
+    return (
+      <div className="p-4 sm:p-6 lg:p-8">
+        <div className="rounded-lg border border-gray-200 bg-white p-6 text-sm text-gray-600">
+          Loading project access...
+        </div>
+      </div>
+    )
+  }
+
+  if (isError) {
+    return (
+      <div className="p-4 sm:p-6 lg:p-8">
+        <div className="rounded-lg border border-red-200 bg-red-50 p-6 text-sm text-red-800">
+          Project access could not be loaded. Sign in again or contact an organization admin.
+        </div>
+      </div>
+    )
+  }
+
+  if (role === 'admin') {
+    return (
+      <div className="p-4 sm:p-6 lg:p-8">
+        <div className="rounded-lg border border-amber-200 bg-amber-50 p-6 text-sm text-amber-800">
+          No active project exists. Create a project to open dashboard data.
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div className="p-4 sm:p-6 lg:p-8">
+      <div className="rounded-lg border border-amber-200 bg-amber-50 p-6">
+        <h1 className="text-lg font-semibold text-amber-950">No project access</h1>
+        <p className="mt-2 text-sm leading-6 text-amber-800">
+          Your account is active, but it is not assigned to any project. Contact an organization admin to request project access.
+        </p>
+      </div>
+    </div>
   )
 }
 
@@ -369,11 +406,27 @@ function Dashboard({
     enabled: role === 'admin',
     retry: false,
   })
-  const projects = useMemo(() => projectsQuery.data ?? [], [projectsQuery.data])
+  const accessibleProjectsQuery = useQuery({
+    queryKey: dashboardQueryKeys.accessibleProjects(),
+    queryFn: listAccessibleProjects,
+    enabled: role !== 'admin',
+    retry: false,
+  })
+  const adminProjects = useMemo(() => projectsQuery.data ?? [], [projectsQuery.data])
+  const accessibleProjects = useMemo(() => accessibleProjectsQuery.data ?? [], [accessibleProjectsQuery.data])
+  const projects = role === 'admin' ? adminProjects : accessibleProjects
+  const projectQueryIsLoading = role === 'admin' ? projectsQuery.isLoading : accessibleProjectsQuery.isLoading
+  const projectQueryIsError = role === 'admin' ? projectsQuery.isError : accessibleProjectsQuery.isError
+  const selectedProjectExists = projects.some(project => project.id === projectId)
+  const isResolvingProject = !projectQueryIsLoading && !projectQueryIsError && projects.length > 0 && !selectedProjectExists
+  const canOpenDashboard = selectedProjectExists
 
   useEffect(() => {
-    if (role !== 'admin' || projectsQuery.isLoading || projectsQuery.isError) return
-    if (projects.length === 0) return
+    if (projectQueryIsLoading || projectQueryIsError) return
+    if (projects.length === 0) {
+      if (projectId) onProjectChange('')
+      return
+    }
 
     const selectedExists = projects.some(project => project.id === projectId)
     if (!selectedExists) {
@@ -383,9 +436,8 @@ function Dashboard({
     onProjectChange,
     projectId,
     projects,
-    projectsQuery.isError,
-    projectsQuery.isLoading,
-    role,
+    projectQueryIsError,
+    projectQueryIsLoading,
   ])
   const createProjectMutation = useMutation({
     mutationFn: createProject,
@@ -394,6 +446,7 @@ function Dashboard({
       setShowCreateProject(false)
       setCreatedProjectKey(project)
       await queryClient.invalidateQueries({ queryKey: dashboardQueryKeys.projects() })
+      await queryClient.invalidateQueries({ queryKey: dashboardQueryKeys.accessibleProjects() })
       onProjectChange(project.id)
     },
     onError: error => {
@@ -415,8 +468,8 @@ function Dashboard({
             <ProjectSwitcher
               projectId={projectId}
               projects={projects}
-              isLoading={projectsQuery.isLoading}
-              isError={projectsQuery.isError}
+              isLoading={projectQueryIsLoading}
+              isError={projectQueryIsError}
               role={role}
               onProjectChange={onProjectChange}
             />
@@ -477,7 +530,15 @@ function Dashboard({
             />
           )}
           <div className="min-w-0">
-            <Outlet />
+            {canOpenDashboard ? (
+              <Outlet />
+            ) : (
+              <NoProjectAccess
+                role={role}
+                isLoading={projectQueryIsLoading || isResolvingProject}
+                isError={projectQueryIsError}
+              />
+            )}
           </div>
         </main>
       </div>
