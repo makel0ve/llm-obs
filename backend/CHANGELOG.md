@@ -1,6 +1,19 @@
 # CHANGELOG
 
 
+## v0.30.0 (2026-07-14)
+
+### Chores
+
+- Trigger ci for release sync
+  ([`ce530a4`](https://github.com/makel0ve/llm-obs/commit/ce530a45fc7b1d2214fdb299cc7174e7df8fb0fc))
+
+### Features
+
+- Show ingestion failure diagnostics
+  ([`9a89226`](https://github.com/makel0ve/llm-obs/commit/9a8922695dd14f674a43af0e2551bf493ae28d69))
+
+
 ## v0.29.0 (2026-07-14)
 
 ### Chores
