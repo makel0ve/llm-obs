@@ -17,6 +17,17 @@ as expected.
 docker compose -f infra/docker-compose.yml logs --tail=100 worker
 ```
 
+7. Check the worker heartbeat:
+
+```bash
+curl -f http://localhost:8000/worker-health
+docker compose -f infra/docker-compose.yml logs --tail=100 scheduler
+```
+
+`/worker-health` returns `503` with `missing` until the scheduler has enqueued
+and the worker has executed the first heartbeat task. A `stale` response means
+that path has stopped updating Redis within the configured threshold.
+
 ## Ingest Accepted But Trace Missing
 
 Check batch processing:

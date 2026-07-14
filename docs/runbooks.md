@@ -262,7 +262,14 @@ Check backend readiness:
 ```bash
 curl -f http://localhost:8000/health
 curl -f http://localhost:8000/ready
+curl -f http://localhost:8000/worker-health
 ```
+
+`/worker-health` depends on the scheduler and worker services. The scheduler
+enqueues a lightweight heartbeat task every minute, and the worker updates the
+heartbeat timestamp in Redis. A `503` response with `missing` means no
+heartbeat has been recorded yet; `stale` means the worker/scheduler path has not
+completed a heartbeat within the configured age threshold.
 
 Check Prometheus metrics:
 

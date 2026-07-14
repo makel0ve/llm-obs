@@ -85,6 +85,8 @@ The dashboard currently uses typed frontend helpers for:
 
 ## Operations
 
-Use `/health` for liveness and `/ready` for dependency readiness. Prometheus
-metrics are exposed at `/metrics`. Runbooks for local development, production
+Use `/health` for backend liveness and `/ready` for dependency readiness.
+Prometheus metrics are exposed at `/metrics`. Worker and scheduler liveness is
+reported by `/worker-health`, which reads the Redis timestamp written by the
+scheduled worker heartbeat task. Runbooks for local development, production
 Compose, migrations, rollback and smoke checks are in [runbooks.md](runbooks.md).
