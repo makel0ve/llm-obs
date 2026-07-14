@@ -1,6 +1,22 @@
 # CHANGELOG
 
 
+## v0.34.1 (2026-07-14)
+
+### Bug Fixes
+
+- Make config test independent of environment
+  ([`75bd2c9`](https://github.com/makel0ve/llm-obs/commit/75bd2c9c3fec27f6bad7e550895bb7dda955937d))
+
+### Chores
+
+- Trigger ci for release sync
+  ([`faf358c`](https://github.com/makel0ve/llm-obs/commit/faf358c575fc72217affe87be02fab539a2e4014))
+
+- Validate production environment
+  ([`61f45bd`](https://github.com/makel0ve/llm-obs/commit/61f45bd69014666034529d067ea9cdfbb30b5fd7))
+
+
 ## v0.34.0 (2026-07-14)
 
 ### Chores
