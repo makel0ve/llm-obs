@@ -1,6 +1,19 @@
 # CHANGELOG
 
 
+## v0.29.0 (2026-07-14)
+
+### Chores
+
+- Trigger ci for release sync
+  ([`184a830`](https://github.com/makel0ve/llm-obs/commit/184a8305b1e281b615ceeb50e048884fb21035ef))
+
+### Features
+
+- Handle users without project access
+  ([`e3aa2ca`](https://github.com/makel0ve/llm-obs/commit/e3aa2caf4f2c6f54e08c3aeac1ce59efabbdbef0))
+
+
 ## v0.28.0 (2026-07-14)
 
 ### Chores
