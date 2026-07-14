@@ -33,6 +33,11 @@ curl -H "Authorization: Bearer YOUR_JWT_TOKEN" \
   "http://localhost:8000/v1/failed-tasks?project_id=YOUR_PROJECT_ID"
 ```
 
+Admins can also inspect recent failed ingestion tasks in Project Settings. The
+diagnostics table shows task name, safe argument summaries, error text, attempts
+and resolution state. It does not show full prompts, model outputs or secret
+values.
+
 ## Auth Or Redirect Loop
 
 - Clear stale local storage or log out and log in again.
