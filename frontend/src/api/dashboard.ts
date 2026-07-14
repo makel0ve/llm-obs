@@ -7,6 +7,7 @@ export type AlertCondition = 'gt' | 'lt' | 'anomaly'
 export type UserRole = 'admin' | 'member' | 'viewer'
 export type ApiKeyScope = 'ingest' | 'read' | 'read_write'
 export type PayloadStorageMode = 'all' | 'errors' | 'none'
+export type ProjectMembershipRole = 'member' | 'viewer'
 
 export type AuthResponse = {
   access_token: string
@@ -183,6 +184,10 @@ export type ProjectRecord = ProjectSettings & {
   created_at?: string | null
 }
 
+export type AccessibleProjectRecord = ProjectRecord & {
+  project_role: UserRole
+}
+
 export type ProjectCreate = {
   name: string
 }
@@ -193,6 +198,21 @@ export type ProjectCreateResponse = ProjectRecord & {
 }
 
 export type ProjectSettingsUpdate = Partial<ProjectSettings>
+
+export type ProjectMember = {
+  user_id: string
+  email: string
+  org_role: UserRole
+  project_role: ProjectMembershipRole
+  is_active: boolean
+  created_at?: string | null
+  updated_at?: string | null
+}
+
+export type ProjectMemberAssign = {
+  user_id: string
+  role: ProjectMembershipRole
+}
 
 export type AlertRule = {
   id: string
@@ -340,8 +360,10 @@ export const dashboardQueryKeys = {
   auditEvents: (action: string, userId: string, fromDt: string, toDt: string, cursor: string) =>
     ['audit-events', action, userId, fromDt, toDt, cursor] as const,
   projectSettings: (projectId: string) => ['project-settings', projectId] as const,
+  projectMembers: (projectId: string) => ['project-members', projectId] as const,
   apiKeys: (projectId: string) => ['api-keys', projectId] as const,
   projects: () => ['projects'] as const,
+  accessibleProjects: () => ['accessible-projects'] as const,
 }
 
 function projectParams(projectId: string) {
@@ -459,6 +481,11 @@ export async function listProjects() {
   return response.data
 }
 
+export async function listAccessibleProjects() {
+  const response = await api.get<AccessibleProjectRecord[]>('/v1/projects/accessible')
+  return response.data
+}
+
 export async function createProject(payload: ProjectCreate) {
   const response = await api.post<ProjectCreateResponse>('/v1/projects', payload)
   return response.data
@@ -467,6 +494,20 @@ export async function createProject(payload: ProjectCreate) {
 export async function updateProjectSettings(projectId: string, payload: ProjectSettingsUpdate) {
   const response = await api.patch<ProjectSettings>(`/v1/projects/${projectId}/settings`, payload)
   return response.data
+}
+
+export async function listProjectMembers(projectId: string) {
+  const response = await api.get<ProjectMember[]>(`/v1/projects/${projectId}/members`)
+  return response.data
+}
+
+export async function assignProjectMember(projectId: string, payload: ProjectMemberAssign) {
+  const response = await api.post<ProjectMember>(`/v1/projects/${projectId}/members`, payload)
+  return response.data
+}
+
+export async function removeProjectMember(projectId: string, userId: string) {
+  await api.delete(`/v1/projects/${projectId}/members/${userId}`)
 }
 
 export async function rotateProjectApiKey(projectId: string) {
