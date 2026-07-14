@@ -6,6 +6,7 @@ import {
   createProjectApiKey,
   dashboardQueryKeys,
   getProjectSettings,
+  listFailedTasks,
   listProjectApiKeys,
   listProjectMembers,
   listUsers,
@@ -14,6 +15,7 @@ import {
   rotateProjectApiKey,
   updateProjectSettings,
   type ApiKeyScope,
+  type FailedTask,
   type OrganizationUser,
   type PayloadStorageMode,
   type ProjectMember,
@@ -130,6 +132,19 @@ function formatScope(scope: ApiKeyScope) {
   return scopeOptions.find(option => option.value === scope)?.label ?? scope
 }
 
+function formatTaskArgs(taskArgs?: Record<string, unknown> | null) {
+  if (!taskArgs || Object.keys(taskArgs).length === 0) return '-'
+
+  return Object.entries(taskArgs)
+    .map(([key, value]) => `${key}: ${String(value)}`)
+    .join(', ')
+}
+
+function formatTaskError(error?: string | null) {
+  if (!error) return '-'
+  return error.length > 180 ? `${error.slice(0, 180)}...` : error
+}
+
 export function ProjectSettings({ projectId }: { projectId: string }) {
   const queryClient = useQueryClient()
   const [retentionDays, setRetentionDays] = useState<string | null>(null)
@@ -156,6 +171,7 @@ export function ProjectSettings({ projectId }: { projectId: string }) {
   })
   const [memberMessage, setMemberMessage] = useState('')
   const [memberError, setMemberError] = useState('')
+  const [includeResolvedFailures, setIncludeResolvedFailures] = useState(false)
 
   const settingsQuery = useQuery({
     queryKey: dashboardQueryKeys.projectSettings(projectId),
@@ -178,6 +194,12 @@ export function ProjectSettings({ projectId }: { projectId: string }) {
   const membersQuery = useQuery({
     queryKey: dashboardQueryKeys.projectMembers(projectId),
     queryFn: () => listProjectMembers(projectId),
+    enabled: !!projectId,
+  })
+
+  const failedTasksQuery = useQuery({
+    queryKey: dashboardQueryKeys.failedTasks(projectId, includeResolvedFailures),
+    queryFn: () => listFailedTasks(projectId, includeResolvedFailures),
     enabled: !!projectId,
   })
 
@@ -349,6 +371,8 @@ await llm_obs.shutdown()`
   }
 
   const members = membersQuery.data ?? []
+  const failedTasks = failedTasksQuery.data ?? []
+  const unresolvedFailedTasks = failedTasks.filter((task: FailedTask) => !task.resolved)
   const memberUserIds = new Set(members.map(member => member.user_id))
   const assignableUsers = (usersQuery.data ?? []).filter((user: OrganizationUser) => (
     user.is_active && !memberUserIds.has(user.id)
@@ -674,6 +698,84 @@ await llm_obs.shutdown()`
             <Alert tone="error">Could not update payload privacy settings.</Alert>
           </div>
         )}
+      </section>
+
+      <section className="space-y-4">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <h2 className="text-lg font-semibold text-gray-950">Ingestion diagnostics</h2>
+            <p className="mt-1 text-sm text-gray-500">Recent failed background tasks for this project.</p>
+          </div>
+          <label className="inline-flex items-center gap-2 text-sm text-gray-700">
+            <input
+              type="checkbox"
+              checked={includeResolvedFailures}
+              onChange={event => setIncludeResolvedFailures(event.target.checked)}
+              className="h-4 w-4 rounded border-gray-300 text-gray-900"
+            />
+            Include resolved
+          </label>
+        </div>
+
+        {!failedTasksQuery.isLoading && !failedTasksQuery.isError && unresolvedFailedTasks.length > 0 && (
+          <Alert tone="warning">
+            {unresolvedFailedTasks.length} unresolved ingestion failure{unresolvedFailedTasks.length === 1 ? '' : 's'} found.
+          </Alert>
+        )}
+
+        <div className="overflow-hidden rounded-lg border border-gray-200 bg-white">
+          <div className="overflow-x-auto">
+            <table className="min-w-[980px] w-full text-left text-sm">
+              <thead className="border-b border-gray-200 bg-gray-50 text-xs uppercase tracking-wide text-gray-500">
+                <tr>
+                  <th scope="col" className="px-4 py-3 font-medium">Task</th>
+                  <th scope="col" className="px-4 py-3 font-medium">Summary</th>
+                  <th scope="col" className="px-4 py-3 font-medium">Error</th>
+                  <th scope="col" className="px-4 py-3 font-medium">Attempts</th>
+                  <th scope="col" className="px-4 py-3 font-medium">Failed at</th>
+                  <th scope="col" className="px-4 py-3 font-medium">Status</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {failedTasksQuery.isLoading && (
+                  <tr>
+                    <td colSpan={6} className="px-4 py-6 text-gray-600">Loading failed tasks...</td>
+                  </tr>
+                )}
+                {failedTasksQuery.isError && (
+                  <tr>
+                    <td colSpan={6} className="px-4 py-6 text-red-700">Could not load failed task summaries.</td>
+                  </tr>
+                )}
+                {!failedTasksQuery.isLoading && !failedTasksQuery.isError && failedTasks.length === 0 && (
+                  <tr>
+                    <td colSpan={6} className="px-4 py-6 text-gray-600">No failed ingestion tasks found.</td>
+                  </tr>
+                )}
+                {failedTasks.map(task => (
+                  <tr key={task.id} className="align-top hover:bg-gray-50">
+                    <td className="whitespace-nowrap px-4 py-3 font-medium text-gray-900">{task.task_name}</td>
+                    <td className="px-4 py-3 text-gray-700">{formatTaskArgs(task.task_args)}</td>
+                    <td className="px-4 py-3 text-red-700">{formatTaskError(task.error)}</td>
+                    <td className="px-4 py-3 text-gray-700">{task.attempts ?? '-'}</td>
+                    <td className="whitespace-nowrap px-4 py-3 text-gray-700">{formatDateTime(task.failed_at)}</td>
+                    <td className="px-4 py-3">
+                      <span
+                        className={`inline-flex min-h-6 items-center rounded-md px-2 text-xs font-medium ${
+                          task.resolved
+                            ? 'bg-gray-100 text-gray-600 ring-1 ring-gray-200'
+                            : 'bg-red-50 text-red-700 ring-1 ring-red-200'
+                        }`}
+                      >
+                        {task.resolved ? 'resolved' : 'open'}
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
       </section>
 
       <section className="space-y-4">

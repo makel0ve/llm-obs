@@ -108,6 +108,17 @@ export type FailedTrace = {
   error_message?: string | null
 }
 
+export type FailedTask = {
+  id: number
+  task_name: string
+  project_id?: string | null
+  task_args?: Record<string, unknown> | null
+  error?: string | null
+  attempts?: number | null
+  failed_at: string
+  resolved: boolean
+}
+
 export type AnalyticsResponse = {
   cost_by_model: CostByModel[]
   cost_by_provider: CostByProvider[]
@@ -362,6 +373,8 @@ export const dashboardQueryKeys = {
   projectSettings: (projectId: string) => ['project-settings', projectId] as const,
   projectMembers: (projectId: string) => ['project-members', projectId] as const,
   apiKeys: (projectId: string) => ['api-keys', projectId] as const,
+  failedTasks: (projectId: string, includeResolved: boolean) =>
+    ['failed-tasks', projectId, includeResolved] as const,
   projects: () => ['projects'] as const,
   accessibleProjects: () => ['accessible-projects'] as const,
 }
@@ -527,6 +540,16 @@ export async function createProjectApiKey(projectId: string, payload: ProjectApi
 
 export async function revokeProjectApiKey(projectId: string, keyId: string) {
   await api.post(`/v1/projects/${projectId}/api-keys/${keyId}/revoke`)
+}
+
+export async function listFailedTasks(projectId: string, includeResolved = false) {
+  const params = new URLSearchParams({
+    project_id: projectId,
+    include_resolved: includeResolved ? 'true' : 'false',
+    limit: '25',
+  })
+  const response = await api.get<FailedTask[]>(`/v1/failed-tasks?${params.toString()}`)
+  return response.data
 }
 
 export async function listPricing({
