@@ -331,7 +331,7 @@ export function TraceDetail({ projectId }: { projectId: string }) {
     <div className="space-y-6 p-4 sm:p-6 lg:p-8">
       <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
         <div className="min-w-0">
-          <Link to="/traces" className="text-sm font-medium text-blue-700 hover:text-blue-900">
+          <Link to="/dashboard/traces" className="text-sm font-medium text-blue-700 hover:text-blue-900">
             Back to traces
           </Link>
           <h1 className="mt-3 text-2xl font-semibold text-gray-950">Trace Detail</h1>

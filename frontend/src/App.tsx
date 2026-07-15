@@ -1,6 +1,6 @@
 import { QueryClient, QueryClientProvider, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { lazy, Suspense, useEffect, useMemo, useState, type FormEvent, type ReactNode } from 'react'
-import { BrowserRouter, Routes, Route, Navigate, NavLink, Outlet } from 'react-router-dom'
+import { BrowserRouter, Routes, Route, Navigate, NavLink, Outlet, useNavigate } from 'react-router-dom'
 import { api } from './api/client'
 import {
   createProject,
@@ -35,13 +35,13 @@ type DashboardNavItem = {
 }
 
 const dashboardNavItems: DashboardNavItem[] = [
-  { label: 'Overview', path: '/', end: true },
-  { label: 'Traces', path: '/traces' },
-  { label: 'Alerts', path: '/alerts' },
-  { label: 'Pricing', path: '/pricing', adminOnly: true },
-  { label: 'Users', path: '/users', adminOnly: true },
-  { label: 'Audit Log', path: '/audit-log', adminOnly: true },
-  { label: 'Project Settings', path: '/project-settings', adminOnly: true },
+  { label: 'Overview', path: '/dashboard', end: true },
+  { label: 'Traces', path: '/dashboard/traces' },
+  { label: 'Alerts', path: '/dashboard/alerts' },
+  { label: 'Pricing', path: '/dashboard/pricing', adminOnly: true },
+  { label: 'Users', path: '/dashboard/users', adminOnly: true },
+  { label: 'Audit Log', path: '/dashboard/audit-log', adminOnly: true },
+  { label: 'Project Settings', path: '/dashboard/project-settings', adminOnly: true },
 ]
 
 function isUserRole(value: unknown): value is UserRole {
@@ -189,6 +189,92 @@ function NoProjectAccess({ role, isLoading, isError }: { role: UserRole; isLoadi
         <p className="mt-2 text-sm leading-6 text-amber-800">
           Your account is active, but it is not assigned to any project. Contact an organization admin to request project access.
         </p>
+      </div>
+    </div>
+  )
+}
+
+function ProjectSelectionLanding({
+  onProjectChange,
+}: {
+  onProjectChange: (projectId: string) => void
+}) {
+  const navigate = useNavigate()
+  const projectsQuery = useQuery({
+    queryKey: dashboardQueryKeys.accessibleProjects(),
+    queryFn: listAccessibleProjects,
+    retry: false,
+  })
+  const projects = projectsQuery.data ?? []
+
+  const openProject = (projectId: string) => {
+    onProjectChange(projectId)
+    navigate('/dashboard')
+  }
+
+  if (projectsQuery.isLoading) {
+    return (
+      <div className="p-4 sm:p-6 lg:p-8">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          {Array.from({ length: 4 }).map((_, index) => (
+            <div key={index} className="h-32 animate-pulse rounded-lg bg-gray-100" />
+          ))}
+        </div>
+      </div>
+    )
+  }
+
+  if (projectsQuery.isError) {
+    return (
+      <div className="p-4 sm:p-6 lg:p-8">
+        <div className="rounded-lg border border-red-200 bg-red-50 p-6 text-sm text-red-800">
+          Project access could not be loaded. Sign in again or contact an organization admin.
+        </div>
+      </div>
+    )
+  }
+
+  if (projects.length === 0) {
+    return <NoProjectAccess role="viewer" isLoading={false} isError={false} />
+  }
+
+  return (
+    <div className="space-y-6 p-4 sm:p-6 lg:p-8">
+      <div>
+        <h1 className="text-2xl font-semibold text-gray-950">Projects</h1>
+        <p className="mt-1 text-sm text-gray-500">Open a project to view traces, alerts and settings.</p>
+      </div>
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        {projects.map(project => (
+          <button
+            key={project.id}
+            type="button"
+            onClick={() => openProject(project.id)}
+            className="min-h-32 rounded-lg border border-gray-200 bg-white p-4 text-left shadow-sm transition hover:border-blue-300 hover:bg-blue-50 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100"
+          >
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <h2 className="truncate text-base font-semibold text-gray-950">{project.name}</h2>
+                <p className="mt-1 text-xs font-medium uppercase tracking-wide text-gray-500">
+                  {project.project_role}
+                </p>
+              </div>
+              <span className="rounded-full bg-green-50 px-2 py-1 text-xs font-medium text-green-700">
+                Active
+              </span>
+            </div>
+            <dl className="mt-5 grid grid-cols-2 gap-3 text-xs">
+              <div>
+                <dt className="text-gray-500">Retention</dt>
+                <dd className="mt-1 font-medium text-gray-900">{project.retention_days}d</dd>
+              </div>
+              <div>
+                <dt className="text-gray-500">Payloads</dt>
+                <dd className="mt-1 font-medium text-gray-900">{project.payload_storage_mode}</dd>
+              </div>
+            </dl>
+          </button>
+        ))}
       </div>
     </div>
   )
@@ -627,14 +713,15 @@ export default function App() {
               />
             </PrivateRoute>
           }>
-            <Route index element={<LazyPage><Overview projectId={projectId} /></LazyPage>} />
-            <Route path="traces" element={<LazyPage><Traces projectId={projectId} /></LazyPage>} />
-            <Route path="traces/:traceId" element={<LazyPage><TraceDetail projectId={projectId} /></LazyPage>} />
-            <Route path="alerts" element={<LazyPage><Alerts projectId={projectId} role={role} /></LazyPage>} />
-            <Route path="pricing" element={<AdminRoute role={role}><LazyPage><Pricing /></LazyPage></AdminRoute>} />
-            <Route path="users" element={<AdminRoute role={role}><LazyPage><Users role={role} /></LazyPage></AdminRoute>} />
-            <Route path="audit-log" element={<AdminRoute role={role}><LazyPage><AuditLog /></LazyPage></AdminRoute>} />
-            <Route path="project-settings" element={<AdminRoute role={role}><LazyPage><ProjectSettings projectId={projectId} /></LazyPage></AdminRoute>} />
+            <Route index element={<ProjectSelectionLanding onProjectChange={handleProjectChange} />} />
+            <Route path="dashboard" element={<LazyPage><Overview projectId={projectId} /></LazyPage>} />
+            <Route path="dashboard/traces" element={<LazyPage><Traces projectId={projectId} /></LazyPage>} />
+            <Route path="dashboard/traces/:traceId" element={<LazyPage><TraceDetail projectId={projectId} /></LazyPage>} />
+            <Route path="dashboard/alerts" element={<LazyPage><Alerts projectId={projectId} role={role} /></LazyPage>} />
+            <Route path="dashboard/pricing" element={<AdminRoute role={role}><LazyPage><Pricing /></LazyPage></AdminRoute>} />
+            <Route path="dashboard/users" element={<AdminRoute role={role}><LazyPage><Users role={role} /></LazyPage></AdminRoute>} />
+            <Route path="dashboard/audit-log" element={<AdminRoute role={role}><LazyPage><AuditLog /></LazyPage></AdminRoute>} />
+            <Route path="dashboard/project-settings" element={<AdminRoute role={role}><LazyPage><ProjectSettings projectId={projectId} /></LazyPage></AdminRoute>} />
           </Route>
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>

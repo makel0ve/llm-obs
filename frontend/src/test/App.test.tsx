@@ -319,7 +319,7 @@ describe('App', () => {
     const loadingProject = { ...project, id: 'project-loading' }
     mockedListProjects.mockResolvedValue([loadingProject])
     mockedListTraces.mockReturnValue(new Promise(() => {}))
-    storeAdminSession('/traces', loadingProject)
+    storeAdminSession('/dashboard/traces', loadingProject)
 
     const { container } = render(<App />)
 
@@ -335,7 +335,7 @@ describe('App', () => {
       next_cursor: null,
       has_more: false,
     })
-    storeAdminSession('/traces', emptyProject)
+    storeAdminSession('/dashboard/traces', emptyProject)
 
     render(<App />)
 
@@ -374,7 +374,7 @@ describe('App', () => {
       next_cursor: null,
       has_more: false,
     })
-    storeAdminSession('/traces', dataProject)
+    storeAdminSession('/dashboard/traces', dataProject)
 
     render(<App />)
 
@@ -382,6 +382,29 @@ describe('App', () => {
     expect(screen.getAllByText('error')).toHaveLength(2)
     expect(screen.getByText('1,234')).toBeInTheDocument()
     expect(screen.getByText('$0.4321')).toBeInTheDocument()
+  })
+
+  it('shows accessible project tiles and opens the selected project dashboard', async () => {
+    const user = userEvent.setup()
+    mockedListAccessibleProjects.mockResolvedValue([
+      {
+        ...project,
+        project_role: 'member',
+      },
+    ])
+    localStorage.setItem('token', 'member-token')
+    localStorage.setItem('role', 'member')
+
+    render(<App />)
+
+    expect(await screen.findByRole('heading', { name: 'Projects' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Production API/i })).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: /Production API/i }))
+
+    expect(localStorage.getItem('projectId')).toBe(project.id)
+    expect(await screen.findByRole('heading', { name: 'Overview' })).toBeInTheDocument()
+    expect(mockedListAccessibleProjects).toHaveBeenCalled()
   })
 
   it('shows error fingerprints on the overview analytics section', async () => {
@@ -429,7 +452,7 @@ describe('App', () => {
   it('creates a scoped project api key and reveals it once', async () => {
     const user = userEvent.setup()
     mockedListProjects.mockResolvedValue([project])
-    storeAdminSession('/project-settings')
+    storeAdminSession('/dashboard/project-settings')
 
     render(<App />)
 
