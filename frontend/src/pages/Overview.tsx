@@ -21,6 +21,7 @@ import {
   type AnalyticsTrace,
   type CostByModel,
   type CostByProvider,
+  type ErrorFingerprint,
   type ErrorMessageGroup,
   type ErrorsByModel,
   type ErrorsByProvider,
@@ -404,6 +405,59 @@ function FailedTracesTable({ rows }: { rows: FailedTrace[] }) {
   )
 }
 
+function ErrorFingerprintsTable({ rows }: { rows: ErrorFingerprint[] }) {
+  return (
+    <div className="overflow-hidden rounded-lg border border-gray-200 bg-white">
+      <div className="border-b border-gray-100 px-4 py-3">
+        <h2 className="text-sm font-semibold text-gray-950">Error fingerprints</h2>
+      </div>
+      <div className="overflow-x-auto">
+        <table className="min-w-full divide-y divide-gray-100 text-sm">
+          <thead className="bg-gray-50 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">
+            <tr>
+              <th className="px-4 py-3">Fingerprint</th>
+              <th className="px-4 py-3">Errors</th>
+              <th className="px-4 py-3">Traces</th>
+              <th className="px-4 py-3">Top source</th>
+              <th className="px-4 py-3">Last seen</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-gray-100">
+            {rows.length === 0 ? (
+              <tr>
+                <td className="px-4 py-4 text-gray-500" colSpan={5}>
+                  No data
+                </td>
+              </tr>
+            ) : (
+              rows.map(row => (
+                <tr key={row.fingerprint}>
+                  <td className="max-w-[28rem] px-4 py-3 text-gray-950">
+                    <div className="truncate font-medium" title={row.sample_message}>
+                      {row.sample_message}
+                    </div>
+                    <div className="mt-1 truncate font-mono text-xs text-gray-500" title={row.fingerprint}>
+                      {row.fingerprint}
+                    </div>
+                  </td>
+                  <td className="px-4 py-3 text-gray-700">{formatNumber(row.error_count)}</td>
+                  <td className="px-4 py-3 text-gray-700">{formatNumber(row.affected_trace_count)}</td>
+                  <td className="whitespace-nowrap px-4 py-3 text-gray-700">
+                    {[row.top_provider, row.top_model].filter(Boolean).join(' / ') || '-'}
+                  </td>
+                  <td className="whitespace-nowrap px-4 py-3 text-gray-700">
+                    {row.last_seen_at ? format(new Date(row.last_seen_at), 'dd MMM HH:mm') : '-'}
+                  </td>
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  )
+}
+
 function ErrorAnalyticsSections({
   analytics,
   period,
@@ -447,6 +501,8 @@ function ErrorAnalyticsSections({
         <ErrorMessagesTable rows={analytics?.top_error_messages ?? []} />
         <FailedTracesTable rows={analytics?.recent_failed_traces ?? []} />
       </div>
+
+      <ErrorFingerprintsTable rows={analytics?.error_fingerprints ?? []} />
     </div>
   )
 }
