@@ -19,6 +19,7 @@ const Traces = lazy(() => import('./pages/Traces').then(module => ({ default: mo
 const TraceDetail = lazy(() => import('./pages/TraceDetail').then(module => ({ default: module.TraceDetail })))
 const Alerts = lazy(() => import('./pages/Alerts').then(module => ({ default: module.Alerts })))
 const ProjectSettings = lazy(() => import('./pages/ProjectSettings').then(module => ({ default: module.ProjectSettings })))
+const OrganizationSettings = lazy(() => import('./pages/OrganizationSettings').then(module => ({ default: module.OrganizationSettings })))
 const Pricing = lazy(() => import('./pages/Pricing').then(module => ({ default: module.Pricing })))
 const Users = lazy(() => import('./pages/Users').then(module => ({ default: module.Users })))
 const AuditLog = lazy(() => import('./pages/AuditLog').then(module => ({ default: module.AuditLog })))
@@ -36,10 +37,11 @@ const dashboardNavItems: DashboardNavItem[] = [
   { label: 'Overview', path: '/dashboard', end: true },
   { label: 'Traces', path: '/dashboard/traces' },
   { label: 'Alerts', path: '/dashboard/alerts' },
-  { label: 'Pricing', path: '/dashboard/pricing', adminOnly: true },
-  { label: 'Users', path: '/dashboard/users', adminOnly: true },
-  { label: 'Audit Log', path: '/dashboard/audit-log', adminOnly: true },
   { label: 'Project Settings', path: '/dashboard/project-settings', adminOnly: true },
+]
+
+const organizationNavItems: DashboardNavItem[] = [
+  { label: 'Organization Settings', path: '/admin-settings', adminOnly: true },
 ]
 
 function isUserRole(value: unknown): value is UserRole {
@@ -69,9 +71,18 @@ function readStoredRole(): UserRole {
   return decodeJwtRole(localStorage.getItem('token')) ?? 'viewer'
 }
 
-function DashboardNav({ role, variant = 'desktop' }: { role: UserRole; variant?: 'desktop' | 'mobile' }) {
+function DashboardNav({
+  role,
+  variant = 'desktop',
+  area,
+}: {
+  role: UserRole
+  variant?: 'desktop' | 'mobile'
+  area: 'organization' | 'project'
+}) {
   const isMobile = variant === 'mobile'
-  const visibleItems = dashboardNavItems.filter(item => !item.adminOnly || role === 'admin')
+  const visibleItems = (area === 'organization' ? organizationNavItems : dashboardNavItems)
+    .filter(item => !item.adminOnly || role === 'admin')
 
   return (
     <nav
@@ -497,6 +508,9 @@ function Dashboard({
   const isResolvingProject = !projectQueryIsLoading && !projectQueryIsError && projects.length > 0 && !selectedProjectExists
   const canOpenDashboard = selectedProjectExists
   const isProjectSelectionPage = location.pathname === '/'
+  const isOrganizationSettingsPage = location.pathname.startsWith('/admin-settings')
+  const navigationArea = isProjectSelectionPage || isOrganizationSettingsPage ? 'organization' : 'project'
+  const canRenderRoute = canOpenDashboard || isProjectSelectionPage || isOrganizationSettingsPage
 
   useEffect(() => {
     if (projectQueryIsLoading || projectQueryIsError) return
@@ -546,7 +560,7 @@ function Dashboard({
             >
               LLM Obs
             </NavLink>
-            {!isProjectSelectionPage && (
+            {navigationArea === 'project' && (
               <ProjectSwitcher
                 projectId={projectId}
                 projects={projects}
@@ -579,12 +593,12 @@ function Dashboard({
             </button>
           </div>
         </div>
-        <DashboardNav role={role} variant="mobile" />
+        <DashboardNav role={role} variant="mobile" area={navigationArea} />
       </header>
 
       <div className="lg:flex">
         <aside className="hidden min-h-[calc(100svh-4rem)] w-64 shrink-0 border-r border-gray-200 bg-white lg:block">
-          <DashboardNav role={role} />
+          <DashboardNav role={role} area={navigationArea} />
         </aside>
         <main className="min-w-0 flex-1">
           {showCreateProject && role === 'admin' && (
@@ -613,7 +627,7 @@ function Dashboard({
             />
           )}
           <div className="min-w-0">
-            {canOpenDashboard ? (
+            {canRenderRoute ? (
               <Outlet />
             ) : (
               <NoProjectAccess
@@ -715,10 +729,17 @@ export default function App() {
             <Route path="dashboard/traces" element={<LazyPage><Traces projectId={projectId} /></LazyPage>} />
             <Route path="dashboard/traces/:traceId" element={<LazyPage><TraceDetail projectId={projectId} /></LazyPage>} />
             <Route path="dashboard/alerts" element={<LazyPage><Alerts projectId={projectId} role={role} /></LazyPage>} />
-            <Route path="dashboard/pricing" element={<AdminRoute role={role}><LazyPage><Pricing /></LazyPage></AdminRoute>} />
-            <Route path="dashboard/users" element={<AdminRoute role={role}><LazyPage><Users role={role} /></LazyPage></AdminRoute>} />
-            <Route path="dashboard/audit-log" element={<AdminRoute role={role}><LazyPage><AuditLog /></LazyPage></AdminRoute>} />
             <Route path="dashboard/project-settings" element={<AdminRoute role={role}><LazyPage><ProjectSettings projectId={projectId} /></LazyPage></AdminRoute>} />
+            <Route path="admin-settings" element={<AdminRoute role={role}><LazyPage><OrganizationSettings /></LazyPage></AdminRoute>}>
+              <Route index element={<Navigate to="users" replace />} />
+              <Route path="users" element={<LazyPage><Users role={role} /></LazyPage>} />
+              <Route path="pricing" element={<LazyPage><Pricing /></LazyPage>} />
+              <Route path="audit-log" element={<LazyPage><AuditLog /></LazyPage>} />
+            </Route>
+            <Route path="dashboard/admin-settings/*" element={<Navigate to="/admin-settings" replace />} />
+            <Route path="dashboard/pricing" element={<Navigate to="/admin-settings/pricing" replace />} />
+            <Route path="dashboard/users" element={<Navigate to="/admin-settings/users" replace />} />
+            <Route path="dashboard/audit-log" element={<Navigate to="/admin-settings/audit-log" replace />} />
           </Route>
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
