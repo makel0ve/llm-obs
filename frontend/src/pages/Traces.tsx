@@ -108,7 +108,7 @@ function TraceTable({ traces }: { traces: TraceSummary[] }) {
                 </td>
                 <td className="px-4 py-3">
                   <Link
-                    to={`/traces/${trace.id}?started_at=${encodeURIComponent(trace.started_at)}`}
+                    to={`/dashboard/traces/${trace.id}?started_at=${encodeURIComponent(trace.started_at)}`}
                     className="font-medium text-blue-700 hover:text-blue-900"
                   >
                     {trace.id.slice(0, 8)}

@@ -37,7 +37,7 @@ client = patch_openai(client)`
           </p>
         </div>
         <Link
-          to="/project-settings"
+          to="/dashboard/project-settings"
           className="inline-flex min-h-10 items-center justify-center rounded-md border border-gray-200 bg-white px-4 text-sm font-medium text-gray-700 hover:bg-gray-100"
         >
           Project Settings
