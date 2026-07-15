@@ -1,6 +1,19 @@
 # CHANGELOG
 
 
+## v0.36.0 (2026-07-15)
+
+### Chores
+
+- Trigger ci for release sync
+  ([`41c3d58`](https://github.com/makel0ve/llm-obs/commit/41c3d581d4686205f04575ac7408b22d980704d7))
+
+### Features
+
+- Add project selection landing page
+  ([`cc4cdae`](https://github.com/makel0ve/llm-obs/commit/cc4cdaecc77599abdb24ae1c32d2d6a6819a54cc))
+
+
 ## v0.35.0 (2026-07-15)
 
 ### Chores
