@@ -1,6 +1,24 @@
 # CHANGELOG
 
 
+## v0.35.0 (2026-07-15)
+
+### Chores
+
+- Trigger ci for release sync
+  ([`a587bb1`](https://github.com/makel0ve/llm-obs/commit/a587bb155b96bda683c9164cd8508f7458e7b8a3))
+
+### Documentation
+
+- Harden production operations
+  ([`b13d9cd`](https://github.com/makel0ve/llm-obs/commit/b13d9cd03411405377df1f1e3e1b142592ba1f74))
+
+### Features
+
+- Add error fingerprint analytics
+  ([`2022b7c`](https://github.com/makel0ve/llm-obs/commit/2022b7c9c8f64f31b9b83f2d4b30eef9eb47f2d2))
+
+
 ## v0.34.1 (2026-07-14)
 
 ### Bug Fixes
