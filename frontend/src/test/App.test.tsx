@@ -25,6 +25,7 @@ import {
 
 vi.mock('../api/dashboard', () => ({
   assignProjectMember: vi.fn(),
+  createOrganizationUser: vi.fn(),
   createProjectApiKey: vi.fn(),
   createProject: vi.fn(),
   dashboardQueryKeys: {
@@ -80,6 +81,8 @@ vi.mock('../api/dashboard', () => ({
   revokeProjectApiKey: vi.fn(),
   rotateProjectApiKey: vi.fn(),
   registerUser: vi.fn(),
+  deleteOrganizationUser: vi.fn(),
+  updateOrganizationUserRole: vi.fn(),
   updateProjectSettings: vi.fn(),
 }))
 
@@ -274,10 +277,11 @@ describe('App', () => {
 
     render(<App />)
 
-    expect(await screen.findAllByRole('link', { name: 'Pricing' })).toHaveLength(2)
-    expect(screen.getAllByRole('link', { name: 'Users' })).toHaveLength(2)
-    expect(screen.getAllByRole('link', { name: 'Audit Log' })).toHaveLength(2)
-    expect(screen.getAllByRole('link', { name: 'Project Settings' })).toHaveLength(2)
+    expect(await screen.findAllByRole('link', { name: 'Organization Settings' })).toHaveLength(2)
+    expect(screen.queryByRole('link', { name: 'Project Settings' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: 'Pricing' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: 'Users' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: 'Audit Log' })).not.toBeInTheDocument()
   })
 
   it('hides admin-only navigation for non-admin users', async () => {
@@ -293,6 +297,32 @@ describe('App', () => {
     expect(screen.queryByRole('link', { name: 'Users' })).not.toBeInTheDocument()
     expect(screen.queryByRole('link', { name: 'Audit Log' })).not.toBeInTheDocument()
     expect(screen.queryByRole('link', { name: 'Project Settings' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: 'Organization Settings' })).not.toBeInTheDocument()
+  })
+
+  it('groups organization-wide admin controls under organization settings', async () => {
+    mockedListAccessibleProjects.mockResolvedValue([{ ...project, project_role: 'admin' }])
+    storeAdminSession('/admin-settings/users')
+
+    render(<App />)
+
+    expect(await screen.findByRole('heading', { name: 'Organization Settings' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Users' })).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Users' })).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Pricing' })).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Audit Log' })).toBeInTheDocument()
+    expect(screen.getAllByRole('link', { name: 'Organization Settings' })).toHaveLength(2)
+  })
+
+  it('shows project settings in project navigation after selecting a project', async () => {
+    mockedListAccessibleProjects.mockResolvedValue([{ ...project, project_role: 'admin' }])
+    storeAdminSession('/dashboard')
+
+    render(<App />)
+
+    expect(await screen.findByRole('heading', { name: 'Overview' })).toBeInTheDocument()
+    expect(screen.getAllByRole('link', { name: 'Project Settings' })).toHaveLength(2)
+    expect(screen.queryByRole('link', { name: 'Organization Settings' })).not.toBeInTheDocument()
   })
 
   it('logs out and clears stored session values', async () => {
@@ -424,6 +454,7 @@ describe('App', () => {
     render(<App />)
 
     expect(await screen.findByRole('heading', { name: 'Overview' })).toBeInTheDocument()
+    await screen.findByRole('option', { name: 'Staging API (viewer)' })
 
     await user.selectOptions(screen.getByLabelText('Active project'), secondProject.id)
 
