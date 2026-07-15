@@ -1,4 +1,4 @@
-import { cleanup, render, screen } from '@testing-library/react'
+import { cleanup, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -17,7 +17,6 @@ import {
   listFailedTasks,
   listProjectApiKeys,
   listProjectMembers,
-  listProjects,
   listTraces,
   listUsers,
   loginUser,
@@ -73,7 +72,6 @@ vi.mock('../api/dashboard', () => ({
   listAccessibleProjects: vi.fn(),
   listProjectApiKeys: vi.fn(),
   listProjectMembers: vi.fn(),
-  listProjects: vi.fn(),
   listTraces: vi.fn(),
   listUsers: vi.fn(),
   loginUser: vi.fn(),
@@ -94,7 +92,6 @@ const mockedListAccessibleProjects = vi.mocked(listAccessibleProjects)
 const mockedListFailedTasks = vi.mocked(listFailedTasks)
 const mockedListProjectApiKeys = vi.mocked(listProjectApiKeys)
 const mockedListProjectMembers = vi.mocked(listProjectMembers)
-const mockedListProjects = vi.mocked(listProjects)
 const mockedListTraces = vi.mocked(listTraces)
 const mockedListUsers = vi.mocked(listUsers)
 const mockedLoginUser = vi.mocked(loginUser)
@@ -178,7 +175,6 @@ describe('App', () => {
       error_fingerprints: [],
     })
     mockedListAccessibleProjects.mockResolvedValue([])
-    mockedListProjects.mockResolvedValue([])
     mockedListTraces.mockResolvedValue({
       traces: [],
       next_cursor: null,
@@ -244,7 +240,8 @@ describe('App', () => {
       email: 'member@example.com',
       password: 'secret123',
     })
-    expect(await screen.findAllByText('No project access')).toHaveLength(2)
+    expect(await screen.findAllByText('No project access')).toHaveLength(1)
+    expect(screen.queryByLabelText('Active project')).not.toBeInTheDocument()
     expect(localStorage.getItem('token')).toBe('member-token')
     expect(localStorage.getItem('projectId')).toBe('')
     expect(localStorage.getItem('role')).toBe('member')
@@ -271,7 +268,7 @@ describe('App', () => {
   })
 
   it('shows admin-only navigation only for admins', async () => {
-    mockedListProjects.mockResolvedValue([])
+    mockedListAccessibleProjects.mockResolvedValue([])
     localStorage.setItem('token', 'admin-token')
     localStorage.setItem('role', 'admin')
 
@@ -290,7 +287,8 @@ describe('App', () => {
 
     render(<App />)
 
-    expect(await screen.findAllByText('No project access')).toHaveLength(2)
+    expect(await screen.findAllByText('No project access')).toHaveLength(1)
+    expect(screen.queryByLabelText('Active project')).not.toBeInTheDocument()
     expect(screen.queryByRole('link', { name: 'Pricing' })).not.toBeInTheDocument()
     expect(screen.queryByRole('link', { name: 'Users' })).not.toBeInTheDocument()
     expect(screen.queryByRole('link', { name: 'Audit Log' })).not.toBeInTheDocument()
@@ -317,7 +315,7 @@ describe('App', () => {
 
   it('shows trace explorer loading state while traces are pending', async () => {
     const loadingProject = { ...project, id: 'project-loading' }
-    mockedListProjects.mockResolvedValue([loadingProject])
+    mockedListAccessibleProjects.mockResolvedValue([{ ...loadingProject, project_role: 'admin' }])
     mockedListTraces.mockReturnValue(new Promise(() => {}))
     storeAdminSession('/dashboard/traces', loadingProject)
 
@@ -329,7 +327,7 @@ describe('App', () => {
 
   it('shows trace explorer empty state when the selected project has no traces', async () => {
     const emptyProject = { ...project, id: 'project-empty' }
-    mockedListProjects.mockResolvedValue([emptyProject])
+    mockedListAccessibleProjects.mockResolvedValue([{ ...emptyProject, project_role: 'admin' }])
     mockedListTraces.mockResolvedValue({
       traces: [],
       next_cursor: null,
@@ -359,7 +357,7 @@ describe('App', () => {
 
   it('shows trace explorer data rows for the selected project', async () => {
     const dataProject = { ...project, id: 'project-data' }
-    mockedListProjects.mockResolvedValue([dataProject])
+    mockedListAccessibleProjects.mockResolvedValue([{ ...dataProject, project_role: 'admin' }])
     mockedListTraces.mockResolvedValue({
       traces: [
         {
@@ -384,7 +382,7 @@ describe('App', () => {
     expect(screen.getByText('$0.4321')).toBeInTheDocument()
   })
 
-  it('shows accessible project tiles and opens the selected project dashboard', async () => {
+  it('shows accessible project tiles and stores the selected project', async () => {
     const user = userEvent.setup()
     mockedListAccessibleProjects.mockResolvedValue([
       {
@@ -399,12 +397,60 @@ describe('App', () => {
 
     expect(await screen.findByRole('heading', { name: 'Projects' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /Production API/i })).toBeInTheDocument()
+    expect(screen.queryByLabelText('Active project')).not.toBeInTheDocument()
 
     await user.click(screen.getByRole('button', { name: /Production API/i }))
 
     expect(localStorage.getItem('projectId')).toBe(project.id)
-    expect(await screen.findByRole('heading', { name: 'Overview' })).toBeInTheDocument()
     expect(mockedListAccessibleProjects).toHaveBeenCalled()
+  })
+
+  it('lets non-admin users switch between accessible projects from the dashboard', async () => {
+    const user = userEvent.setup()
+    const secondProject = {
+      ...project,
+      id: 'project-2',
+      name: 'Staging API',
+    }
+    mockedListAccessibleProjects.mockResolvedValue([
+      { ...project, project_role: 'member' },
+      { ...secondProject, project_role: 'viewer' },
+    ])
+    localStorage.setItem('token', 'member-token')
+    localStorage.setItem('projectId', project.id)
+    localStorage.setItem('role', 'member')
+    window.history.pushState(null, '', '/dashboard')
+
+    render(<App />)
+
+    expect(await screen.findByRole('heading', { name: 'Overview' })).toBeInTheDocument()
+
+    await user.selectOptions(screen.getByLabelText('Active project'), secondProject.id)
+
+    expect(localStorage.getItem('projectId')).toBe(secondProject.id)
+    await waitFor(() => {
+      expect(mockedGetMetricsOverview).toHaveBeenCalledWith(secondProject.id, '24h')
+    })
+  })
+
+  it('routes the LLM Obs title back to the project selection page', async () => {
+    const user = userEvent.setup()
+    mockedListAccessibleProjects.mockResolvedValue([
+      {
+        ...project,
+        project_role: 'admin',
+      },
+    ])
+    storeAdminSession('/dashboard/traces')
+
+    render(<App />)
+
+    expect(await screen.findByRole('heading', { name: 'Traces' })).toBeInTheDocument()
+
+    await user.click(screen.getByRole('link', { name: 'LLM Obs' }))
+
+    expect(await screen.findByRole('heading', { name: 'Projects' })).toBeInTheDocument()
+    expect(screen.queryByLabelText('Active project')).not.toBeInTheDocument()
   })
 
   it('shows error fingerprints on the overview analytics section', async () => {
@@ -451,7 +497,7 @@ describe('App', () => {
 
   it('creates a scoped project api key and reveals it once', async () => {
     const user = userEvent.setup()
-    mockedListProjects.mockResolvedValue([project])
+    mockedListAccessibleProjects.mockResolvedValue([{ ...project, project_role: 'admin' }])
     storeAdminSession('/dashboard/project-settings')
 
     render(<App />)
