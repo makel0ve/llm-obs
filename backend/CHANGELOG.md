@@ -1,6 +1,19 @@
 # CHANGELOG
 
 
+## v0.38.0 (2026-07-15)
+
+### Chores
+
+- Trigger ci for release sync
+  ([`d23480d`](https://github.com/makel0ve/llm-obs/commit/d23480da676ef50a8e4c9271db734ec7f3eb9d8d))
+
+### Features
+
+- Add organization admin settings
+  ([`f793216`](https://github.com/makel0ve/llm-obs/commit/f793216cd5ac3a701d8268617706321b0ef34bc3))
+
+
 ## v0.37.0 (2026-07-15)
 
 ### Chores
