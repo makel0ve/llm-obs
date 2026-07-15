@@ -51,14 +51,14 @@ function traceHref(trace: AnalyticsTrace) {
   const params = new URLSearchParams()
   if (trace.started_at) params.set('started_at', trace.started_at)
   const query = params.toString()
-  return `/traces/${trace.trace_id}${query ? `?${query}` : ''}`
+  return `/dashboard/traces/${trace.trace_id}${query ? `?${query}` : ''}`
 }
 
 function failedTraceHref(trace: FailedTrace) {
   const params = new URLSearchParams()
   if (trace.started_at) params.set('started_at', trace.started_at)
   const query = params.toString()
-  return `/traces/${trace.trace_id}${query ? `?${query}` : ''}`
+  return `/dashboard/traces/${trace.trace_id}${query ? `?${query}` : ''}`
 }
 
 function MetricCard({
