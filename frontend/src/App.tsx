@@ -1,17 +1,15 @@
 import { QueryClient, QueryClientProvider, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { lazy, Suspense, useEffect, useMemo, useState, type FormEvent, type ReactNode } from 'react'
-import { BrowserRouter, Routes, Route, Navigate, NavLink, Outlet, useNavigate } from 'react-router-dom'
+import { BrowserRouter, Routes, Route, Navigate, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { api } from './api/client'
 import {
   createProject,
   dashboardQueryKeys,
   listAccessibleProjects,
-  listProjects,
   loginUser,
   registerUser,
   type AccessibleProjectRecord,
   type ProjectCreateResponse,
-  type ProjectRecord,
   type UserRole,
 } from './api/dashboard'
 
@@ -115,7 +113,7 @@ function ProjectSwitcher({
   onProjectChange,
 }: {
   projectId: string
-  projects: Array<ProjectRecord | AccessibleProjectRecord>
+  projects: AccessibleProjectRecord[]
   isLoading: boolean
   isError: boolean
   role: UserRole
@@ -143,12 +141,20 @@ function ProjectSwitcher({
       >
         {projects.map(project => (
           <option key={project.id} value={project.id}>
-            {'project_role' in project ? `${project.name} (${project.project_role})` : project.name}
+            {`${project.name} (${project.project_role})`}
           </option>
         ))}
       </select>
     </label>
   )
+}
+
+function useAccessibleProjects() {
+  return useQuery({
+    queryKey: dashboardQueryKeys.accessibleProjects(),
+    queryFn: listAccessibleProjects,
+    retry: false,
+  })
 }
 
 function NoProjectAccess({ role, isLoading, isError }: { role: UserRole; isLoading: boolean; isError: boolean }) {
@@ -200,16 +206,12 @@ function ProjectSelectionLanding({
   onProjectChange: (projectId: string) => void
 }) {
   const navigate = useNavigate()
-  const projectsQuery = useQuery({
-    queryKey: dashboardQueryKeys.accessibleProjects(),
-    queryFn: listAccessibleProjects,
-    retry: false,
-  })
+  const projectsQuery = useAccessibleProjects()
   const projects = projectsQuery.data ?? []
 
   const openProject = (projectId: string) => {
     onProjectChange(projectId)
-    navigate('/dashboard')
+    window.setTimeout(() => navigate('/dashboard'), 0)
   }
 
   if (projectsQuery.isLoading) {
@@ -482,30 +484,19 @@ function Dashboard({
   onDismissApiKey: () => void
   onLogout: () => void
 }) {
+  const location = useLocation()
   const queryClient = useQueryClient()
   const [showCreateProject, setShowCreateProject] = useState(false)
   const [createProjectError, setCreateProjectError] = useState('')
   const [createdProjectKey, setCreatedProjectKey] = useState<ProjectCreateResponse | null>(null)
-  const projectsQuery = useQuery({
-    queryKey: dashboardQueryKeys.projects(),
-    queryFn: listProjects,
-    enabled: role === 'admin',
-    retry: false,
-  })
-  const accessibleProjectsQuery = useQuery({
-    queryKey: dashboardQueryKeys.accessibleProjects(),
-    queryFn: listAccessibleProjects,
-    enabled: role !== 'admin',
-    retry: false,
-  })
-  const adminProjects = useMemo(() => projectsQuery.data ?? [], [projectsQuery.data])
-  const accessibleProjects = useMemo(() => accessibleProjectsQuery.data ?? [], [accessibleProjectsQuery.data])
-  const projects = role === 'admin' ? adminProjects : accessibleProjects
-  const projectQueryIsLoading = role === 'admin' ? projectsQuery.isLoading : accessibleProjectsQuery.isLoading
-  const projectQueryIsError = role === 'admin' ? projectsQuery.isError : accessibleProjectsQuery.isError
+  const accessibleProjectsQuery = useAccessibleProjects()
+  const projects = useMemo(() => accessibleProjectsQuery.data ?? [], [accessibleProjectsQuery.data])
+  const projectQueryIsLoading = accessibleProjectsQuery.isLoading
+  const projectQueryIsError = accessibleProjectsQuery.isError
   const selectedProjectExists = projects.some(project => project.id === projectId)
   const isResolvingProject = !projectQueryIsLoading && !projectQueryIsError && projects.length > 0 && !selectedProjectExists
   const canOpenDashboard = selectedProjectExists
+  const isProjectSelectionPage = location.pathname === '/'
 
   useEffect(() => {
     if (projectQueryIsLoading || projectQueryIsError) return
@@ -531,7 +522,6 @@ function Dashboard({
       setCreateProjectError('')
       setShowCreateProject(false)
       setCreatedProjectKey(project)
-      await queryClient.invalidateQueries({ queryKey: dashboardQueryKeys.projects() })
       await queryClient.invalidateQueries({ queryKey: dashboardQueryKeys.accessibleProjects() })
       onProjectChange(project.id)
     },
@@ -550,15 +540,22 @@ function Dashboard({
       <header className="sticky top-0 z-20 border-b border-gray-200 bg-white">
         <div className="flex min-h-16 items-center justify-between gap-4 px-4 sm:px-6">
           <div className="min-w-0">
-            <div className="text-base font-semibold text-gray-950">LLM Obs</div>
-            <ProjectSwitcher
-              projectId={projectId}
-              projects={projects}
-              isLoading={projectQueryIsLoading}
-              isError={projectQueryIsError}
-              role={role}
-              onProjectChange={onProjectChange}
-            />
+            <NavLink
+              to="/"
+              className="inline-flex text-base font-semibold text-gray-950 hover:text-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-100"
+            >
+              LLM Obs
+            </NavLink>
+            {!isProjectSelectionPage && (
+              <ProjectSwitcher
+                projectId={projectId}
+                projects={projects}
+                isLoading={projectQueryIsLoading}
+                isError={projectQueryIsError}
+                role={role}
+                onProjectChange={onProjectChange}
+              />
+            )}
           </div>
           <div className="flex shrink-0 items-center gap-2">
             {role === 'admin' && (
