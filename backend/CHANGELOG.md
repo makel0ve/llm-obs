@@ -1,6 +1,19 @@
 # CHANGELOG
 
 
+## v0.37.0 (2026-07-15)
+
+### Chores
+
+- Trigger ci for release sync
+  ([`d5f12f0`](https://github.com/makel0ve/llm-obs/commit/d5f12f02c5294dbe042f6f2af920fe4caa43f4e2))
+
+### Features
+
+- Make project switcher available to all users
+  ([`06cbd19`](https://github.com/makel0ve/llm-obs/commit/06cbd196869e53e48b995adbb9a1e2768f981f5e))
+
+
 ## v0.36.0 (2026-07-15)
 
 ### Chores
