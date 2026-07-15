@@ -140,6 +140,21 @@ class FakeDb:
                 ]
             )
 
+        if "provider_rank" in sql and "model_rank" in sql:
+            return FakeResult(
+                [
+                    {
+                        "fingerprint": "rate limit exceeded for request <uuid>",
+                        "sample_message": "Rate limit exceeded for request <uuid>",
+                        "error_count": 4,
+                        "affected_trace_count": 2,
+                        "top_provider": "openai",
+                        "top_model": "gpt-4o",
+                        "last_seen_at": datetime(2026, 7, 8, 10, tzinfo=UTC),
+                    }
+                ]
+            )
+
         if "ARRAY_AGG" in sql:
             return FakeResult(
                 [
@@ -205,5 +220,9 @@ async def test_get_analytics_returns_cost_latency_and_trace_breakdowns(monkeypat
     assert result["errors_by_model"][0]["error_count"] == 2
     assert result["errors_by_provider"][0]["provider"] == "openai"
     assert result["recent_failed_traces"][0]["trace_id"] == "trace-failed"
-    assert len(fake_db.statements) == 12
+    assert result["error_fingerprints"][0]["fingerprint"] == (
+        "rate limit exceeded for request <uuid>"
+    )
+    assert result["error_fingerprints"][0]["affected_trace_count"] == 2
+    assert len(fake_db.statements) == 13
     assert all(params["project_id"] == "project-1" for params in fake_db.params)

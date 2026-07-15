@@ -108,6 +108,16 @@ export type FailedTrace = {
   error_message?: string | null
 }
 
+export type ErrorFingerprint = {
+  fingerprint: string
+  sample_message: string
+  error_count?: number | string | null
+  affected_trace_count?: number | string | null
+  top_provider?: string | null
+  top_model?: string | null
+  last_seen_at?: string | null
+}
+
 export type FailedTask = {
   id: number
   task_name: string
@@ -132,6 +142,7 @@ export type AnalyticsResponse = {
   errors_by_model: ErrorsByModel[]
   errors_by_provider: ErrorsByProvider[]
   recent_failed_traces: FailedTrace[]
+  error_fingerprints: ErrorFingerprint[]
 }
 
 export type TraceSummary = {

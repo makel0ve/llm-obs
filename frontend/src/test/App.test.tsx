@@ -5,9 +5,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { MemoryRouter } from 'react-router-dom'
 
 import App from '../App'
+import { Overview } from '../pages/Overview'
 import { Traces } from '../pages/Traces'
 import {
   createProjectApiKey,
+  getMetricsAnalytics,
+  getMetricsOverview,
+  getMetricsTimeseries,
   getProjectSettings,
   listAccessibleProjects,
   listFailedTasks,
@@ -26,15 +30,33 @@ vi.mock('../api/dashboard', () => ({
   createProject: vi.fn(),
   dashboardQueryKeys: {
     accessibleProjects: () => ['accessible-projects'],
+    analytics: (projectId: string, period: string) => [
+      'metrics',
+      'analytics',
+      projectId,
+      period,
+    ],
     apiKeys: (projectId: string) => ['api-keys', projectId],
     failedTasks: (projectId: string, includeResolved: boolean) => [
       'failed-tasks',
       projectId,
       includeResolved,
     ],
+    overview: (projectId: string, period: string) => [
+      'metrics',
+      'overview',
+      projectId,
+      period,
+    ],
     projectMembers: (projectId: string) => ['project-members', projectId],
     projects: () => ['projects'],
     projectSettings: (projectId: string) => ['project-settings', projectId],
+    timeseries: (projectId: string, period: string) => [
+      'metrics',
+      'timeseries',
+      projectId,
+      period,
+    ],
     traces: (
       projectId: string,
       period: string,
@@ -43,6 +65,9 @@ vi.mock('../api/dashboard', () => ({
     ) => ['traces', projectId, period, status, model],
     users: () => ['users'],
   },
+  getMetricsAnalytics: vi.fn(),
+  getMetricsOverview: vi.fn(),
+  getMetricsTimeseries: vi.fn(),
   getProjectSettings: vi.fn(),
   listFailedTasks: vi.fn(),
   listAccessibleProjects: vi.fn(),
@@ -61,6 +86,9 @@ vi.mock('../api/dashboard', () => ({
 }))
 
 const mockedCreateProjectApiKey = vi.mocked(createProjectApiKey)
+const mockedGetMetricsAnalytics = vi.mocked(getMetricsAnalytics)
+const mockedGetMetricsOverview = vi.mocked(getMetricsOverview)
+const mockedGetMetricsTimeseries = vi.mocked(getMetricsTimeseries)
 const mockedGetProjectSettings = vi.mocked(getProjectSettings)
 const mockedListAccessibleProjects = vi.mocked(listAccessibleProjects)
 const mockedListFailedTasks = vi.mocked(listFailedTasks)
@@ -107,8 +135,48 @@ function renderTracesWithTestClient(projectId: string) {
   )
 }
 
+function renderOverviewWithTestClient(projectId: string) {
+  const queryClient = new QueryClient({
+    defaultOptions: {
+      queries: {
+        retry: false,
+      },
+    },
+  })
+
+  return render(
+    <QueryClientProvider client={queryClient}>
+      <MemoryRouter>
+        <Overview projectId={projectId} />
+      </MemoryRouter>
+    </QueryClientProvider>,
+  )
+}
+
 describe('App', () => {
   beforeEach(() => {
+    mockedGetMetricsOverview.mockResolvedValue({
+      total_spans: 0,
+      p95_latency_ms: 0,
+      error_rate_pct: 0,
+      total_cost_usd: 0,
+    })
+    mockedGetMetricsTimeseries.mockResolvedValue([])
+    mockedGetMetricsAnalytics.mockResolvedValue({
+      cost_by_model: [],
+      cost_by_provider: [],
+      cost_over_time: [],
+      latency_by_model: [],
+      latency_by_provider: [],
+      top_expensive_traces: [],
+      slowest_traces: [],
+      error_rate_trend: [],
+      top_error_messages: [],
+      errors_by_model: [],
+      errors_by_provider: [],
+      recent_failed_traces: [],
+      error_fingerprints: [],
+    })
     mockedListAccessibleProjects.mockResolvedValue([])
     mockedListProjects.mockResolvedValue([])
     mockedListTraces.mockResolvedValue({
@@ -314,6 +382,48 @@ describe('App', () => {
     expect(screen.getAllByText('error')).toHaveLength(2)
     expect(screen.getByText('1,234')).toBeInTheDocument()
     expect(screen.getByText('$0.4321')).toBeInTheDocument()
+  })
+
+  it('shows error fingerprints on the overview analytics section', async () => {
+    mockedGetMetricsOverview.mockResolvedValue({
+      total_spans: 12,
+      p95_latency_ms: 450,
+      error_rate_pct: 25,
+      total_cost_usd: '0.1234',
+    })
+    mockedGetMetricsAnalytics.mockResolvedValue({
+      cost_by_model: [],
+      cost_by_provider: [],
+      cost_over_time: [],
+      latency_by_model: [],
+      latency_by_provider: [],
+      top_expensive_traces: [],
+      slowest_traces: [],
+      error_rate_trend: [],
+      top_error_messages: [],
+      errors_by_model: [],
+      errors_by_provider: [],
+      recent_failed_traces: [],
+      error_fingerprints: [
+        {
+          fingerprint: 'rate limit exceeded for request <uuid>',
+          sample_message: 'Rate limit exceeded for request <uuid>',
+          error_count: 4,
+          affected_trace_count: 2,
+          top_provider: 'openai',
+          top_model: 'gpt-4o',
+          last_seen_at: '2026-07-14T08:30:00Z',
+        },
+      ],
+    })
+
+    renderOverviewWithTestClient(project.id)
+
+    expect(await screen.findByText('Error fingerprints')).toBeInTheDocument()
+    expect(await screen.findByText('Rate limit exceeded for request <uuid>')).toBeInTheDocument()
+    expect(screen.getByText('rate limit exceeded for request <uuid>')).toBeInTheDocument()
+    expect(screen.getByText('openai / gpt-4o')).toBeInTheDocument()
+    expect(mockedGetMetricsAnalytics).toHaveBeenCalledWith(project.id, '24h')
   })
 
   it('creates a scoped project api key and reveals it once', async () => {

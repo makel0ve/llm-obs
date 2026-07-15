@@ -393,6 +393,127 @@ class MetricsService:
                 {"project_id": project_id, "cutoff": cutoff},
             )
 
+            error_fingerprints = await db.execute(
+                text(
+                    """
+                WITH error_source AS (
+                    SELECT
+                        trace_id,
+                        COALESCE(provider, 'unknown') AS provider,
+                        COALESCE(model, 'unknown')    AS model,
+                        started_at,
+                        COALESCE(NULLIF(error, ''), 'unknown error') AS error_message
+                    FROM spans
+                    WHERE project_id = :project_id
+                        AND started_at >= :cutoff
+                        AND status = 'error'
+                ),
+                error_rows AS (
+                    SELECT
+                        trace_id,
+                        provider,
+                        model,
+                        started_at,
+                        LEFT(
+                            regexp_replace(
+                                regexp_replace(
+                                    error_message,
+                                    '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}',
+                                    '<uuid>',
+                                    'gi'
+                                ),
+                                '(sk-[A-Za-z0-9_-]+|llmobs_[A-Za-z0-9_-]+)',
+                                '<secret>',
+                                'gi'
+                            ),
+                            240
+                        ) AS sample_message,
+                        LEFT(
+                            regexp_replace(
+                                regexp_replace(
+                                    regexp_replace(
+                                        lower(
+                                            regexp_replace(
+                                                regexp_replace(
+                                                    error_message,
+                                                    '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}',
+                                                    '<uuid>',
+                                                    'gi'
+                                                ),
+                                                '(sk-[A-Za-z0-9_-]+|llmobs_[A-Za-z0-9_-]+)',
+                                                '<secret>',
+                                                'gi'
+                                            )
+                                        ),
+                                        '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}',
+                                        '<uuid>',
+                                        'gi'
+                                    ),
+                                    '\\m[0-9]+\\M',
+                                    '<num>',
+                                    'g'
+                                ),
+                                '\\s+',
+                                ' ',
+                                'g'
+                            ),
+                            160
+                        ) AS fingerprint
+                    FROM error_source
+                ),
+                grouped AS (
+                    SELECT
+                        fingerprint,
+                        COUNT(*)                 AS error_count,
+                        COUNT(DISTINCT trace_id) AS affected_trace_count,
+                        MAX(started_at)          AS last_seen_at,
+                        (ARRAY_AGG(sample_message ORDER BY started_at DESC))[1]
+                            AS sample_message
+                    FROM error_rows
+                    GROUP BY fingerprint
+                ),
+                provider_rank AS (
+                    SELECT
+                        fingerprint,
+                        provider,
+                        ROW_NUMBER() OVER (
+                            PARTITION BY fingerprint
+                            ORDER BY COUNT(*) DESC, provider ASC
+                        ) AS rank
+                    FROM error_rows
+                    GROUP BY fingerprint, provider
+                ),
+                model_rank AS (
+                    SELECT
+                        fingerprint,
+                        model,
+                        ROW_NUMBER() OVER (
+                            PARTITION BY fingerprint
+                            ORDER BY COUNT(*) DESC, model ASC
+                        ) AS rank
+                    FROM error_rows
+                    GROUP BY fingerprint, model
+                )
+                SELECT
+                    g.fingerprint,
+                    g.sample_message,
+                    g.error_count,
+                    g.affected_trace_count,
+                    pr.provider AS top_provider,
+                    mr.model    AS top_model,
+                    g.last_seen_at
+                FROM grouped g
+                LEFT JOIN provider_rank pr
+                    ON pr.fingerprint = g.fingerprint AND pr.rank = 1
+                LEFT JOIN model_rank mr
+                    ON mr.fingerprint = g.fingerprint AND mr.rank = 1
+                ORDER BY g.error_count DESC, g.last_seen_at DESC
+                LIMIT 10
+                """
+                ),
+                {"project_id": project_id, "cutoff": cutoff},
+            )
+
         return {
             "cost_by_model": [dict(row) for row in cost_by_model.mappings().all()],
             "cost_by_provider": [
@@ -421,5 +542,8 @@ class MetricsService:
             ],
             "recent_failed_traces": [
                 dict(row) for row in recent_failed_traces.mappings().all()
+            ],
+            "error_fingerprints": [
+                dict(row) for row in error_fingerprints.mappings().all()
             ],
         }
