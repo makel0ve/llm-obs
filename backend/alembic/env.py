@@ -18,7 +18,10 @@ config = context.config
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
-config.set_main_option("sqlalchemy.url", settings.database_url.get_secret_value())
+config.set_main_option(
+    "sqlalchemy.url",
+    settings.effective_migration_database_url.get_secret_value(),
+)
 
 # add your model's MetaData object here
 # for 'autogenerate' support

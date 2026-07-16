@@ -54,6 +54,10 @@ Prometheus metrics.
 
 PostgreSQL stores organizations, users, projects, API key hashes, pricing,
 traces, spans, alert rules, alert events, audit events and failed-task metadata.
+Runtime services should connect with the dedicated application database role,
+while Alembic migrations use the owner/admin migration role. This keeps trace
+RLS as a database-level defense-in-depth boundary instead of relying on a
+superuser or table-owner runtime connection.
 
 MinIO/S3 stores large LLM input/output payload objects when enabled. Project
 settings control payload mode, maximum payload size and comma-separated field

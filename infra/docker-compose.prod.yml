@@ -14,6 +14,7 @@ services:
     restart: unless-stopped
     volumes:
       - postgres_data:/var/lib/postgresql/data
+      - ./postgres/init:/docker-entrypoint-initdb.d:ro
 
   redis:
     image: redis:7-alpine
@@ -116,8 +117,8 @@ services:
       DATABASES_HOST: ${POSTGRES_HOST}
       DATABASES_PORT: ${POSTGRES_PORT:-5432}
       DATABASES_DBNAME: ${POSTGRES_DB}
-      DATABASES_USER: ${POSTGRES_USER}
-      DATABASES_PASSWORD: ${POSTGRES_PASSWORD}
+      DATABASES_USER: ${POSTGRES_APP_USER}
+      DATABASES_PASSWORD: ${POSTGRES_APP_PASSWORD}
       PGBOUNCER_POOL_MODE: transaction
       PGBOUNCER_MAX_CLIENT_CONN: 1000
       PGBOUNCER_DEFAULT_POOL_SIZE: 25

@@ -302,7 +302,8 @@ localhost CORS origins, empty secrets, default MinIO credentials and unedited
 | Variable | Description | Required |
 |----------|-------------|----------|
 | `SECRET_KEY` | Random 32+ char secret for JWT signing | ✅ |
-| `DATABASE_URL` | PostgreSQL connection string | ✅ |
+| `DATABASE_URL` | Runtime PostgreSQL connection string using the dedicated app role | ✅ |
+| `MIGRATION_DATABASE_URL` | Owner/admin PostgreSQL connection string used by Alembic migrations | recommended |
 | `REDIS_URL` | Redis cache/pubsub/rate-limit connection string | ✅ |
 | `REDIS_QUEUE_URL` | Durable Redis connection string for Taskiq queues and task results | ✅ |
 | `AWS_ACCESS_KEY_ID` | MinIO or S3 access key | ✅ |

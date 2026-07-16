@@ -113,6 +113,11 @@ async def create_test_span(db_session, project_id: str, count: int = 1) -> list[
     trace_started_at = datetime.now(UTC)
 
     await db_session.execute(
+        text("SELECT set_config('app.current_project_id', :project_id, true)"),
+        {"project_id": project_id},
+    )
+
+    await db_session.execute(
         text(
             """
         INSERT INTO traces (

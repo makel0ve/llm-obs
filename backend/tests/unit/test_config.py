@@ -9,8 +9,10 @@ def production_settings(**overrides: str) -> Settings:
         "environment": "production",
         "secret_key": "f" * 64,
         "database_url": "postgresql+asyncpg://app:strong-pass@pgbouncer:6432/llmobs",
+        "migration_database_url": "postgresql+asyncpg://owner:strong-pass@postgres:5432/llmobs",
         "redis_url": "redis://redis:6379/0",
         "redis_queue_url": "redis://redis-queue:6379/0",
+        "postgres_user": "owner",
         "cors_allowed_origins": "https://dashboard.example.com",
         "s3_endpoint_url": "http://minio:9000",
         "aws_access_key_id": "prod-minio-access",
@@ -32,11 +34,17 @@ def test_production_settings_accept_safe_values() -> None:
     assert settings.environment == "production"
     assert settings.cors_allowed_origins == ["https://dashboard.example.com"]
     assert settings.effective_redis_queue_url == "redis://redis-queue:6379/0"
+    assert (
+        settings.effective_migration_database_url.get_secret_value()
+        == "postgresql+asyncpg://owner:strong-pass@postgres:5432/llmobs"
+    )
 
 
 def test_redis_queue_url_defaults_to_redis_url(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("REDIS_QUEUE_URL", raising=False)
-    settings = Settings(redis_url="redis://cache:6379/0")
+    settings = Settings.model_validate(
+        {"redis_url": "redis://cache:6379/0", "redis_queue_url": None}
+    )
 
     assert settings.effective_redis_queue_url == "redis://cache:6379/0"
 
@@ -58,6 +66,16 @@ def test_redis_queue_url_defaults_to_redis_url(monkeypatch: pytest.MonkeyPatch) 
             "replace-with-s3-secret-key",
             "aws_secret_access_key",
         ),
+        (
+            "database_url",
+            "postgresql+asyncpg://app:replace-with-app-db-password@pgbouncer:6432/llmobs",
+            "database_url",
+        ),
+        (
+            "migration_database_url",
+            "postgresql+asyncpg://owner:replace-with-owner-db-password@postgres:5432/llmobs",
+            "migration_database_url",
+        ),
     ],
 )
 def test_production_rejects_placeholder_secrets(
@@ -77,6 +95,11 @@ def test_production_rejects_placeholder_secrets(
             "postgresql+asyncpg://app:pass@localhost:5432/llmobs",
             "database_url",
         ),
+        (
+            "migration_database_url",
+            "postgresql+asyncpg://owner:pass@localhost:5432/llmobs",
+            "migration_database_url",
+        ),
         ("redis_url", "redis://127.0.0.1:6379/0", "redis_url"),
         ("redis_queue_url", "redis://localhost:6379/0", "redis_queue_url"),
         ("s3_endpoint_url", "http://localhost:9000", "s3_endpoint_url"),
@@ -95,3 +118,12 @@ def test_production_rejects_local_service_urls(
 def test_production_rejects_unsafe_cors_origins(origins: str) -> None:
     with pytest.raises(ValidationError, match="cors_allowed_origins"):
         production_settings(cors_allowed_origins=origins)
+
+
+@pytest.mark.parametrize("runtime_user", ["owner", "postgres"])
+def test_production_rejects_owner_runtime_database_role(runtime_user: str) -> None:
+    with pytest.raises(ValidationError, match="dedicated non-owner runtime"):
+        production_settings(
+            database_url=f"postgresql+asyncpg://{runtime_user}:pass@pgbouncer:6432/llmobs",
+            postgres_user="owner",
+        )
