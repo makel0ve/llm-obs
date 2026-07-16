@@ -1,6 +1,19 @@
 # CHANGELOG
 
 
+## v0.40.4 (2026-07-16)
+
+### Bug Fixes
+
+- Harden trace pagination cursors
+  ([`cabd77e`](https://github.com/makel0ve/llm-obs/commit/cabd77e3df80569fe12dbc948d36897f72cb8972))
+
+### Chores
+
+- Trigger ci for release sync
+  ([`a1628fe`](https://github.com/makel0ve/llm-obs/commit/a1628fe0cdfbccaf987f9d918a38a1252fe26e0a))
+
+
 ## v0.40.3 (2026-07-16)
 
 ### Bug Fixes
