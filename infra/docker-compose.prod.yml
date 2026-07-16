@@ -20,6 +20,13 @@ services:
     command: redis-server --maxmemory 512mb --maxmemory-policy allkeys-lru --save ""
     restart: unless-stopped
 
+  redis-queue:
+    image: redis:7-alpine
+    command: redis-server --appendonly yes --appendfsync everysec --maxmemory-policy noeviction
+    restart: unless-stopped
+    volumes:
+      - redis_queue_data:/data
+
   minio:
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
@@ -45,11 +52,15 @@ services:
         condition: service_healthy
       redis:
         condition: service_started
+      redis-queue:
+        condition: service_started
       minio:
         condition: service_healthy
       pgbouncer:
         condition: service_healthy
     env_file: ../backend/.env.prod
+    environment:
+      REDIS_QUEUE_URL: redis://redis-queue:6379/0
     ports: ["8000:8000"]
     command: gunicorn app.main:app -k uvicorn.workers.UvicornWorker -w 2 --bind 0.0.0.0:8000
     healthcheck:
@@ -70,11 +81,15 @@ services:
         condition: service_healthy
       redis:
         condition: service_started
+      redis-queue:
+        condition: service_started
       minio:
         condition: service_healthy
       pgbouncer:
         condition: service_healthy
     env_file: ../backend/.env.prod
+    environment:
+      REDIS_QUEUE_URL: redis://redis-queue:6379/0
     restart: unless-stopped
 
   scheduler:
@@ -87,7 +102,11 @@ services:
         condition: service_healthy
       redis:
         condition: service_started
+      redis-queue:
+        condition: service_started
     env_file: ../backend/.env.prod
+    environment:
+      REDIS_QUEUE_URL: redis://redis-queue:6379/0
     restart: unless-stopped
 
   pgbouncer:
@@ -129,4 +148,5 @@ services:
 
 volumes:
   postgres_data:
+  redis_queue_data:
   minio_data:

@@ -303,7 +303,8 @@ localhost CORS origins, empty secrets, default MinIO credentials and unedited
 |----------|-------------|----------|
 | `SECRET_KEY` | Random 32+ char secret for JWT signing | ✅ |
 | `DATABASE_URL` | PostgreSQL connection string | ✅ |
-| `REDIS_URL` | Redis connection string | ✅ |
+| `REDIS_URL` | Redis cache/pubsub/rate-limit connection string | ✅ |
+| `REDIS_QUEUE_URL` | Durable Redis connection string for Taskiq queues and task results | ✅ |
 | `AWS_ACCESS_KEY_ID` | MinIO or S3 access key | ✅ |
 | `AWS_SECRET_ACCESS_KEY` | MinIO or S3 secret key | ✅ |
 | `SMTP_HOST` | SMTP server for email alerts | optional |

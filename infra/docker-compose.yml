@@ -19,6 +19,13 @@ services:
     ports: ["6379:6379"]
     command: redis-server --maxmemory 512mb --maxmemory-policy allkeys-lru --save ""
 
+  redis-queue:
+    image: redis:7-alpine
+    ports: ["6380:6379"]
+    command: redis-server --appendonly yes --appendfsync everysec --maxmemory-policy noeviction
+    volumes:
+      - redis_queue_data:/data
+
   minio:
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
@@ -43,9 +50,13 @@ services:
         condition: service_healthy
       redis:
         condition: service_started
+      redis-queue:
+        condition: service_started
       minio:
         condition: service_healthy
     env_file: ../backend/.env
+    environment:
+      REDIS_QUEUE_URL: redis://redis-queue:6379/0
     ports: ["8000:8000"]
     volumes:
       - ../backend/app:/app/app
@@ -64,9 +75,13 @@ services:
         condition: service_healthy
       redis:
         condition: service_started
+      redis-queue:
+        condition: service_started
       minio:
         condition: service_healthy
     env_file: ../backend/.env
+    environment:
+      REDIS_QUEUE_URL: redis://redis-queue:6379/0
     volumes:
       - ../backend/app:/app/app
       - ../backend/alembic:/app/alembic
@@ -88,7 +103,11 @@ services:
         condition: service_healthy
       redis:
         condition: service_started
+      redis-queue:
+        condition: service_started
     env_file: ../backend/.env
+    environment:
+      REDIS_QUEUE_URL: redis://redis-queue:6379/0
     volumes:
       - ../backend/app:/app/app
       - ../backend/alembic:/app/alembic
@@ -109,4 +128,5 @@ services:
 
 volumes:
   postgres_data:
+  redis_queue_data:
   minio_data:

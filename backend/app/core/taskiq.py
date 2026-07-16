@@ -4,9 +4,11 @@ from taskiq_redis import ListQueueBroker, RedisAsyncResultBackend
 
 from app.core.config import settings
 
+queue_url = settings.effective_redis_queue_url
+
 broker = (
-    ListQueueBroker(settings.redis_url)
-    .with_result_backend(RedisAsyncResultBackend(settings.redis_url))
+    ListQueueBroker(queue_url)
+    .with_result_backend(RedisAsyncResultBackend(queue_url))
     .with_middlewares(
         SmartRetryMiddleware(
             default_retry_count=3,
@@ -20,4 +22,4 @@ broker = (
 
 scheduler = TaskiqScheduler(broker=broker, sources=[LabelScheduleSource(broker)])
 
-dlq_broker = ListQueueBroker(settings.redis_url, queue_name="llm-obs-dlq")
+dlq_broker = ListQueueBroker(queue_url, queue_name="llm-obs-dlq")
