@@ -11,7 +11,12 @@ from sqlalchemy import text
 from app.core.auth import create_access_token, get_current_user, hash_password
 from app.core.db import get_db
 from app.core.rbac import require_admin
-from app.schemas.users import UserInviteAccept, UserInviteCreate, UserRoleUpdate
+from app.schemas.users import (
+    UserInviteAccept,
+    UserInviteCreate,
+    UserProjectAccessRecord,
+    UserRoleUpdate,
+)
 from app.services.audit import log_audit
 
 router = APIRouter(prefix="/v1/users", tags=["users"])
@@ -276,6 +281,62 @@ async def accept_invite(body: UserInviteAccept) -> dict[str, Any]:
         "role": invite["role"],
         "project_id": selected_project_id,
     }
+
+
+@router.get("/{user_id}/projects", response_model=list[UserProjectAccessRecord])
+async def list_user_project_access(
+    user_id: str,
+    user: dict[str, Any] = Depends(get_current_user),
+) -> list[Any]:
+    require_admin(user)
+
+    async with get_db() as db:
+        target = await db.execute(
+            text(
+                """
+                SELECT id, role
+                FROM users
+                WHERE id = :id AND org_id = :org AND is_active = true
+                """
+            ),
+            {"id": user_id, "org": user["org_id"]},
+        )
+        target_user = target.mappings().one_or_none()
+        if not target_user:
+            raise HTTPException(404, "User not found")
+
+        result = await db.execute(
+            text(
+                """
+                SELECT p.id AS project_id, p.name AS project_name,
+                    p.is_active, p.retention_days,
+                    CASE
+                        WHEN :target_role = 'admin' THEN 'admin'
+                        ELSE pm.role
+                    END AS project_role
+                FROM projects p
+                LEFT JOIN project_memberships pm
+                    ON pm.project_id = p.id
+                    AND pm.user_id = :user_id
+                WHERE p.org_id = :org
+                    AND p.is_active = true
+                ORDER BY p.created_at ASC, p.name ASC
+                """
+            ),
+            {
+                "user_id": user_id,
+                "org": user["org_id"],
+                "target_role": target_user["role"],
+            },
+        )
+
+    return [
+        {
+            **dict(row),
+            "project_id": str(row["project_id"]),
+        }
+        for row in result.mappings().all()
+    ]
 
 
 @router.patch("/{user_id}/role")

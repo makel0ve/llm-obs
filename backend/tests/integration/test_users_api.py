@@ -15,6 +15,7 @@ from app.api.v1.users import (
     accept_invite,
     create_invite,
     delete_user,
+    list_user_project_access,
     list_users,
     update_user_role,
 )
@@ -60,12 +61,14 @@ class FakeDb:
         target_user=None,
         admin_count=2,
         project_ids=None,
+        project_access_rows=None,
     ):
         self.rows = rows or []
         self.existing_email = existing_email
         self.target_user = target_user
         self.admin_count = admin_count
         self.project_ids = project_ids
+        self.project_access_rows = project_access_rows or []
         self.params = []
 
     def begin(self):
@@ -86,6 +89,16 @@ class FakeDb:
             if project_ids is None:
                 project_ids = params["project_ids"]
             return FakeResult(rows=[{"id": project_id} for project_id in project_ids])
+
+        if (
+            "SELECT id, role" in sql
+            and "FROM users" in sql
+            and "WHERE id = :id AND org_id = :org AND is_active = true" in sql
+        ):
+            return FakeResult(row=self.target_user)
+
+        if "FROM projects p" in sql and "LEFT JOIN project_memberships" in sql:
+            return FakeResult(rows=self.project_access_rows)
 
         if "INSERT INTO organization_invites" in sql:
             return FakeResult(
@@ -193,6 +206,99 @@ async def test_list_users_scopes_to_admin_org(monkeypatch):
 
     assert result[0]["email"] == "admin@example.com"
     assert db.params[-1] == {"org": org_id}
+
+
+@pytest.mark.asyncio
+async def test_list_user_project_access_requires_admin():
+    with pytest.raises(HTTPException) as exc_info:
+        await list_user_project_access(str(uuid4()), user=_user(role="member"))
+
+    assert exc_info.value.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_list_user_project_access_scopes_target_to_admin_org(monkeypatch):
+    org_id = str(uuid4())
+    target_user_id = str(uuid4())
+    project_id = uuid4()
+    db = FakeDb(
+        target_user={"id": target_user_id, "role": "member"},
+        project_access_rows=[
+            {
+                "project_id": project_id,
+                "project_name": "Production API",
+                "project_role": "viewer",
+                "is_active": True,
+                "retention_days": 90,
+            }
+        ],
+    )
+    _patch_db(monkeypatch, db)
+
+    result = await list_user_project_access(
+        target_user_id,
+        user=_admin(org_id=org_id),
+    )
+
+    assert result == [
+        {
+            "project_id": str(project_id),
+            "project_name": "Production API",
+            "project_role": "viewer",
+            "is_active": True,
+            "retention_days": 90,
+        }
+    ]
+    assert db.params[0] == {"id": target_user_id, "org": org_id}
+    assert db.params[1] == {
+        "user_id": target_user_id,
+        "org": org_id,
+        "target_role": "member",
+    }
+
+
+@pytest.mark.asyncio
+async def test_list_user_project_access_returns_implicit_admin_access(monkeypatch):
+    org_id = str(uuid4())
+    target_user_id = str(uuid4())
+    project_id = uuid4()
+    db = FakeDb(
+        target_user={"id": target_user_id, "role": "admin"},
+        project_access_rows=[
+            {
+                "project_id": project_id,
+                "project_name": "Production API",
+                "project_role": "admin",
+                "is_active": True,
+                "retention_days": 90,
+            }
+        ],
+    )
+    _patch_db(monkeypatch, db)
+
+    result = await list_user_project_access(
+        target_user_id,
+        user=_admin(org_id=org_id),
+    )
+
+    assert result[0]["project_id"] == str(project_id)
+    assert result[0]["project_role"] == "admin"
+    assert db.params[1] == {
+        "user_id": target_user_id,
+        "org": org_id,
+        "target_role": "admin",
+    }
+
+
+@pytest.mark.asyncio
+async def test_list_user_project_access_rejects_foreign_user(monkeypatch):
+    db = FakeDb(target_user=None)
+    _patch_db(monkeypatch, db)
+
+    with pytest.raises(HTTPException) as exc_info:
+        await list_user_project_access(str(uuid4()), user=_admin())
+
+    assert exc_info.value.status_code == 404
 
 
 @pytest.mark.asyncio
