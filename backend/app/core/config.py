@@ -43,6 +43,7 @@ class Settings(BaseSettings):
     database_max_overflow: int = 10
 
     redis_url: str = "redis://localhost:6379/0"
+    redis_queue_url: str | None = None
 
     secret_key: SecretStr = SecretStr(
         "dev-secret-key-change-in-production-min-32-chars"
@@ -119,6 +120,7 @@ class Settings(BaseSettings):
         )
         self._validate_production_url("database_url", _secret_value(self.database_url))
         self._validate_production_url("redis_url", self.redis_url)
+        self._validate_production_url("redis_queue_url", self.effective_redis_queue_url)
         if self.s3_endpoint_url:
             self._validate_production_url("s3_endpoint_url", self.s3_endpoint_url)
 
@@ -161,6 +163,10 @@ class Settings(BaseSettings):
             raise ValueError(f"{name} must be set in production")
         if _contains_localhost(value):
             raise ValueError(f"{name} cannot point to localhost in production")
+
+    @property
+    def effective_redis_queue_url(self) -> str:
+        return self.redis_queue_url or self.redis_url
 
 
 settings = Settings()

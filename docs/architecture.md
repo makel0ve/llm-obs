@@ -15,12 +15,13 @@ Python SDK / OTLP clients
     v
 FastAPI ingest API
     |
-    | Redis queue
+    | durable Redis queue
     v
 Taskiq worker
     |-- PostgreSQL: traces, spans, aggregates, pricing, alerts, users
     |-- MinIO/S3: large stored payload objects
-    |-- Redis: cache, queue and pub/sub
+    |-- Redis: cache, rate-limit counters, batch status and pub/sub
+    |-- Redis queue: Taskiq queues, task results and DLQ
     `-- Mailpit/SMTP or Slack webhook: alert delivery
 
 React dashboard
@@ -58,7 +59,11 @@ MinIO/S3 stores large LLM input/output payload objects when enabled. Project
 settings control payload mode, maximum payload size and comma-separated field
 names to redact before object storage.
 
-Redis stores queue data, caches, rate-limit counters and the live span stream.
+Redis storage is split by durability requirement. `REDIS_URL` is the cache and
+coordination Redis for rate limits, short-lived caches, batch status and the
+live span stream. `REDIS_QUEUE_URL` is the durable Taskiq queue/result Redis for
+accepted ingest work, scheduled jobs and the DLQ; Compose configures it with AOF
+persistence and `noeviction`.
 
 ## Authentication And Roles
 
