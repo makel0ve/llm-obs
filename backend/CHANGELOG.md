@@ -1,6 +1,19 @@
 # CHANGELOG
 
 
+## v0.41.2 (2026-07-16)
+
+### Bug Fixes
+
+- Stabilize trace identity
+  ([`18f8f84`](https://github.com/makel0ve/llm-obs/commit/18f8f84a80e6cc11d25669c9241e0a3c66c015f1))
+
+### Chores
+
+- Trigger ci for release sync
+  ([`5119811`](https://github.com/makel0ve/llm-obs/commit/51198116f82e8457efc83fff3550094d34b03c00))
+
+
 ## v0.41.1 (2026-07-16)
 
 ### Bug Fixes
