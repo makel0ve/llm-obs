@@ -2,12 +2,14 @@ import asyncio
 import os
 import threading
 
-from llm_obs.tracer import LLMTracer
+from llm_obs.tracer import LLMTracer, SDKDiagnostics
 from llm_obs.transport import TransportDiagnostics
 
 
 _tracer_lock = threading.Lock()
 _tracer_instance: LLMTracer | None = None
+_last_transport_diagnostics: TransportDiagnostics | None = None
+_last_sdk_diagnostics: SDKDiagnostics | None = None
 
 
 def _env_debug_enabled() -> bool:
@@ -37,12 +39,14 @@ def init(
     start: bool = True,
     debug: bool | None = None,
 ) -> LLMTracer:
-    global _tracer_instance
+    global _last_sdk_diagnostics, _last_transport_diagnostics, _tracer_instance
 
     with _tracer_lock:
         if _tracer_instance is not None:
             raise RuntimeError("llm_obs tracer is already initialized")
 
+        _last_transport_diagnostics = None
+        _last_sdk_diagnostics = None
         _tracer_instance = LLMTracer(
             api_key=api_key,
             endpoint=endpoint,
@@ -88,13 +92,21 @@ def get_tracer() -> LLMTracer | None:
 def get_diagnostics() -> TransportDiagnostics | None:
     tracer = _tracer_instance
     if tracer is None:
-        return None
+        return _last_transport_diagnostics
 
     return tracer.last_flush_diagnostics
 
 
+def get_sdk_diagnostics() -> SDKDiagnostics | None:
+    tracer = _tracer_instance
+    if tracer is None:
+        return _last_sdk_diagnostics
+
+    return tracer.sdk_diagnostics
+
+
 async def shutdown(*, flush: bool = True) -> None:
-    global _tracer_instance
+    global _last_sdk_diagnostics, _last_transport_diagnostics, _tracer_instance
 
     with _tracer_lock:
         tracer = _tracer_instance
@@ -102,6 +114,8 @@ async def shutdown(*, flush: bool = True) -> None:
 
     if tracer is not None:
         await tracer.shutdown(flush=flush)
+        _last_transport_diagnostics = tracer.last_flush_diagnostics
+        _last_sdk_diagnostics = tracer.sdk_diagnostics
 
 
 def _get_tracer() -> LLMTracer:
@@ -119,8 +133,10 @@ from llm_obs.decorators import trace as trace  # noqa: E402
 __all__ = [
     "LLMTracer",
     "ManualSpan",
+    "SDKDiagnostics",
     "TransportDiagnostics",
     "get_diagnostics",
+    "get_sdk_diagnostics",
     "get_tracer",
     "init",
     "shutdown",

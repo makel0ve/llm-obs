@@ -2,10 +2,14 @@ import asyncio
 import atexit
 from collections import deque
 from dataclasses import dataclass, field
-from datetime import datetime, UTC
+from datetime import UTC, datetime
 from typing import Any
 
+import structlog
+
 from llm_obs.transport import HttpTransport, TransportDiagnostics
+
+log = structlog.get_logger()
 
 
 @dataclass
@@ -26,6 +30,17 @@ class SpanData:
     metadata: dict[str, Any] = field(default_factory=dict)
 
 
+@dataclass(frozen=True)
+class SDKDiagnostics:
+    dropped_spans: int
+    failed_flushes: int
+    final_delivery_failures: int
+    buffered_spans: int
+    buffer_size: int | None
+    last_drop_reason: str | None = None
+    last_flush_reason: str | None = None
+
+
 class LLMTracer:
     def __init__(
         self,
@@ -44,6 +59,10 @@ class LLMTracer:
         self._closed = False
         self._transport = HttpTransport(self._endpoint, self._api_key, debug=debug)
         self._atexit_registered = True
+        self._dropped_spans = 0
+        self._failed_flushes = 0
+        self._final_delivery_failures = 0
+        self._last_drop_reason: str | None = None
 
         atexit.register(self._sync_flush_on_exit)
 
@@ -73,7 +92,15 @@ class LLMTracer:
                 pass
 
         if flush:
-            await self._flush()
+            sent = await self._flush()
+            if not sent:
+                self._final_delivery_failures += 1
+                log.warning(
+                    "llm_obs_shutdown_flush_failed",
+                    buffered_spans=len(self._buffer),
+                    final_delivery_failures=self._final_delivery_failures,
+                    flush_reason=self._flush_reason,
+                )
 
         else:
             self._buffer.clear()
@@ -136,6 +163,7 @@ class LLMTracer:
                 [self._span_to_dict(s) for s in spans]
             )
             if not sent:
+                self._failed_flushes += 1
                 self._buffer.extendleft(reversed(spans))
                 return False
 
@@ -144,6 +172,23 @@ class LLMTracer:
     @property
     def last_flush_diagnostics(self) -> TransportDiagnostics | None:
         return self._transport.last_diagnostics
+
+    @property
+    def sdk_diagnostics(self) -> SDKDiagnostics:
+        return SDKDiagnostics(
+            dropped_spans=self._dropped_spans,
+            failed_flushes=self._failed_flushes,
+            final_delivery_failures=self._final_delivery_failures,
+            buffered_spans=len(self._buffer),
+            buffer_size=self._buffer.maxlen,
+            last_drop_reason=self._last_drop_reason,
+            last_flush_reason=self._flush_reason,
+        )
+
+    @property
+    def _flush_reason(self) -> str | None:
+        diagnostics = self.last_flush_diagnostics
+        return diagnostics.reason if diagnostics is not None else None
 
     def _span_to_dict(self, span: SpanData) -> dict:
         return {
@@ -164,4 +209,14 @@ class LLMTracer:
         }
 
     def record(self, span: SpanData) -> None:
+        if self._buffer.maxlen is not None and len(self._buffer) >= self._buffer.maxlen:
+            self._dropped_spans += 1
+            self._last_drop_reason = "buffer_overflow"
+            log.warning(
+                "llm_obs_span_dropped",
+                reason="buffer_overflow",
+                dropped_spans=self._dropped_spans,
+                buffer_size=self._buffer.maxlen,
+            )
+
         self._buffer.append(span)
