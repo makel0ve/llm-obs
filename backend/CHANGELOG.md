@@ -1,6 +1,24 @@
 # CHANGELOG
 
 
+## v0.41.1 (2026-07-16)
+
+### Bug Fixes
+
+- Calculate trace end time accurately
+  ([`e722ebd`](https://github.com/makel0ve/llm-obs/commit/e722ebd3a8d8ae90a600e9ac35464fcbb7fd4aa4))
+
+### Chores
+
+- Trigger ci for release sync
+  ([`2b89f44`](https://github.com/makel0ve/llm-obs/commit/2b89f44e76aa5e1145a6072301108b24dc8ea6a1))
+
+### Testing
+
+- Close parent span hierarchy audit
+  ([`547ca79`](https://github.com/makel0ve/llm-obs/commit/547ca7947d1ab178dfbcb6ea6a067ba3433c0bbc))
+
+
 ## v0.41.0 (2026-07-16)
 
 ### Chores
