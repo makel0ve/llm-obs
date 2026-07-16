@@ -39,8 +39,12 @@ class Settings(BaseSettings):
     database_url: SecretStr = SecretStr(
         "postgresql+asyncpg://llmobs:llmobs@localhost/llmobs"
     )
+    migration_database_url: SecretStr | None = None
     database_pool_size: int = 20
     database_max_overflow: int = 10
+    postgres_user: str = "llmobs"
+    postgres_app_user: str = "llmobs_app"
+    postgres_app_password: SecretStr = SecretStr("")
 
     redis_url: str = "redis://localhost:6379/0"
     redis_queue_url: str | None = None
@@ -118,7 +122,20 @@ class Settings(BaseSettings):
             "aws_secret_access_key",
             self.aws_secret_access_key,
         )
-        self._validate_production_url("database_url", _secret_value(self.database_url))
+        database_url = _secret_value(self.database_url)
+        self._validate_production_url("database_url", database_url)
+        self._validate_database_url_secret("database_url", database_url)
+        self._validate_runtime_database_role(database_url)
+        if self.migration_database_url:
+            migration_database_url = _secret_value(self.migration_database_url)
+            self._validate_production_url(
+                "migration_database_url",
+                migration_database_url,
+            )
+            self._validate_database_url_secret(
+                "migration_database_url",
+                migration_database_url,
+            )
         self._validate_production_url("redis_url", self.redis_url)
         self._validate_production_url("redis_queue_url", self.effective_redis_queue_url)
         if self.s3_endpoint_url:
@@ -164,9 +181,32 @@ class Settings(BaseSettings):
         if _contains_localhost(value):
             raise ValueError(f"{name} cannot point to localhost in production")
 
+    def _validate_runtime_database_role(self, database_url: str) -> None:
+        runtime_user = urlparse(database_url).username
+        if not runtime_user:
+            raise ValueError("database_url must include a runtime database user")
+        if runtime_user in {self.postgres_user, "postgres"}:
+            raise ValueError(
+                "database_url must use a dedicated non-owner runtime database role"
+            )
+
+    @staticmethod
+    def _validate_database_url_secret(name: str, value: str) -> None:
+        parsed = urlparse(value)
+        password = parsed.password or ""
+        lowered = password.lower()
+        if lowered in PRODUCTION_PLACEHOLDER_SECRETS or lowered.startswith(
+            "replace-with"
+        ):
+            raise ValueError(f"{name} must not use a placeholder password")
+
     @property
     def effective_redis_queue_url(self) -> str:
         return self.redis_queue_url or self.redis_url
+
+    @property
+    def effective_migration_database_url(self) -> SecretStr:
+        return self.migration_database_url or self.database_url
 
 
 settings = Settings()

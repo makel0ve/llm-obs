@@ -47,6 +47,10 @@ async def test_trace_detail_returns_parent_span_id(client, db_session):
     child_span = spans[1]
 
     await db_session.execute(
+        text("SELECT set_config('app.current_project_id', :project_id, true)"),
+        {"project_id": project.id},
+    )
+    await db_session.execute(
         text(
             """
             UPDATE spans

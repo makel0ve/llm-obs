@@ -23,11 +23,17 @@ def upgrade() -> None:
     op.execute("ALTER TABLE traces ENABLE ROW LEVEL SECURITY")
     op.execute("""
         CREATE POLICY spans_project_isolation ON spans
-        USING (project_id = current_setting('app.current_project_id', true)::uuid)
+        USING (
+            project_id =
+            NULLIF(current_setting('app.current_project_id', true), '')::uuid
+        )
     """)
     op.execute("""
         CREATE POLICY traces_project_isolation ON traces
-        USING (project_id = current_setting('app.current_project_id', true)::uuid)
+        USING (
+            project_id =
+            NULLIF(current_setting('app.current_project_id', true), '')::uuid
+        )
     """)
 
 

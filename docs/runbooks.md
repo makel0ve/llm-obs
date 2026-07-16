@@ -39,7 +39,8 @@ MinIO running through the local compose file, then point `backend/.env` at host
 ports:
 
 ```bash
-DATABASE_URL=postgresql+asyncpg://llmobs:llmobs_dev@localhost:5432/llmobs
+DATABASE_URL=postgresql+asyncpg://llmobs_app:llmobs_dev@localhost:5432/llmobs
+MIGRATION_DATABASE_URL=postgresql+asyncpg://llmobs_owner:llmobs_owner_dev@localhost:5432/llmobs
 REDIS_URL=redis://localhost:6379/0
 REDIS_QUEUE_URL=redis://localhost:6380/0
 S3_ENDPOINT_URL=http://localhost:9000
@@ -91,18 +92,26 @@ credentials and unedited `replace-with...` placeholders.
 For the production compose file, the backend should connect through PgBouncer:
 
 ```bash
-DATABASE_URL=postgresql+asyncpg://POSTGRES_USER:POSTGRES_PASSWORD@pgbouncer:6432/POSTGRES_DB
+DATABASE_URL=postgresql+asyncpg://POSTGRES_APP_USER:POSTGRES_APP_PASSWORD@pgbouncer:6432/POSTGRES_DB
+MIGRATION_DATABASE_URL=postgresql+asyncpg://POSTGRES_USER:POSTGRES_PASSWORD@postgres:5432/POSTGRES_DB
 ```
 
 Use real values in the URL. Keep `POSTGRES_DB`, `POSTGRES_USER`,
-`POSTGRES_PASSWORD`, `MINIO_ROOT_USER` and `MINIO_ROOT_PASSWORD` consistent
-between `infra/.env` and `backend/.env.prod`.
+`POSTGRES_PASSWORD`, `POSTGRES_APP_USER`, `POSTGRES_APP_PASSWORD`,
+`MINIO_ROOT_USER` and `MINIO_ROOT_PASSWORD` consistent between `infra/.env` and
+`backend/.env.prod`.
 
 For tenant isolation, the runtime role used by `DATABASE_URL` must not be a
 PostgreSQL superuser and must not have `BYPASSRLS`. `FORCE ROW LEVEL SECURITY`
 does not protect rows from superuser or `BYPASSRLS` roles. If a deployment uses
 a bootstrap/admin Postgres role to initialize the database, create a separate
 application role for `DATABASE_URL` before accepting tenant data.
+
+For new Docker volumes, the compose Postgres init script creates or updates
+`POSTGRES_APP_USER` with `NOSUPERUSER NOBYPASSRLS` and grants schema/default
+privileges. Existing volumes do not rerun init scripts, so run migrations with
+`MIGRATION_DATABASE_URL` set and `POSTGRES_APP_USER`/`POSTGRES_APP_PASSWORD`
+available before switching runtime traffic to the app role.
 
 Validate compose configuration before starting:
 
@@ -157,7 +166,8 @@ Backend settings are loaded from `backend/.env.prod` in production.
 | --- | --- | --- |
 | `ENVIRONMENT` | Runtime mode | Set to `production`. |
 | `SECRET_KEY` | JWT signing secret | Use a random 32+ character value. |
-| `DATABASE_URL` | SQLAlchemy async URL | Use PgBouncer at `pgbouncer:6432` in production compose. The role must not be superuser or `BYPASSRLS`. |
+| `DATABASE_URL` | Runtime SQLAlchemy async URL | Use `POSTGRES_APP_USER` through PgBouncer at `pgbouncer:6432` in production compose. The role must not be superuser, table owner or `BYPASSRLS`. |
+| `MIGRATION_DATABASE_URL` | Alembic SQLAlchemy async URL | Use the owner/admin role directly against `postgres:5432` for migrations and grants. If omitted, Alembic falls back to `DATABASE_URL`. |
 | `DATABASE_POOL_SIZE` | Backend DB pool size | Keep conservative when using PgBouncer. |
 | `DATABASE_MAX_OVERFLOW` | Backend DB overflow connections | Keep conservative when using PgBouncer. |
 | `REDIS_URL` | Redis cache/pubsub/rate-limit URL | Use `redis://redis:6379/0` in compose. This Redis may use bounded memory and cache eviction. |
@@ -185,6 +195,8 @@ MinIO container bootstrap:
 | `POSTGRES_DB` | Initial database name |
 | `POSTGRES_USER` | Database user |
 | `POSTGRES_PASSWORD` | Database password |
+| `POSTGRES_APP_USER` | Runtime application database user |
+| `POSTGRES_APP_PASSWORD` | Runtime application database password |
 | `POSTGRES_HOST` | PgBouncer upstream host, normally `postgres` |
 | `POSTGRES_PORT` | PgBouncer upstream port, normally `5432` |
 | `MINIO_ROOT_USER` | MinIO root user |
@@ -309,6 +321,16 @@ If `/worker-health` is `missing` or `stale`, inspect both services:
 docker compose --env-file infra/.env -f infra/docker-compose.prod.yml logs --tail=100 scheduler
 docker compose --env-file infra/.env -f infra/docker-compose.prod.yml logs --tail=100 worker
 ```
+
+Check the runtime role before accepting tenant data:
+
+```bash
+docker compose --env-file infra/.env -f infra/docker-compose.prod.yml exec postgres \
+  psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" \
+  -c "SELECT rolname, rolsuper, rolbypassrls FROM pg_roles WHERE rolname IN ('$POSTGRES_USER', '$POSTGRES_APP_USER');"
+```
+
+`POSTGRES_APP_USER` must show `rolsuper = false` and `rolbypassrls = false`.
 
 Check Prometheus metrics:
 
