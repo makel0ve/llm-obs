@@ -51,6 +51,14 @@ class UserInviteResponse(BaseModel):
     expires_at: datetime
 
 
+class UserProjectAccessRecord(BaseModel):
+    project_id: str
+    project_name: str
+    project_role: UserRole | None = None
+    is_active: bool
+    retention_days: int
+
+
 class UserInviteAccept(BaseModel):
     token: str = Field(min_length=32)
     password: str = Field(min_length=8, max_length=128)

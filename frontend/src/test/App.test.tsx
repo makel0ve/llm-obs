@@ -8,6 +8,7 @@ import App from '../App'
 import { Overview } from '../pages/Overview'
 import { Traces } from '../pages/Traces'
 import {
+  assignProjectMember,
   createOrganizationUser,
   createProjectApiKey,
   getMetricsAnalytics,
@@ -20,8 +21,10 @@ import {
   listProjectMembers,
   listProjects,
   listTraces,
+  listUserProjectAccess,
   listUsers,
   loginUser,
+  removeProjectMember,
   registerUser,
 } from '../api/dashboard'
 
@@ -65,6 +68,7 @@ vi.mock('../api/dashboard', () => ({
       status: string,
       model: string,
     ) => ['traces', projectId, period, status, model],
+    userProjectAccess: (userId: string) => ['user-project-access', userId],
     users: () => ['users'],
   },
   getMetricsAnalytics: vi.fn(),
@@ -77,6 +81,7 @@ vi.mock('../api/dashboard', () => ({
   listProjectMembers: vi.fn(),
   listProjects: vi.fn(),
   listTraces: vi.fn(),
+  listUserProjectAccess: vi.fn(),
   listUsers: vi.fn(),
   loginUser: vi.fn(),
   removeProjectMember: vi.fn(),
@@ -89,6 +94,7 @@ vi.mock('../api/dashboard', () => ({
   updateProjectSettings: vi.fn(),
 }))
 
+const mockedAssignProjectMember = vi.mocked(assignProjectMember)
 const mockedCreateOrganizationUser = vi.mocked(createOrganizationUser)
 const mockedCreateProjectApiKey = vi.mocked(createProjectApiKey)
 const mockedGetMetricsAnalytics = vi.mocked(getMetricsAnalytics)
@@ -101,8 +107,10 @@ const mockedListProjectApiKeys = vi.mocked(listProjectApiKeys)
 const mockedListProjectMembers = vi.mocked(listProjectMembers)
 const mockedListProjects = vi.mocked(listProjects)
 const mockedListTraces = vi.mocked(listTraces)
+const mockedListUserProjectAccess = vi.mocked(listUserProjectAccess)
 const mockedListUsers = vi.mocked(listUsers)
 const mockedLoginUser = vi.mocked(loginUser)
+const mockedRemoveProjectMember = vi.mocked(removeProjectMember)
 const mockedRegisterUser = vi.mocked(registerUser)
 
 const project = {
@@ -198,7 +206,18 @@ describe('App', () => {
     mockedListProjectApiKeys.mockResolvedValue([])
     mockedListUsers.mockResolvedValue([])
     mockedListProjectMembers.mockResolvedValue([])
+    mockedListUserProjectAccess.mockResolvedValue([])
     mockedListFailedTasks.mockResolvedValue([])
+    mockedAssignProjectMember.mockResolvedValue({
+      user_id: 'org-user-1',
+      email: 'org-user@example.com',
+      org_role: 'member',
+      project_role: 'member',
+      is_active: true,
+      created_at: '2026-07-15T08:00:00Z',
+      updated_at: '2026-07-15T08:00:00Z',
+    })
+    mockedRemoveProjectMember.mockResolvedValue(undefined)
     mockedCreateProjectApiKey.mockResolvedValue({
       id: 'key-1',
       name: 'Production ingest',
@@ -358,6 +377,102 @@ describe('App', () => {
       role: 'member',
       project_assignments: [{ project_id: project.id, role: 'member' }],
     })
+  })
+
+  it('edits project access for an existing organization user', async () => {
+    const user = userEvent.setup()
+    const secondProject = {
+      ...project,
+      id: 'project-2',
+      name: 'Search API',
+      retention_days: 60,
+    }
+    mockedListAccessibleProjects.mockResolvedValue([{ ...project, project_role: 'admin' }])
+    mockedListUsers.mockResolvedValue([
+      {
+        id: 'org-user-1',
+        email: 'org-user@example.com',
+        role: 'member',
+        is_active: true,
+        created_at: '2026-07-15T08:00:00Z',
+      },
+    ])
+    mockedListUserProjectAccess.mockResolvedValue([
+      {
+        project_id: project.id,
+        project_name: project.name,
+        project_role: null,
+        is_active: true,
+        retention_days: project.retention_days,
+      },
+      {
+        project_id: secondProject.id,
+        project_name: secondProject.name,
+        project_role: 'viewer',
+        is_active: true,
+        retention_days: secondProject.retention_days,
+      },
+    ])
+    storeAdminSession('/admin-settings/users')
+
+    render(<App />)
+
+    expect(await screen.findByText('org-user@example.com')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Project access' }))
+
+    expect(await screen.findByLabelText('Production API existing user project role')).toHaveValue('none')
+    expect(screen.getByLabelText('Search API existing user project role')).toHaveValue('viewer')
+
+    await user.selectOptions(screen.getByLabelText('Production API existing user project role'), 'member')
+
+    expect(mockedAssignProjectMember).toHaveBeenCalledWith(project.id, {
+      user_id: 'org-user-1',
+      role: 'member',
+    })
+
+    await user.selectOptions(screen.getByLabelText('Search API existing user project role'), 'member')
+
+    expect(mockedAssignProjectMember).toHaveBeenCalledWith(secondProject.id, {
+      user_id: 'org-user-1',
+      role: 'member',
+    })
+
+    await user.selectOptions(screen.getByLabelText('Search API existing user project role'), 'none')
+
+    expect(mockedRemoveProjectMember).toHaveBeenCalledWith(secondProject.id, 'org-user-1')
+  })
+
+  it('shows implicit project access for organization admins', async () => {
+    const user = userEvent.setup()
+    mockedListAccessibleProjects.mockResolvedValue([{ ...project, project_role: 'admin' }])
+    mockedListUsers.mockResolvedValue([
+      {
+        id: 'admin-user-1',
+        email: 'admin@example.com',
+        role: 'admin',
+        is_active: true,
+        created_at: '2026-07-15T08:00:00Z',
+      },
+    ])
+    mockedListUserProjectAccess.mockResolvedValue([
+      {
+        project_id: project.id,
+        project_name: project.name,
+        project_role: 'admin',
+        is_active: true,
+        retention_days: project.retention_days,
+      },
+    ])
+    storeAdminSession('/admin-settings/users')
+
+    render(<App />)
+
+    expect(await screen.findByText('admin@example.com')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Project access' }))
+
+    const projectRole = await screen.findByLabelText('Production API existing user project role')
+    expect(projectRole).toHaveValue('admin')
+    expect(projectRole).toBeDisabled()
   })
 
   it('shows project settings in project navigation after selecting a project', async () => {
