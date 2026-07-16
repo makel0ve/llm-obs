@@ -255,7 +255,10 @@ async def update_trace_aggregates(
                                     FROM spans
                                     WHERE project_id = :pid
                                         AND trace_id = :tid AND started_at >= :sat),
-                ended_at       = (SELECT MAX(started_at)
+                ended_at       = (SELECT MAX(
+                                        started_at
+                                        + make_interval(secs => latency_ms / 1000.0)
+                                    )
                                     FROM spans
                                     WHERE project_id = :pid
                                         AND trace_id = :tid AND started_at >= :sat),
