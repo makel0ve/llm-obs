@@ -2,25 +2,18 @@ import { useState, type FormEvent, type ReactNode } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from '../api/client'
 import {
-  assignProjectMember,
   createProjectApiKey,
   dashboardQueryKeys,
   getProjectSettings,
   listFailedTasks,
   listProjectApiKeys,
-  listProjectMembers,
-  listUsers,
-  removeProjectMember,
   retryFailedTask,
   revokeProjectApiKey,
   rotateProjectApiKey,
   updateProjectSettings,
   type ApiKeyScope,
   type FailedTask,
-  type OrganizationUser,
   type PayloadStorageMode,
-  type ProjectMember,
-  type ProjectMembershipRole,
 } from '../api/dashboard'
 
 type CopyState = 'idle' | 'copied' | 'failed'
@@ -34,10 +27,6 @@ type PayloadPrivacyDraft = {
   payload_max_bytes: string | null
   payload_redact_keys: string | null
 }
-type MemberDraft = {
-  userId: string
-  role: ProjectMembershipRole
-}
 
 const scopeOptions: Array<{ value: ApiKeyScope; label: string }> = [
   { value: 'ingest', label: 'Ingest only' },
@@ -49,11 +38,6 @@ const payloadModeOptions: Array<{ value: PayloadStorageMode; label: string; help
   { value: 'all', label: 'Store all large payloads', help: 'Keep stored objects for spans that exceed the inline threshold.' },
   { value: 'errors', label: 'Store only error payloads', help: 'Keep payload objects only for failed spans.' },
   { value: 'none', label: 'Do not store payloads', help: 'Drop payload objects before S3 storage.' },
-]
-
-const projectRoleOptions: Array<{ value: ProjectMembershipRole; label: string }> = [
-  { value: 'member', label: 'Member' },
-  { value: 'viewer', label: 'Viewer' },
 ]
 
 function CopyButton({ value, label = 'Copy' }: { value: string; label?: string }) {
@@ -166,12 +150,6 @@ export function ProjectSettings({ projectId }: { projectId: string }) {
   })
   const [keyError, setKeyError] = useState('')
   const [createdApiKey, setCreatedApiKey] = useState('')
-  const [memberDraft, setMemberDraft] = useState<MemberDraft>({
-    userId: '',
-    role: 'viewer',
-  })
-  const [memberMessage, setMemberMessage] = useState('')
-  const [memberError, setMemberError] = useState('')
   const [includeResolvedFailures, setIncludeResolvedFailures] = useState(false)
   const [failureMessage, setFailureMessage] = useState('')
   const [failureError, setFailureError] = useState('')
@@ -188,18 +166,6 @@ export function ProjectSettings({ projectId }: { projectId: string }) {
     enabled: !!projectId,
   })
 
-  const usersQuery = useQuery({
-    queryKey: dashboardQueryKeys.users(),
-    queryFn: listUsers,
-    enabled: !!projectId,
-  })
-
-  const membersQuery = useQuery({
-    queryKey: dashboardQueryKeys.projectMembers(projectId),
-    queryFn: () => listProjectMembers(projectId),
-    enabled: !!projectId,
-  })
-
   const failedTasksQuery = useQuery({
     queryKey: dashboardQueryKeys.failedTasks(projectId, includeResolvedFailures),
     queryFn: () => listFailedTasks(projectId, includeResolvedFailures),
@@ -209,43 +175,6 @@ export function ProjectSettings({ projectId }: { projectId: string }) {
   const invalidateApiKeys = async () => {
     await queryClient.invalidateQueries({ queryKey: dashboardQueryKeys.apiKeys(projectId) })
   }
-
-  const invalidateMembers = async () => {
-    await Promise.all([
-      queryClient.invalidateQueries({ queryKey: dashboardQueryKeys.projectMembers(projectId) }),
-      queryClient.invalidateQueries({ queryKey: dashboardQueryKeys.accessibleProjects() }),
-    ])
-  }
-
-  const assignMember = useMutation({
-    mutationFn: (draft: MemberDraft) => assignProjectMember(projectId, {
-      user_id: draft.userId,
-      role: draft.role,
-    }),
-    onSuccess: async member => {
-      setMemberDraft({ userId: '', role: 'viewer' })
-      setMemberError('')
-      setMemberMessage(`Access updated for ${member.email}.`)
-      await invalidateMembers()
-    },
-    onError: () => {
-      setMemberMessage('')
-      setMemberError('Could not update project access.')
-    },
-  })
-
-  const removeMember = useMutation({
-    mutationFn: (userId: string) => removeProjectMember(projectId, userId),
-    onSuccess: async () => {
-      setMemberError('')
-      setMemberMessage('Project access removed.')
-      await invalidateMembers()
-    },
-    onError: () => {
-      setMemberMessage('')
-      setMemberError('Could not remove project access.')
-    },
-  })
 
   const retryTask = useMutation({
     mutationFn: retryFailedTask,
@@ -368,33 +297,8 @@ await llm_obs.shutdown()`
     createKey.mutate()
   }
 
-  const submitAssignMember = (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault()
-    setMemberMessage('')
-
-    if (!memberDraft.userId) {
-      setMemberError('Choose a user.')
-      return
-    }
-
-    setMemberError('')
-    assignMember.mutate(memberDraft)
-  }
-
-  const changeProjectRole = (member: ProjectMember, role: ProjectMembershipRole) => {
-    if (member.project_role === role) return
-    setMemberMessage('')
-    setMemberError('')
-    assignMember.mutate({ userId: member.user_id, role })
-  }
-
-  const members = membersQuery.data ?? []
   const failedTasks = failedTasksQuery.data ?? []
   const unresolvedFailedTasks = failedTasks.filter((task: FailedTask) => !task.resolved)
-  const memberUserIds = new Set(members.map(member => member.user_id))
-  const assignableUsers = (usersQuery.data ?? []).filter((user: OrganizationUser) => (
-    user.is_active && !memberUserIds.has(user.id)
-  ))
 
   const canRetryFailedTask = (task: FailedTask) => (
     !task.resolved &&
@@ -424,132 +328,6 @@ await llm_obs.shutdown()`
           <CopyButton value={projectId} />
         </div>
       </div>
-
-      <section className="space-y-4">
-        <div>
-          <h2 className="text-lg font-semibold text-gray-950">Project access</h2>
-          <p className="mt-1 text-sm text-gray-500">Assign users who can inspect this project.</p>
-        </div>
-
-        <div className="rounded-lg border border-gray-200 bg-white p-4">
-          <form onSubmit={submitAssignMember} className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(220px,1fr)_180px_auto]">
-            <label className="block">
-              <span className="text-sm font-medium text-gray-700">User</span>
-              <select
-                value={memberDraft.userId}
-                onChange={event => setMemberDraft(current => ({
-                  ...current,
-                  userId: event.target.value,
-                }))}
-                disabled={usersQuery.isLoading || assignableUsers.length === 0}
-                className="mt-2 min-h-10 w-full rounded-md border border-gray-300 bg-white px-3 text-sm text-gray-900 disabled:bg-gray-100 disabled:text-gray-500"
-              >
-                <option value="">
-                  {usersQuery.isLoading ? 'Loading users...' : 'Select user'}
-                </option>
-                {assignableUsers.map(user => (
-                  <option key={user.id} value={user.id}>
-                    {user.email} ({user.role})
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="block">
-              <span className="text-sm font-medium text-gray-700">Project role</span>
-              <select
-                value={memberDraft.role}
-                onChange={event => setMemberDraft(current => ({
-                  ...current,
-                  role: event.target.value as ProjectMembershipRole,
-                }))}
-                className="mt-2 min-h-10 w-full rounded-md border border-gray-300 bg-white px-3 text-sm text-gray-900"
-              >
-                {projectRoleOptions.map(option => (
-                  <option key={option.value} value={option.value}>{option.label}</option>
-                ))}
-              </select>
-            </label>
-            <div className="flex items-end">
-              <button
-                type="submit"
-                disabled={assignMember.isPending || usersQuery.isLoading || assignableUsers.length === 0}
-                className="min-h-10 w-full rounded-md bg-gray-900 px-4 text-sm font-medium text-white hover:bg-gray-700 disabled:cursor-not-allowed disabled:opacity-60 xl:w-auto"
-              >
-                {assignMember.isPending ? 'Saving...' : 'Assign'}
-              </button>
-            </div>
-          </form>
-          <div className="mt-4 space-y-3">
-            {usersQuery.isError && <Alert tone="error">Could not load organization users.</Alert>}
-            {membersQuery.isError && <Alert tone="error">Could not load project members.</Alert>}
-            {memberError && <Alert tone="error">{memberError}</Alert>}
-            {memberMessage && <Alert tone="success">{memberMessage}</Alert>}
-            {!usersQuery.isLoading && assignableUsers.length === 0 && (
-              <Alert tone="warning">All active organization users already have explicit access to this project.</Alert>
-            )}
-          </div>
-        </div>
-
-        <div className="overflow-hidden rounded-lg border border-gray-200 bg-white">
-          <div className="overflow-x-auto">
-            <table className="min-w-[760px] w-full text-left text-sm">
-              <thead className="border-b border-gray-200 bg-gray-50 text-xs uppercase tracking-wide text-gray-500">
-                <tr>
-                  <th scope="col" className="px-4 py-3 font-medium">User</th>
-                  <th scope="col" className="px-4 py-3 font-medium">Organization role</th>
-                  <th scope="col" className="px-4 py-3 font-medium">Project role</th>
-                  <th scope="col" className="px-4 py-3 font-medium">Updated</th>
-                  <th scope="col" className="px-4 py-3 text-right font-medium">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-100">
-                {membersQuery.isLoading && (
-                  <tr>
-                    <td colSpan={5} className="px-4 py-6 text-gray-600">Loading project members...</td>
-                  </tr>
-                )}
-                {!membersQuery.isLoading && !membersQuery.isError && members.length === 0 && (
-                  <tr>
-                    <td colSpan={5} className="px-4 py-6 text-gray-600">No explicit project members yet.</td>
-                  </tr>
-                )}
-                {members.map(member => (
-                  <tr key={member.user_id} className="align-middle hover:bg-gray-50">
-                    <td className="px-4 py-3">
-                      <div className="font-medium text-gray-900">{member.email}</div>
-                      <div className="mt-1 text-xs text-gray-500">{member.is_active ? 'active' : 'inactive'}</div>
-                    </td>
-                    <td className="px-4 py-3 text-gray-700">{member.org_role}</td>
-                    <td className="px-4 py-3">
-                      <select
-                        value={member.project_role}
-                        onChange={event => changeProjectRole(member, event.target.value as ProjectMembershipRole)}
-                        disabled={assignMember.isPending}
-                        className="min-h-9 w-36 rounded-md border border-gray-300 bg-white px-3 text-sm text-gray-900 disabled:bg-gray-100 disabled:text-gray-500"
-                      >
-                        {projectRoleOptions.map(option => (
-                          <option key={option.value} value={option.value}>{option.label}</option>
-                        ))}
-                      </select>
-                    </td>
-                    <td className="whitespace-nowrap px-4 py-3 text-gray-700">{formatDateTime(member.updated_at)}</td>
-                    <td className="px-4 py-3 text-right">
-                      <button
-                        type="button"
-                        onClick={() => removeMember.mutate(member.user_id)}
-                        disabled={removeMember.isPending}
-                        className="min-h-9 rounded-md border border-red-200 bg-white px-3 text-sm font-medium text-red-700 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-60"
-                      >
-                        Remove
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      </section>
 
       <section className="space-y-4">
         <div>

@@ -1,3 +1,4 @@
+import json
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from uuid import uuid4
@@ -52,12 +53,19 @@ class FakeTransaction:
 
 class FakeDb:
     def __init__(
-        self, *, rows=None, existing_email=False, target_user=None, admin_count=2
+        self,
+        *,
+        rows=None,
+        existing_email=False,
+        target_user=None,
+        admin_count=2,
+        project_ids=None,
     ):
         self.rows = rows or []
         self.existing_email = existing_email
         self.target_user = target_user
         self.admin_count = admin_count
+        self.project_ids = project_ids
         self.params = []
 
     def begin(self):
@@ -73,12 +81,21 @@ class FakeDb:
         if "SELECT 1 FROM users WHERE email" in sql:
             return FakeResult(row={"exists": 1} if self.existing_email else None)
 
+        if "SELECT id" in sql and "FROM projects" in sql and "ANY" in sql:
+            project_ids = self.project_ids
+            if project_ids is None:
+                project_ids = params["project_ids"]
+            return FakeResult(rows=[{"id": project_id} for project_id in project_ids])
+
         if "INSERT INTO organization_invites" in sql:
             return FakeResult(
                 row={
                     "id": params["id"],
                     "email": params["email"],
                     "role": params["role"],
+                    "project_assignments": json.loads(
+                        params.get("project_assignments", "[]")
+                    ),
                     "expires_at": params["expires_at"],
                 }
             )
@@ -87,6 +104,9 @@ class FakeDb:
             return FakeResult(row=self.target_user)
 
         if "INSERT INTO users" in sql:
+            return FakeResult()
+
+        if "INSERT INTO project_memberships" in sql:
             return FakeResult()
 
         if "UPDATE organization_invites" in sql:
@@ -204,9 +224,63 @@ async def test_create_invite_uses_admin_org_and_returns_token(monkeypatch):
             "user_id": audit_events[0]["user_id"],
             "action": "user.invite.create",
             "resource_id": result["id"],
-            "metadata": {"email": "viewer@example.com", "role": "viewer"},
+            "metadata": {
+                "email": "viewer@example.com",
+                "role": "viewer",
+                "project_assignment_count": 0,
+            },
         }
     ]
+
+
+@pytest.mark.asyncio
+async def test_create_invite_stores_project_assignments(monkeypatch):
+    org_id = str(uuid4())
+    project_id = str(uuid4())
+    db = FakeDb(project_ids=[project_id])
+    _patch_db(monkeypatch, db)
+    monkeypatch.setattr(users_api.secrets, "token_urlsafe", lambda size: "raw-token")
+    audit_events = []
+
+    async def fake_log_audit(**kwargs):
+        audit_events.append(kwargs)
+
+    monkeypatch.setattr(users_api, "log_audit", fake_log_audit)
+
+    result = await create_invite(
+        UserInviteCreate(
+            email="viewer@example.com",
+            role="viewer",
+            project_assignments=[{"project_id": project_id, "role": "viewer"}],
+        ),
+        user=_admin(org_id=org_id),
+    )
+
+    assert result["project_assignments"] == [
+        {"project_id": project_id, "role": "viewer"}
+    ]
+    project_lookup = next(params for params in db.params if "project_ids" in params)
+    assert project_lookup == {"org": org_id, "project_ids": [project_id]}
+    assert audit_events[0]["metadata"]["project_assignment_count"] == 1
+
+
+@pytest.mark.asyncio
+async def test_create_invite_rejects_foreign_project_assignment(monkeypatch):
+    project_id = str(uuid4())
+    db = FakeDb(project_ids=[])
+    _patch_db(monkeypatch, db)
+    monkeypatch.setattr(users_api, "log_audit", _noop_log_audit)
+
+    with pytest.raises(HTTPException) as exc_info:
+        await create_invite(
+            UserInviteCreate(
+                email="viewer@example.com",
+                project_assignments=[{"project_id": project_id, "role": "viewer"}],
+            ),
+            user=_admin(),
+        )
+
+    assert exc_info.value.status_code == 400
 
 
 @pytest.mark.asyncio
@@ -232,6 +306,7 @@ async def test_accept_invite_hashes_password_and_returns_token(monkeypatch):
         "org_id": org_id,
         "email": "member@example.com",
         "role": "member",
+        "project_assignments": [],
         "expires_at": datetime.now(UTC).replace(year=datetime.now(UTC).year + 1),
     }
     db = FakeDb(target_user=invite)
@@ -259,12 +334,45 @@ async def test_accept_invite_hashes_password_and_returns_token(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_accept_invite_creates_project_memberships(monkeypatch):
+    org_id = str(uuid4())
+    project_id = str(uuid4())
+    invite = {
+        "id": str(uuid4()),
+        "org_id": org_id,
+        "email": "member@example.com",
+        "role": "member",
+        "project_assignments": [{"project_id": project_id, "role": "member"}],
+        "expires_at": datetime.now(UTC).replace(year=datetime.now(UTC).year + 1),
+    }
+    db = FakeDb(target_user=invite)
+    _patch_db(monkeypatch, db)
+    monkeypatch.setattr(users_api, "log_audit", _noop_log_audit)
+    monkeypatch.setattr(users_api, "hash_password", lambda password: "hashed")
+    monkeypatch.setattr(users_api, "create_access_token", lambda *args: "token")
+
+    result = await accept_invite(
+        UserInviteAccept(
+            token="raw-token-value-that-is-long-enough",
+            password="qwerty123456",
+        )
+    )
+
+    membership_params = next(
+        params for params in db.params if params.get("project_id") == project_id
+    )
+    assert membership_params["role"] == "member"
+    assert result["project_id"] == project_id
+
+
+@pytest.mark.asyncio
 async def test_accept_invite_rejects_expired_invite(monkeypatch):
     invite = {
         "id": str(uuid4()),
         "org_id": str(uuid4()),
         "email": "member@example.com",
         "role": "member",
+        "project_assignments": [],
         "expires_at": datetime.now(UTC).replace(year=datetime.now(UTC).year - 1),
     }
     db = FakeDb(target_user=invite)
