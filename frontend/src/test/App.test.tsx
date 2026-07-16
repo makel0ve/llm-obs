@@ -1,4 +1,4 @@
-import { cleanup, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -8,6 +8,7 @@ import App from '../App'
 import { Overview } from '../pages/Overview'
 import { Traces } from '../pages/Traces'
 import {
+  createOrganizationUser,
   createProjectApiKey,
   getMetricsAnalytics,
   getMetricsOverview,
@@ -17,6 +18,7 @@ import {
   listFailedTasks,
   listProjectApiKeys,
   listProjectMembers,
+  listProjects,
   listTraces,
   listUsers,
   loginUser,
@@ -73,6 +75,7 @@ vi.mock('../api/dashboard', () => ({
   listAccessibleProjects: vi.fn(),
   listProjectApiKeys: vi.fn(),
   listProjectMembers: vi.fn(),
+  listProjects: vi.fn(),
   listTraces: vi.fn(),
   listUsers: vi.fn(),
   loginUser: vi.fn(),
@@ -86,6 +89,7 @@ vi.mock('../api/dashboard', () => ({
   updateProjectSettings: vi.fn(),
 }))
 
+const mockedCreateOrganizationUser = vi.mocked(createOrganizationUser)
 const mockedCreateProjectApiKey = vi.mocked(createProjectApiKey)
 const mockedGetMetricsAnalytics = vi.mocked(getMetricsAnalytics)
 const mockedGetMetricsOverview = vi.mocked(getMetricsOverview)
@@ -95,6 +99,7 @@ const mockedListAccessibleProjects = vi.mocked(listAccessibleProjects)
 const mockedListFailedTasks = vi.mocked(listFailedTasks)
 const mockedListProjectApiKeys = vi.mocked(listProjectApiKeys)
 const mockedListProjectMembers = vi.mocked(listProjectMembers)
+const mockedListProjects = vi.mocked(listProjects)
 const mockedListTraces = vi.mocked(listTraces)
 const mockedListUsers = vi.mocked(listUsers)
 const mockedLoginUser = vi.mocked(loginUser)
@@ -178,6 +183,7 @@ describe('App', () => {
       error_fingerprints: [],
     })
     mockedListAccessibleProjects.mockResolvedValue([])
+    mockedListProjects.mockResolvedValue([project])
     mockedListTraces.mockResolvedValue({
       traces: [],
       next_cursor: null,
@@ -201,6 +207,14 @@ describe('App', () => {
       is_active: true,
       api_key: 'llmobs_new_scoped_key',
       created_at: '2026-07-14T08:00:00Z',
+    })
+    mockedCreateOrganizationUser.mockResolvedValue({
+      id: 'invite-1',
+      email: 'viewer@example.com',
+      role: 'viewer',
+      project_assignments: [],
+      invite_token: 'invite-token',
+      expires_at: '2026-07-15T08:00:00Z',
     })
     mockedLoginUser.mockResolvedValue({
       access_token: 'member-token',
@@ -314,6 +328,38 @@ describe('App', () => {
     expect(screen.getAllByRole('link', { name: 'Organization Settings' })).toHaveLength(2)
   })
 
+  it('creates an organization invite with project access but no organization role selector', async () => {
+    const user = userEvent.setup()
+    mockedListAccessibleProjects.mockResolvedValue([{ ...project, project_role: 'admin' }])
+    mockedCreateOrganizationUser.mockResolvedValue({
+      id: 'invite-1',
+      email: 'teammate@example.com',
+      role: 'member',
+      project_assignments: [{ project_id: project.id, role: 'member' }],
+      invite_token: 'invite-token',
+      expires_at: '2026-07-15T08:00:00Z',
+    })
+    storeAdminSession('/admin-settings/users')
+
+    render(<App />)
+
+    expect(await screen.findByRole('heading', { name: 'Users' })).toBeInTheDocument()
+    const inviteSection = screen.getByRole('heading', { name: 'Invite user' }).closest('section')
+    expect(inviteSection).not.toBeNull()
+    expect(within(inviteSection as HTMLElement).queryByText('Role')).not.toBeInTheDocument()
+    expect(screen.getByText('Project access')).toBeInTheDocument()
+    expect(screen.getByLabelText('Production API project role')).toHaveValue('none')
+    await user.type(screen.getByPlaceholderText('teammate@example.com'), 'teammate@example.com')
+    await user.selectOptions(screen.getByLabelText('Production API project role'), 'member')
+    await user.click(screen.getByRole('button', { name: 'Create invite' }))
+
+    expect(mockedCreateOrganizationUser.mock.calls[0][0]).toEqual({
+      email: 'teammate@example.com',
+      role: 'member',
+      project_assignments: [{ project_id: project.id, role: 'member' }],
+    })
+  })
+
   it('shows project settings in project navigation after selecting a project', async () => {
     mockedListAccessibleProjects.mockResolvedValue([{ ...project, project_role: 'admin' }])
     storeAdminSession('/dashboard')
@@ -321,8 +367,42 @@ describe('App', () => {
     render(<App />)
 
     expect(await screen.findByRole('heading', { name: 'Overview' })).toBeInTheDocument()
+    expect(screen.getAllByRole('link', { name: 'Users' })).toHaveLength(2)
     expect(screen.getAllByRole('link', { name: 'Project Settings' })).toHaveLength(2)
     expect(screen.queryByRole('link', { name: 'Organization Settings' })).not.toBeInTheDocument()
+  })
+
+  it('shows only users with access to the selected project', async () => {
+    mockedListAccessibleProjects.mockResolvedValue([{ ...project, project_role: 'admin' }])
+    mockedListProjectMembers.mockResolvedValue([
+      {
+        user_id: 'project-user-1',
+        email: 'project-user@example.com',
+        org_role: 'member',
+        project_role: 'viewer',
+        is_active: true,
+        created_at: '2026-07-15T08:00:00Z',
+        updated_at: '2026-07-15T08:00:00Z',
+      },
+    ])
+    mockedListUsers.mockResolvedValue([
+      {
+        id: 'org-user-1',
+        email: 'org-only@example.com',
+        role: 'member',
+        is_active: true,
+        created_at: '2026-07-15T08:00:00Z',
+      },
+    ])
+    storeAdminSession('/dashboard/users')
+
+    render(<App />)
+
+    expect(await screen.findByRole('heading', { name: 'Users' })).toBeInTheDocument()
+    expect(await screen.findByText('project-user@example.com')).toBeInTheDocument()
+    expect(screen.queryByText('org-only@example.com')).not.toBeInTheDocument()
+    expect(mockedListProjectMembers).toHaveBeenCalledWith(project.id)
+    expect(mockedListUsers).not.toHaveBeenCalled()
   })
 
   it('logs out and clears stored session values', async () => {

@@ -18,6 +18,7 @@ const Overview = lazy(() => import('./pages/Overview').then(module => ({ default
 const Traces = lazy(() => import('./pages/Traces').then(module => ({ default: module.Traces })))
 const TraceDetail = lazy(() => import('./pages/TraceDetail').then(module => ({ default: module.TraceDetail })))
 const Alerts = lazy(() => import('./pages/Alerts').then(module => ({ default: module.Alerts })))
+const ProjectUsers = lazy(() => import('./pages/ProjectUsers').then(module => ({ default: module.ProjectUsers })))
 const ProjectSettings = lazy(() => import('./pages/ProjectSettings').then(module => ({ default: module.ProjectSettings })))
 const OrganizationSettings = lazy(() => import('./pages/OrganizationSettings').then(module => ({ default: module.OrganizationSettings })))
 const Pricing = lazy(() => import('./pages/Pricing').then(module => ({ default: module.Pricing })))
@@ -37,6 +38,7 @@ const dashboardNavItems: DashboardNavItem[] = [
   { label: 'Overview', path: '/dashboard', end: true },
   { label: 'Traces', path: '/dashboard/traces' },
   { label: 'Alerts', path: '/dashboard/alerts' },
+  { label: 'Users', path: '/dashboard/users', adminOnly: true },
   { label: 'Project Settings', path: '/dashboard/project-settings', adminOnly: true },
 ]
 
@@ -729,6 +731,7 @@ export default function App() {
             <Route path="dashboard/traces" element={<LazyPage><Traces projectId={projectId} /></LazyPage>} />
             <Route path="dashboard/traces/:traceId" element={<LazyPage><TraceDetail projectId={projectId} /></LazyPage>} />
             <Route path="dashboard/alerts" element={<LazyPage><Alerts projectId={projectId} role={role} /></LazyPage>} />
+            <Route path="dashboard/users" element={<AdminRoute role={role}><LazyPage><ProjectUsers projectId={projectId} /></LazyPage></AdminRoute>} />
             <Route path="dashboard/project-settings" element={<AdminRoute role={role}><LazyPage><ProjectSettings projectId={projectId} /></LazyPage></AdminRoute>} />
             <Route path="admin-settings" element={<AdminRoute role={role}><LazyPage><OrganizationSettings /></LazyPage></AdminRoute>}>
               <Route index element={<Navigate to="users" replace />} />
@@ -738,7 +741,6 @@ export default function App() {
             </Route>
             <Route path="dashboard/admin-settings/*" element={<Navigate to="/admin-settings" replace />} />
             <Route path="dashboard/pricing" element={<Navigate to="/admin-settings/pricing" replace />} />
-            <Route path="dashboard/users" element={<Navigate to="/admin-settings/users" replace />} />
             <Route path="dashboard/audit-log" element={<Navigate to="/admin-settings/audit-log" replace />} />
           </Route>
           <Route path="*" element={<Navigate to="/" replace />} />

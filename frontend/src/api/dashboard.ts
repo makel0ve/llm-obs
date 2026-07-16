@@ -315,12 +315,20 @@ export type OrganizationUser = {
 export type OrganizationUserCreate = {
   email: string
   role: UserRole
+  project_assignments: Array<{
+    project_id: string
+    role: ProjectMembershipRole
+  }>
 }
 
 export type OrganizationInvite = {
   id: string
   email: string
   role: UserRole
+  project_assignments: Array<{
+    project_id: string
+    role: ProjectMembershipRole
+  }>
   invite_token: string
   expires_at: string
 }
