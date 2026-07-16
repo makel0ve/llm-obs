@@ -5,10 +5,13 @@ import {
   createOrganizationUser,
   dashboardQueryKeys,
   deleteOrganizationUser,
+  listProjects,
   listUsers,
   updateOrganizationUserRole,
   type OrganizationInvite,
   type OrganizationUser,
+  type ProjectMembershipRole,
+  type ProjectRecord,
   type UserRole,
 } from '../api/dashboard'
 
@@ -18,6 +21,14 @@ const roleOptions: Array<{ value: UserRole; label: string }> = [
   { value: 'viewer', label: 'Viewer' },
 ]
 
+type ProjectAccessSelectionRole = 'none' | ProjectMembershipRole
+
+const projectRoleOptions: Array<{ value: ProjectAccessSelectionRole; label: string }> = [
+  { value: 'none', label: 'No access' },
+  { value: 'viewer', label: 'Viewer' },
+  { value: 'member', label: 'Member' },
+]
+
 function formatDate(value?: string | null) {
   if (!value) return '-'
 
@@ -25,12 +36,6 @@ function formatDate(value?: string | null) {
   if (Number.isNaN(date.getTime())) return '-'
 
   return format(date, 'dd MMM yyyy HH:mm')
-}
-
-function roleHelp(role: UserRole) {
-  if (role === 'admin') return 'Full access, including users, pricing, API key rotation and retention.'
-  if (role === 'member') return 'Can inspect data and manage alert workflows.'
-  return 'Read-only access to project observability data.'
 }
 
 function Alert({
@@ -66,7 +71,7 @@ function getErrorDetail(error: unknown) {
 export function Users({ role }: { role: UserRole }) {
   const queryClient = useQueryClient()
   const [email, setEmail] = useState('')
-  const [newRole, setNewRole] = useState<UserRole>('member')
+  const [projectAssignments, setProjectAssignments] = useState<Record<string, ProjectMembershipRole>>({})
   const [validationError, setValidationError] = useState('')
   const [message, setMessage] = useState('')
   const [createdInvite, setCreatedInvite] = useState<OrganizationInvite | null>(null)
@@ -81,7 +86,14 @@ export function Users({ role }: { role: UserRole }) {
     enabled: canManageUsers,
   })
 
+  const projectsQuery = useQuery({
+    queryKey: dashboardQueryKeys.projects(),
+    queryFn: listProjects,
+    enabled: canManageUsers,
+  })
+
   const users = useMemo(() => usersQuery.data ?? [], [usersQuery.data])
+  const projects = useMemo(() => projectsQuery.data ?? [], [projectsQuery.data])
 
   const invalidateUsers = async () => {
     await queryClient.invalidateQueries({ queryKey: dashboardQueryKeys.users() })
@@ -91,7 +103,7 @@ export function Users({ role }: { role: UserRole }) {
     mutationFn: createOrganizationUser,
     onSuccess: async invite => {
       setEmail('')
-      setNewRole('member')
+      setProjectAssignments({})
       setValidationError('')
       setCreatedInvite(invite)
       setMessage('Invite created.')
@@ -149,7 +161,35 @@ export function Users({ role }: { role: UserRole }) {
 
     createUser.mutate({
       email: email.trim(),
-      role: newRole,
+      role: 'member',
+      project_assignments: Object.entries(projectAssignments).map(([projectId, role]) => ({
+        project_id: projectId,
+        role,
+      })),
+    })
+  }
+
+  const toggleProjectAssignment = (project: ProjectRecord, checked: boolean) => {
+    setProjectAssignments(current => {
+      const next = { ...current }
+      if (checked) {
+        next[project.id] = next[project.id] ?? 'viewer'
+      } else {
+        delete next[project.id]
+      }
+      return next
+    })
+  }
+
+  const setProjectAssignmentRole = (projectId: string, role: ProjectAccessSelectionRole) => {
+    setProjectAssignments(current => {
+      const next = { ...current }
+      if (role === 'none') {
+        delete next[projectId]
+      } else {
+        next[projectId] = role
+      }
+      return next
     })
   }
 
@@ -203,45 +243,88 @@ export function Users({ role }: { role: UserRole }) {
 
       <section className="rounded-lg border border-gray-200 bg-white p-4">
         <h2 className="text-lg font-semibold text-gray-950">Invite user</h2>
-        <form onSubmit={submitCreate} className="mt-4 grid grid-cols-1 gap-4 xl:grid-cols-[minmax(220px,1fr)_180px_auto]">
-          <label className="block">
-            <span className="text-sm font-medium text-gray-700">Email</span>
-            <input
-              type="email"
-              value={email}
-              onChange={event => {
-                setValidationError('')
-                setEmail(event.target.value)
-              }}
-              className="mt-2 min-h-10 w-full rounded-md border border-gray-300 bg-white px-3 text-sm text-gray-900"
-              placeholder="teammate@example.com"
-              maxLength={255}
-              required
-            />
-          </label>
-          <label className="block">
-            <span className="text-sm font-medium text-gray-700">Role</span>
-            <select
-              value={newRole}
-              onChange={event => setNewRole(event.target.value as UserRole)}
-              className="mt-2 min-h-10 w-full rounded-md border border-gray-300 bg-white px-3 text-sm text-gray-900"
-            >
-              {roleOptions.map(option => (
-                <option key={option.value} value={option.value}>{option.label}</option>
-              ))}
-            </select>
-          </label>
-          <div className="flex items-end">
-            <button
-              type="submit"
-              disabled={createUser.isPending}
-              className="min-h-10 w-full rounded-md bg-gray-900 px-4 text-sm font-medium text-white hover:bg-gray-700 disabled:cursor-not-allowed disabled:opacity-60 xl:w-auto"
-            >
-              {createUser.isPending ? 'Creating...' : 'Create invite'}
-            </button>
+        <form onSubmit={submitCreate} className="mt-4 space-y-5">
+          <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(220px,1fr)_auto]">
+            <label className="block">
+              <span className="text-sm font-medium text-gray-700">Email</span>
+              <input
+                type="email"
+                value={email}
+                onChange={event => {
+                  setValidationError('')
+                  setEmail(event.target.value)
+                }}
+                className="mt-2 min-h-10 w-full rounded-md border border-gray-300 bg-white px-3 text-sm text-gray-900"
+                placeholder="teammate@example.com"
+                maxLength={255}
+                required
+              />
+            </label>
+            <div className="flex items-end">
+              <button
+                type="submit"
+                disabled={createUser.isPending}
+                className="min-h-10 w-full rounded-md bg-gray-900 px-4 text-sm font-medium text-white hover:bg-gray-700 disabled:cursor-not-allowed disabled:opacity-60 xl:w-auto"
+              >
+                {createUser.isPending ? 'Creating...' : 'Create invite'}
+              </button>
+            </div>
+          </div>
+          <div>
+            <div className="flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
+              <div>
+                <h3 className="text-sm font-semibold text-gray-950">Project access</h3>
+                <p className="mt-1 text-sm text-gray-500">Choose only projects this user should see after accepting the invite.</p>
+              </div>
+              {projectsQuery.isLoading && <span className="text-sm text-gray-500">Loading projects...</span>}
+            </div>
+            {projectsQuery.isError && (
+              <div className="mt-3">
+                <Alert tone="error">Could not load projects for access assignment.</Alert>
+              </div>
+            )}
+            {!projectsQuery.isLoading && !projectsQuery.isError && projects.length === 0 && (
+              <div className="mt-3 rounded-lg border border-dashed border-gray-300 bg-gray-50 p-4 text-sm text-gray-600">
+                No projects are available for assignment.
+              </div>
+            )}
+            {projects.length > 0 && (
+              <div className="mt-3 grid grid-cols-1 gap-3 lg:grid-cols-2">
+                {projects.map(project => {
+                  const selectedRole = projectAssignments[project.id]
+                  return (
+                    <div key={project.id} className="rounded-lg border border-gray-200 bg-gray-50 p-3">
+                      <div className="flex items-start justify-between gap-3">
+                        <label className="flex min-w-0 items-start gap-3">
+                          <input
+                            type="checkbox"
+                            checked={Boolean(selectedRole)}
+                            onChange={event => toggleProjectAssignment(project, event.target.checked)}
+                            className="mt-1 h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                          />
+                          <span className="min-w-0">
+                            <span className="block truncate text-sm font-medium text-gray-950">{project.name}</span>
+                            <span className="mt-1 block text-xs text-gray-500">Retention {project.retention_days}d</span>
+                          </span>
+                        </label>
+                        <select
+                          value={selectedRole ?? 'none'}
+                          onChange={event => setProjectAssignmentRole(project.id, event.target.value as ProjectAccessSelectionRole)}
+                          className="min-h-9 w-32 rounded-md border border-gray-300 bg-white px-2 text-sm text-gray-900"
+                          aria-label={`${project.name} project role`}
+                        >
+                          {projectRoleOptions.map(option => (
+                            <option key={option.value} value={option.value}>{option.label}</option>
+                          ))}
+                        </select>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
           </div>
         </form>
-        <p className="mt-3 text-sm text-gray-500">{roleHelp(newRole)}</p>
         <div className="mt-4 space-y-3">
           {validationError && <Alert tone="error">{validationError}</Alert>}
           {message && <Alert tone="success">{message}</Alert>}

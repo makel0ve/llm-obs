@@ -1,4 +1,5 @@
 import hashlib
+import json
 import secrets
 import uuid
 from datetime import UTC, datetime, timedelta
@@ -19,6 +20,54 @@ INVITE_TTL_HOURS = 24
 
 def hash_invite_token(token: str) -> str:
     return hashlib.sha256(token.encode()).hexdigest()
+
+
+def serialize_project_assignments(value: Any) -> list[dict[str, str]]:
+    if not value:
+        return []
+
+    if not isinstance(value, list):
+        raise HTTPException(400, "Invite project assignments are invalid")
+
+    assignments: list[dict[str, str]] = []
+    for item in value:
+        if not isinstance(item, dict):
+            raise HTTPException(400, "Invite project assignments are invalid")
+        project_id = item.get("project_id")
+        role = item.get("role")
+        if not isinstance(project_id, str) or role not in {"member", "viewer"}:
+            raise HTTPException(400, "Invite project assignments are invalid")
+        assignments.append({"project_id": project_id, "role": role})
+    return assignments
+
+
+async def validate_invite_project_assignments(
+    db: Any, body: UserInviteCreate, org_id: str
+) -> list[dict[str, str]]:
+    assignments = [
+        assignment.model_dump(mode="json") for assignment in body.project_assignments
+    ]
+    if not assignments:
+        return []
+
+    project_ids = [assignment["project_id"] for assignment in assignments]
+    result = await db.execute(
+        text(
+            """
+            SELECT id
+            FROM projects
+            WHERE org_id = :org
+                AND is_active = true
+                AND id = ANY(CAST(:project_ids AS uuid[]))
+            """
+        ),
+        {"org": org_id, "project_ids": project_ids},
+    )
+    found = {str(row["id"]) for row in result.mappings().all()}
+    if found != set(project_ids):
+        raise HTTPException(400, "One or more selected projects are invalid")
+
+    return assignments
 
 
 @router.get("")
@@ -56,6 +105,9 @@ async def create_invite(
             if exists.one_or_none():
                 raise HTTPException(409, "Email already registered")
 
+            project_assignments = await validate_invite_project_assignments(
+                db, body, user["org_id"]
+            )
             invite_id = str(uuid.uuid4())
             raw_token = secrets.token_urlsafe(32)
             token_hash = hash_invite_token(raw_token)
@@ -65,10 +117,10 @@ async def create_invite(
                     """
                     INSERT INTO organization_invites
                     (id, org_id, email, role, token_hash, expires_at,
-                     created_by_user_id)
+                     created_by_user_id, project_assignments)
                     VALUES (:id, :org, :email, :role, :token_hash, :expires_at,
-                            :created_by)
-                    RETURNING id, email, role, expires_at
+                            :created_by, CAST(:project_assignments AS jsonb))
+                    RETURNING id, email, role, project_assignments, expires_at
                     """
                 ),
                 {
@@ -79,10 +131,14 @@ async def create_invite(
                     "token_hash": token_hash,
                     "expires_at": expires_at,
                     "created_by": user["sub"],
+                    "project_assignments": json.dumps(project_assignments),
                 },
             )
 
             invite = dict(result.mappings().one())
+            invite["project_assignments"] = serialize_project_assignments(
+                invite.get("project_assignments")
+            )
             invite["invite_token"] = raw_token
 
     await log_audit(
@@ -90,7 +146,11 @@ async def create_invite(
         user_id=user["sub"],
         action="user.invite.create",
         resource_id=invite["id"],
-        metadata={"email": body.email, "role": body.role},
+        metadata={
+            "email": body.email,
+            "role": body.role,
+            "project_assignment_count": len(invite["project_assignments"]),
+        },
     )
 
     return invite
@@ -106,7 +166,7 @@ async def accept_invite(body: UserInviteAccept) -> dict[str, Any]:
             current = await db.execute(
                 text(
                     """
-                    SELECT id, org_id, email, role, expires_at
+                    SELECT id, org_id, email, role, project_assignments, expires_at
                     FROM organization_invites
                     WHERE token_hash = :token_hash AND accepted_at IS NULL
                     FOR UPDATE
@@ -144,6 +204,30 @@ async def accept_invite(body: UserInviteAccept) -> dict[str, Any]:
                     "role": invite["role"],
                 },
             )
+            project_assignments = serialize_project_assignments(
+                invite["project_assignments"]
+            )
+            for assignment in project_assignments:
+                await db.execute(
+                    text(
+                        """
+                        INSERT INTO project_memberships (
+                            id, project_id, user_id, role
+                        )
+                        VALUES (:id, :project_id, :user_id, :role)
+                        ON CONFLICT (project_id, user_id)
+                        DO UPDATE SET
+                            role = EXCLUDED.role,
+                            updated_at = TIMEZONE('utc', now())
+                        """
+                    ),
+                    {
+                        "id": str(uuid.uuid4()),
+                        "project_id": assignment["project_id"],
+                        "user_id": user_id,
+                        "role": assignment["role"],
+                    },
+                )
             await db.execute(
                 text(
                     """
@@ -162,13 +246,26 @@ async def accept_invite(body: UserInviteAccept) -> dict[str, Any]:
                 {"org": str(invite["org_id"])},
             )
             default_project = project.mappings().one_or_none()
+            selected_project_id = (
+                project_assignments[0]["project_id"]
+                if project_assignments
+                else str(default_project["id"])
+                if default_project
+                else None
+            )
 
     await log_audit(
         org_id=str(invite["org_id"]),
         user_id=user_id,
         action="user.invite.accept",
         resource_id=str(invite["id"]),
-        metadata={"email": invite["email"], "role": invite["role"]},
+        metadata={
+            "email": invite["email"],
+            "role": invite["role"],
+            "project_assignment_count": len(
+                serialize_project_assignments(invite["project_assignments"])
+            ),
+        },
     )
 
     return {
@@ -177,7 +274,7 @@ async def accept_invite(body: UserInviteAccept) -> dict[str, Any]:
         ),
         "token_type": "bearer",
         "role": invite["role"],
-        "project_id": str(default_project["id"]) if default_project else None,
+        "project_id": selected_project_id,
     }
 
 
