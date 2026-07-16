@@ -1,6 +1,19 @@
 # CHANGELOG
 
 
+## v0.40.3 (2026-07-16)
+
+### Bug Fixes
+
+- Support native otlp ids
+  ([`1bf429a`](https://github.com/makel0ve/llm-obs/commit/1bf429af3b76155477edd2979e75e7538871b31a))
+
+### Chores
+
+- Trigger ci for release sync
+  ([`4e32287`](https://github.com/makel0ve/llm-obs/commit/4e32287164c6be03a993a769f1c8886bd33ece9d))
+
+
 ## v0.40.2 (2026-07-16)
 
 ### Bug Fixes
