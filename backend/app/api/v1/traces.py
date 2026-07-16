@@ -1,5 +1,7 @@
 import asyncio
+from collections.abc import AsyncIterator
 from datetime import datetime
+from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
@@ -14,24 +16,27 @@ router = APIRouter(prefix="/v1", tags=["traces"])
 
 @router.get("/traces")
 async def list_traces(
-    project=Depends(get_project_from_token_or_api_key),
+    project: Any = Depends(get_project_from_token_or_api_key),
     from_dt: datetime | None = Query(default=None),
     to_dt: datetime | None = Query(default=None),
     model: str | None = Query(default=None, max_length=100),
     status: str | None = Query(default=None, pattern="^(ok|error)$"),
     cursor: str | None = Query(default=None),
     page_size: int = Query(default=50, ge=1, le=200),
-):
+) -> dict[str, Any]:
     service = TraceService()
-    traces, next_cursor = await service.list_with_cursor(
-        project_id=str(project["id"]),
-        from_dt=from_dt,
-        to_dt=to_dt,
-        model=model,
-        status=status,
-        cursor=cursor,
-        limit=page_size,
-    )
+    try:
+        traces, next_cursor = await service.list_with_cursor(
+            project_id=str(project["id"]),
+            from_dt=from_dt,
+            to_dt=to_dt,
+            model=model,
+            status=status,
+            cursor=cursor,
+            limit=page_size,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     return {
         "traces": traces,
@@ -43,10 +48,10 @@ async def list_traces(
 @router.get("/traces/{trace_id}")
 async def get_trace_detail(
     trace_id: str,
-    project=Depends(get_project_from_token_or_api_key),
+    project: Any = Depends(get_project_from_token_or_api_key),
     include_payload: bool = Query(default=False),
     started_at: datetime | None = Query(default=None),
-):
+) -> dict[str, Any]:
     service = TraceService()
     trace = await service.get_with_spans(
         trace_id=trace_id,
@@ -76,10 +81,12 @@ async def get_trace_detail(
 
 
 @router.get("/stream/spans")
-async def stream_spans(project=Depends(get_project_from_token_or_api_key)):
+async def stream_spans(
+    project: Any = Depends(get_project_from_token_or_api_key),
+) -> StreamingResponse:
     queue = pubsub_manager.subscribe(str(project["id"]))
 
-    async def generate():
+    async def generate() -> AsyncIterator[str]:
         try:
             while True:
                 try:

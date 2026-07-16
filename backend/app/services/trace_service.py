@@ -1,9 +1,49 @@
 import base64
+import binascii
+import json
 from datetime import datetime
+from typing import Any
 
 from sqlalchemy import text
 
 from app.core.db import get_db
+
+
+def encode_trace_cursor(started_at: datetime, trace_id: str) -> str:
+    payload = {
+        "started_at": started_at.isoformat(),
+        "id": trace_id,
+    }
+    raw = json.dumps(payload, separators=(",", ":")).encode()
+
+    return base64.urlsafe_b64encode(raw).decode()
+
+
+def decode_trace_cursor(cursor: str) -> tuple[datetime, str]:
+    try:
+        raw = base64.urlsafe_b64decode(cursor.encode()).decode()
+    except (binascii.Error, UnicodeDecodeError) as exc:
+        raise ValueError("Invalid pagination cursor") from exc
+
+    try:
+        payload = json.loads(raw)
+        cursor_dt = datetime.fromisoformat(payload["started_at"])
+        cursor_id = str(payload["id"])
+    except (KeyError, TypeError, ValueError, json.JSONDecodeError):
+        cursor_dt, cursor_id = _decode_legacy_trace_cursor(raw)
+
+    if not cursor_id:
+        raise ValueError("Invalid pagination cursor")
+
+    return cursor_dt, cursor_id
+
+
+def _decode_legacy_trace_cursor(raw: str) -> tuple[datetime, str]:
+    try:
+        dt_str, cursor_id = raw.rsplit(":", 1)
+        return datetime.fromisoformat(dt_str), cursor_id
+    except ValueError as exc:
+        raise ValueError("Invalid pagination cursor") from exc
 
 
 class TraceService:
@@ -13,16 +53,10 @@ class TraceService:
         cursor: str | None = None,
         limit: int = 50,
         **filters: str | datetime | None,
-    ) -> tuple[list, str | None]:
+    ) -> tuple[list[dict[str, Any]], str | None]:
         cursor_dt, cursor_id = None, None
         if cursor:
-            try:
-                raw = base64.b64decode(cursor).decode()
-                dt_str, cursor_id = raw.split(":", 1)
-                cursor_dt = datetime.fromisoformat(dt_str)
-
-            except Exception:
-                raise ValueError("Invalid pagination cursor")
+            cursor_dt, cursor_id = decode_trace_cursor(cursor)
 
         conditions = ["project_id = :project_id"]
         params = {"project_id": project_id, "limit": limit + 1}
@@ -63,12 +97,11 @@ class TraceService:
             rows = result.mappings().all()
 
         has_more = len(rows) > limit
-        items = list(rows[:limit])
+        items = [dict(row) for row in rows[:limit]]
         next_cursor = None
         if has_more and items:
             last = items[-1]
-            raw = f"{last['started_at'].isoformat()}:{last['id']}"
-            next_cursor = base64.b64encode(raw.encode()).decode()
+            next_cursor = encode_trace_cursor(last["started_at"], str(last["id"]))
 
         return items, next_cursor
 
@@ -77,7 +110,7 @@ class TraceService:
         trace_id: str,
         project_id: str,
         started_at: datetime | None = None,
-    ) -> dict | None:
+    ) -> dict[str, Any] | None:
         async with get_db(project_id=project_id) as db:
             if not started_at:
                 r = await db.execute(
