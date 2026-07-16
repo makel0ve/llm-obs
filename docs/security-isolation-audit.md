@@ -47,6 +47,21 @@ Block 01 audit result for the next hardening release.
 - Keep separate migration-owner and runtime-application roles as the production
   deployment direction when stronger role separation is needed.
 
+## Block 33 Closure
+
+Block 33 converts the runtime-role recommendation into the Docker and settings
+contract:
+
+- `DATABASE_URL` is the runtime application role and is rejected in production if
+  it uses `POSTGRES_USER` or `postgres`.
+- `MIGRATION_DATABASE_URL` is the Alembic owner/admin role and is used by
+  `backend/alembic/env.py`.
+- Docker Compose defines `POSTGRES_APP_USER` and `POSTGRES_APP_PASSWORD`; new
+  Postgres volumes create the app role with `NOSUPERUSER NOBYPASSRLS`.
+- The Block 33 migration grants current and future `public` schema table and
+  sequence privileges to `POSTGRES_APP_USER` when that environment variable is
+  available.
+
 ## Verification Evidence
 
 The Docker-backed SQL check returned:
