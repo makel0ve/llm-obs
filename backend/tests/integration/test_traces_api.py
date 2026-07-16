@@ -77,6 +77,49 @@ async def test_trace_detail_returns_parent_span_id(client, db_session):
 
 
 @pytest.mark.asyncio
+async def test_trace_cursor_handles_timestamp_delimiters(client, db_session):
+    project = await create_test_project(db_session)
+    await create_test_span(db_session, project_id=project.id, count=1)
+    await create_test_span(db_session, project_id=project.id, count=1)
+
+    first_page = await client.get(
+        "/v1/traces",
+        params={"page_size": 1},
+        headers={"X-API-Key": project.raw_key},
+    )
+
+    assert first_page.status_code == 200
+    first_payload = first_page.json()
+    assert first_payload["has_more"] is True
+    assert first_payload["next_cursor"]
+
+    second_page = await client.get(
+        "/v1/traces",
+        params={"page_size": 1, "cursor": first_payload["next_cursor"]},
+        headers={"X-API-Key": project.raw_key},
+    )
+
+    assert second_page.status_code == 200
+    second_payload = second_page.json()
+    assert len(second_payload["traces"]) == 1
+    assert second_payload["traces"][0]["id"] != first_payload["traces"][0]["id"]
+
+
+@pytest.mark.asyncio
+async def test_trace_cursor_rejects_invalid_cursor(client, db_session):
+    project = await create_test_project(db_session)
+
+    response = await client.get(
+        "/v1/traces",
+        params={"cursor": "not-a-valid-cursor"},
+        headers={"X-API-Key": project.raw_key},
+    )
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "Invalid pagination cursor"
+
+
+@pytest.mark.asyncio
 async def test_metrics_overview_isolation_between_projects(client, db_session):
     project_a = await create_test_project(db_session)
     project_b = await create_test_project(db_session)
