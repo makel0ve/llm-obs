@@ -1,6 +1,22 @@
 # CHANGELOG
 
 
+## v0.40.2 (2026-07-16)
+
+### Bug Fixes
+
+- Enforce runtime database isolation
+  ([`47f415b`](https://github.com/makel0ve/llm-obs/commit/47f415b0a1c3a97ac2840ff53b883d73eb268447))
+
+- Enforce runtime database isolation
+  ([`e1709c5`](https://github.com/makel0ve/llm-obs/commit/e1709c5209c3e8326bb2feb6827cdcc706085113))
+
+### Chores
+
+- Trigger ci for release sync
+  ([`fe038c7`](https://github.com/makel0ve/llm-obs/commit/fe038c7ebf25ad40e7b3216d5b439bc4f62c69dc))
+
+
 ## v0.40.1 (2026-07-16)
 
 ### Bug Fixes
