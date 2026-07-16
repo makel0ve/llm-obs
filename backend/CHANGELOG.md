@@ -1,6 +1,19 @@
 # CHANGELOG
 
 
+## v0.39.0 (2026-07-16)
+
+### Chores
+
+- Trigger ci for release sync
+  ([`f2ddc94`](https://github.com/makel0ve/llm-obs/commit/f2ddc9487f584cd7352d07f9c8c421f42293a941))
+
+### Features
+
+- Assign projects during user creation
+  ([`e2441ca`](https://github.com/makel0ve/llm-obs/commit/e2441caec9bd7770ad3d27cde7580f0b939aeae6))
+
+
 ## v0.38.0 (2026-07-15)
 
 ### Chores
