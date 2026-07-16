@@ -2,7 +2,7 @@ import json
 import time
 import uuid
 from datetime import datetime
-from typing import Any, TypedDict
+from typing import Any, TypedDict, cast
 
 import structlog
 from dateutil.parser import parse as parse_dt
@@ -162,22 +162,14 @@ async def process_span_batch(
                 ):
                     trace_map[tid] = span
 
+            stable_trace_starts: dict[Any, datetime] = {}
             for tid, span in trace_map.items():
-                await db.execute(
-                    text(
-                        """
-                    INSERT INTO traces (id, project_id, started_at, status, span_count,
-                        total_tokens, total_cost_usd)
-                    VALUES (:id, :project_id, :started_at, :status, 0, 0, 0)
-                    ON CONFLICT (id, started_at) DO NOTHING
-                    """
-                    ),
-                    {
-                        "id": tid,
-                        "project_id": span["project_id"],
-                        "started_at": span["started_at"],
-                        "status": span["status"],
-                    },
+                stable_trace_starts[tid] = await ensure_trace_row(
+                    db=db,
+                    project_id=uuid.UUID(project_id),
+                    trace_id=tid,
+                    started_at=span["started_at"],
+                    status=span["status"],
                 )
 
             await db.commit()
@@ -204,7 +196,7 @@ async def process_span_batch(
             await update_trace_aggregates.kiq(
                 project_id=project_id,
                 trace_id=str(trace_id),
-                started_at=span["started_at"],
+                started_at=stable_trace_starts[trace_id].isoformat(),
             )
 
         await check_batch_anomalies.kiq(project_id=project_id, spans=spans)
@@ -226,6 +218,72 @@ async def process_span_batch(
         ingest_batches_failed.labels(stage="worker").inc()
         ingest_batch_processing_s.observe(time.perf_counter() - started_at_monotonic)
         raise
+
+
+async def ensure_trace_row(
+    db: Any,
+    project_id: uuid.UUID,
+    trace_id: uuid.UUID,
+    started_at: datetime,
+    status: str,
+) -> datetime:
+    result = await db.execute(
+        text(
+            """
+            SELECT started_at
+            FROM traces
+            WHERE project_id = :project_id AND id = :trace_id
+            ORDER BY started_at ASC
+            LIMIT 1
+            """
+        ),
+        {"project_id": project_id, "trace_id": trace_id},
+    )
+    row = result.mappings().one_or_none()
+    existing_started_at_raw = row.get("started_at") if row is not None else None
+    if existing_started_at_raw is None:
+        await db.execute(
+            text(
+                """
+                INSERT INTO traces (
+                    id, project_id, started_at, status, span_count,
+                    total_tokens, total_cost_usd
+                )
+                VALUES (:id, :project_id, :started_at, :status, 0, 0, 0)
+                ON CONFLICT (id, started_at) DO NOTHING
+                """
+            ),
+            {
+                "id": trace_id,
+                "project_id": project_id,
+                "started_at": started_at,
+                "status": status,
+            },
+        )
+        return started_at
+
+    existing_started_at = cast(datetime, existing_started_at_raw)
+    if existing_started_at <= started_at:
+        return existing_started_at
+
+    await db.execute(
+        text(
+            """
+            UPDATE traces
+            SET started_at = :started_at
+            WHERE project_id = :project_id
+                AND id = :trace_id
+                AND started_at = :existing_started_at
+            """
+        ),
+        {
+            "project_id": project_id,
+            "trace_id": trace_id,
+            "started_at": started_at,
+            "existing_started_at": existing_started_at,
+        },
+    )
+    return started_at
 
 
 @broker.task
