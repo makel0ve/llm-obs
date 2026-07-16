@@ -1,6 +1,19 @@
 # CHANGELOG
 
 
+## v0.41.4 (2026-07-16)
+
+### Bug Fixes
+
+- Update alert cooldown after delivery
+  ([`50e61c8`](https://github.com/makel0ve/llm-obs/commit/50e61c8a41ee4b41d7592f64e4c8d6e762954b07))
+
+### Chores
+
+- Trigger ci for release sync
+  ([`7b5b54f`](https://github.com/makel0ve/llm-obs/commit/7b5b54f4eced625aa8c37ddbd93044d3bbf5a6a1))
+
+
 ## v0.41.3 (2026-07-16)
 
 ### Bug Fixes
