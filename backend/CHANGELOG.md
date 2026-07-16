@@ -1,6 +1,19 @@
 # CHANGELOG
 
 
+## v0.41.0 (2026-07-16)
+
+### Chores
+
+- Trigger ci for release sync
+  ([`fb19985`](https://github.com/makel0ve/llm-obs/commit/fb1998569b2b0ec29e51e93afb6e480b4f31077f))
+
+### Features
+
+- Report sdk span drops
+  ([`9c1fb03`](https://github.com/makel0ve/llm-obs/commit/9c1fb03e4c67ff56ac11b2b3d3a3c87eb6fc5426))
+
+
 ## v0.40.4 (2026-07-16)
 
 ### Bug Fixes
