@@ -116,7 +116,7 @@ class TraceService:
                 r = await db.execute(
                     text(
                         "SELECT started_at FROM traces WHERE id = :tid "
-                        "AND project_id = :pid LIMIT 1"
+                        "AND project_id = :pid ORDER BY started_at ASC LIMIT 1"
                     ),
                     {"tid": trace_id, "pid": project_id},
                 )
