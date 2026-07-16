@@ -1,6 +1,10 @@
+from datetime import UTC, datetime, timedelta
+from uuid import uuid4
+
 import pytest
 from sqlalchemy import text
 
+from app.workers.process_span import update_trace_aggregates
 from tests.factories import create_test_project, create_test_span, make_span_payload
 
 
@@ -74,6 +78,99 @@ async def test_trace_detail_returns_parent_span_id(client, db_session):
     assert r.status_code == 200
     child = next(span for span in r.json()["spans"] if span["id"] == child_span["id"])
     assert child["parent_span_id"] == parent_span["id"]
+
+
+@pytest.mark.asyncio
+async def test_trace_aggregate_ended_at_uses_span_end_times(db_session):
+    project = await create_test_project(db_session)
+    trace_id = str(uuid4())
+    trace_started_at = datetime(2026, 7, 16, 10, 0, 0, tzinfo=UTC)
+    long_span_started_at = trace_started_at
+    short_span_started_at = trace_started_at + timedelta(seconds=5)
+    expected_ended_at = trace_started_at + timedelta(seconds=10)
+
+    await db_session.execute(
+        text("SELECT set_config('app.current_project_id', :project_id, true)"),
+        {"project_id": project.id},
+    )
+    await db_session.execute(
+        text(
+            """
+            INSERT INTO traces (
+                id, project_id, started_at, ended_at, total_tokens,
+                total_cost_usd, span_count, status
+            ) VALUES (
+                :id, :project_id, :started_at, :ended_at, 0, 0, 0, 'ok'
+            )
+            """
+        ),
+        {
+            "id": trace_id,
+            "project_id": project.id,
+            "started_at": trace_started_at,
+            "ended_at": trace_started_at,
+        },
+    )
+    await db_session.execute(
+        text(
+            """
+            INSERT INTO spans (
+                id, trace_id, project_id, name, provider, model,
+                input_tokens, output_tokens, cost_usd, latency_ms,
+                status, started_at, metadata
+            ) VALUES
+            (
+                :long_span_id, :trace_id, :project_id, 'long', 'openai', 'gpt-4o',
+                10, 5, 0, 10000, 'ok', :long_span_started_at, '{}'
+            ),
+            (
+                :short_span_id, :trace_id, :project_id, 'short', 'openai', 'gpt-4o',
+                1, 1, 0, 1000, 'ok', :short_span_started_at, '{}'
+            )
+            """
+        ),
+        {
+            "long_span_id": str(uuid4()),
+            "short_span_id": str(uuid4()),
+            "trace_id": trace_id,
+            "project_id": project.id,
+            "long_span_started_at": long_span_started_at,
+            "short_span_started_at": short_span_started_at,
+        },
+    )
+    await db_session.commit()
+
+    await update_trace_aggregates.original_func(
+        project_id=project.id,
+        trace_id=trace_id,
+        started_at=trace_started_at.isoformat(),
+    )
+
+    await db_session.execute(
+        text("SELECT set_config('app.current_project_id', :project_id, true)"),
+        {"project_id": project.id},
+    )
+    result = await db_session.execute(
+        text(
+            """
+            SELECT ended_at, total_tokens, span_count
+            FROM traces
+            WHERE id = :trace_id
+                AND project_id = :project_id
+                AND started_at = :started_at
+            """
+        ),
+        {
+            "trace_id": trace_id,
+            "project_id": project.id,
+            "started_at": trace_started_at,
+        },
+    )
+    row = result.mappings().one()
+
+    assert row["ended_at"] == expected_ended_at
+    assert row["total_tokens"] == 17
+    assert row["span_count"] == 2
 
 
 @pytest.mark.asyncio
