@@ -4,6 +4,8 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field, ValidationInfo, field_validator
 
+OTLP_ID_NAMESPACE = uuid.UUID("61f8f03a-8b8b-4f2d-a76f-68162f24f2b4")
+
 ALLOWED_PROVIDERS = frozenset(
     {
         "openai",
@@ -19,16 +21,28 @@ ALLOWED_PROVIDERS = frozenset(
 )
 
 
-def validate_uuid_string(value: str | None, field_name: str) -> str | None:
+def normalize_span_identifier(value: str | None, field_name: str) -> str | None:
     if value is None:
         return value
 
-    try:
-        uuid.UUID(value)
-    except ValueError:
-        raise ValueError(f"{field_name} must be a valid UUID") from None
+    value = value.strip()
+    if not value:
+        raise ValueError(f"{field_name} cannot be empty")
 
-    return value
+    lowered = value.lower()
+    if (
+        "-" not in lowered
+        and len(lowered) in {16, 32}
+        and all(c in "0123456789abcdef" for c in lowered)
+    ):
+        return str(uuid.uuid5(OTLP_ID_NAMESPACE, lowered))
+
+    try:
+        return str(uuid.UUID(value))
+    except ValueError:
+        pass
+
+    raise ValueError(f"{field_name} must be a valid UUID or OTLP hex ID")
 
 
 class SpanSchema(BaseModel):
@@ -50,7 +64,7 @@ class SpanSchema(BaseModel):
     @field_validator("span_id", "trace_id", "parent_span_id")
     @classmethod
     def validate_uuid_fields(cls, v: str | None, info: ValidationInfo) -> str | None:
-        return validate_uuid_string(v, info.field_name or "field")
+        return normalize_span_identifier(v, info.field_name or "field")
 
     @field_validator("provider")
     @classmethod
