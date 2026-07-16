@@ -1,6 +1,19 @@
 # CHANGELOG
 
 
+## v0.40.1 (2026-07-16)
+
+### Bug Fixes
+
+- Harden ingest queue durability
+  ([`7333342`](https://github.com/makel0ve/llm-obs/commit/7333342ed3a6fcdd68f7e3074cc79b26406c6be2))
+
+### Chores
+
+- Trigger ci for release sync
+  ([`1bdae40`](https://github.com/makel0ve/llm-obs/commit/1bdae401523e744260ec93c56ef6a1061bd2bcfb))
+
+
 ## v0.40.0 (2026-07-16)
 
 ### Chores
