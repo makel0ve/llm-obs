@@ -41,6 +41,7 @@ ports:
 ```bash
 DATABASE_URL=postgresql+asyncpg://llmobs:llmobs_dev@localhost:5432/llmobs
 REDIS_URL=redis://localhost:6379/0
+REDIS_QUEUE_URL=redis://localhost:6380/0
 S3_ENDPOINT_URL=http://localhost:9000
 ```
 
@@ -145,8 +146,8 @@ Minimum reverse proxy assumptions:
   supports them;
 - set `CORS_ALLOWED_ORIGINS` in `backend/.env.prod` to the public dashboard
   origin, for example `https://obs.example.com`;
-- keep backend, Postgres, Redis, PgBouncer and MinIO ports private unless there
-  is an explicit operational need to expose them.
+- keep backend, Postgres, Redis, Redis queue, PgBouncer and MinIO ports private
+  unless there is an explicit operational need to expose them.
 
 ## Environment Variables
 
@@ -159,7 +160,8 @@ Backend settings are loaded from `backend/.env.prod` in production.
 | `DATABASE_URL` | SQLAlchemy async URL | Use PgBouncer at `pgbouncer:6432` in production compose. The role must not be superuser or `BYPASSRLS`. |
 | `DATABASE_POOL_SIZE` | Backend DB pool size | Keep conservative when using PgBouncer. |
 | `DATABASE_MAX_OVERFLOW` | Backend DB overflow connections | Keep conservative when using PgBouncer. |
-| `REDIS_URL` | Redis URL | Use `redis://redis:6379/0` in compose. |
+| `REDIS_URL` | Redis cache/pubsub/rate-limit URL | Use `redis://redis:6379/0` in compose. This Redis may use bounded memory and cache eviction. |
+| `REDIS_QUEUE_URL` | Durable Taskiq queue/result URL | Use `redis://redis-queue:6379/0` in compose. This Redis must use persistent storage and `noeviction`; if omitted, Taskiq falls back to `REDIS_URL`. |
 | `JWT_ALGORITHM` | JWT algorithm | Default `HS256`. |
 | `JWT_ACCESS_TOKEN_EXPIRE_MINUTES` | Login token lifetime | Default `1440`. |
 | `API_RATE_LIMIT_PER_MINUTE` | API rate limit | Tune per deployment. |
@@ -289,6 +291,11 @@ curl -f http://localhost:8000/worker-health
 `/health` only proves the backend process can serve HTTP. `/ready` verifies
 Postgres and Redis. `/worker-health` verifies that the scheduler enqueued the
 heartbeat task and a worker wrote it to Redis.
+
+The Compose files separate Redis responsibilities. `redis` handles cache,
+rate-limit counters, batch status and live pub/sub. `redis-queue` handles
+Taskiq queues, task results and the DLQ with AOF persistence and `noeviction`,
+so accepted ingest work is not subject to cache eviction.
 
 `/worker-health` depends on the scheduler and worker services. The scheduler
 enqueues a lightweight heartbeat task every minute, and the worker updates the

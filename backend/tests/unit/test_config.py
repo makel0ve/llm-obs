@@ -10,6 +10,7 @@ def production_settings(**overrides: str) -> Settings:
         "secret_key": "f" * 64,
         "database_url": "postgresql+asyncpg://app:strong-pass@pgbouncer:6432/llmobs",
         "redis_url": "redis://redis:6379/0",
+        "redis_queue_url": "redis://redis-queue:6379/0",
         "cors_allowed_origins": "https://dashboard.example.com",
         "s3_endpoint_url": "http://minio:9000",
         "aws_access_key_id": "prod-minio-access",
@@ -30,6 +31,14 @@ def test_production_settings_accept_safe_values() -> None:
 
     assert settings.environment == "production"
     assert settings.cors_allowed_origins == ["https://dashboard.example.com"]
+    assert settings.effective_redis_queue_url == "redis://redis-queue:6379/0"
+
+
+def test_redis_queue_url_defaults_to_redis_url(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("REDIS_QUEUE_URL", raising=False)
+    settings = Settings(redis_url="redis://cache:6379/0")
+
+    assert settings.effective_redis_queue_url == "redis://cache:6379/0"
 
 
 @pytest.mark.parametrize(
@@ -69,6 +78,7 @@ def test_production_rejects_placeholder_secrets(
             "database_url",
         ),
         ("redis_url", "redis://127.0.0.1:6379/0", "redis_url"),
+        ("redis_queue_url", "redis://localhost:6379/0", "redis_queue_url"),
         ("s3_endpoint_url", "http://localhost:9000", "s3_endpoint_url"),
     ],
 )
