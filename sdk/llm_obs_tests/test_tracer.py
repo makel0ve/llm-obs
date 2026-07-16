@@ -150,6 +150,14 @@ async def test_buffer_overflow_drops_oldest():
 
     assert len(tracer._buffer) == 3
     assert tracer._buffer[-1].name == "span_9"
+    diagnostics = tracer.sdk_diagnostics
+    assert diagnostics.dropped_spans == 7
+    assert diagnostics.last_drop_reason == "buffer_overflow"
+    assert diagnostics.buffered_spans == 3
+    assert diagnostics.buffer_size == 3
+    diagnostics_text = repr(diagnostics.__dict__)
+    assert "input_messages" not in diagnostics_text
+    assert "X-API-Key" not in diagnostics_text
 
 
 @pytest.mark.asyncio
@@ -250,6 +258,42 @@ async def test_shutdown_flush_false_discards_buffer_without_http():
 
         assert not route.called
         assert len(tracer._buffer) == 0
+
+
+@pytest.mark.asyncio
+async def test_shutdown_flush_failure_keeps_safe_diagnostics(monkeypatch):
+    tracer = llm_obs.init(api_key="test", endpoint="http://server")
+
+    async def no_sleep(_delay):
+        return None
+
+    monkeypatch.setattr("llm_obs.transport.asyncio.sleep", no_sleep)
+    monkeypatch.setattr(tracer._transport, "_jitter", lambda _attempt: 0)
+
+    with respx.mock:
+        respx.post("http://server/v1/ingest").mock(
+            side_effect=[
+                httpx.Response(500),
+                httpx.Response(502),
+                httpx.Response(503),
+            ]
+        )
+
+        tracer.record(make_span())
+        await llm_obs.shutdown()
+
+    transport_diagnostics = llm_obs.get_diagnostics()
+    assert transport_diagnostics is not None
+    assert transport_diagnostics.ok is False
+    assert transport_diagnostics.reason == "http_error"
+    assert transport_diagnostics.status_code == 503
+
+    sdk_diagnostics = llm_obs.get_sdk_diagnostics()
+    assert sdk_diagnostics is not None
+    assert sdk_diagnostics.failed_flushes == 1
+    assert sdk_diagnostics.final_delivery_failures == 1
+    assert sdk_diagnostics.buffered_spans == 1
+    assert sdk_diagnostics.last_flush_reason == "http_error"
 
 
 @pytest.mark.asyncio
