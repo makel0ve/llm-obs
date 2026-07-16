@@ -239,6 +239,21 @@ if diagnostics and not diagnostics.ok:
     print(diagnostics.reason, diagnostics.status_code, diagnostics.attempts)
 ```
 
+Inspect SDK-level counters for local drops and shutdown delivery failures:
+
+```python
+sdk_diagnostics = llm_obs.get_sdk_diagnostics()
+if sdk_diagnostics:
+    print(
+        sdk_diagnostics.dropped_spans,
+        sdk_diagnostics.final_delivery_failures,
+        sdk_diagnostics.buffered_spans,
+    )
+```
+
+These diagnostics are safe delivery metadata only. They do not include prompts,
+outputs, span payloads or API keys.
+
 Common failure reasons:
 
 - `rate_limited`: ingest returned `429`; check `retry_after` and reduce send
@@ -248,3 +263,5 @@ Common failure reasons:
 - `connection_error`: the SDK could not connect to the endpoint, or the request
   timed out after retries.
 - `unknown_failure`: the transport exited without a more specific result.
+- `buffer_overflow`: the in-memory span buffer was full and the oldest span was
+  dropped before recording a new span.
