@@ -40,11 +40,14 @@ management.
 1. The Python SDK records spans with decorators or provider patching.
 2. The SDK sends batches to `POST /v1/spans` with a project API key.
 3. The API authenticates the key, rate-limits the project and enqueues the batch.
-4. Workers process spans asynchronously, update trace aggregates and evaluate
+4. OTLP ingest accepts native 16/32 character hex span and trace IDs by mapping
+   them deterministically to internal UUIDs, while malformed spans are reported
+   through OTLP `partialSuccess.rejectedSpans`.
+5. Workers process spans asynchronously, update trace aggregates and evaluate
    alert rules.
-5. Large payloads are stored in MinIO/S3 only when project payload settings
+6. Large payloads are stored in MinIO/S3 only when project payload settings
    allow it.
-6. The dashboard reads metrics, traces and analytics from the query API.
+7. The dashboard reads metrics, traces and analytics from the query API.
 
 Accepted ingest requests return a `batch_id`. Processing can still fail later,
 so operational checks should include the batch status API, failed-task API and
