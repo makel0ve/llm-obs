@@ -2,16 +2,20 @@ import { useMemo, useState, type FormEvent } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { format } from 'date-fns'
 import {
+  assignProjectMember,
   createOrganizationUser,
   dashboardQueryKeys,
   deleteOrganizationUser,
+  listUserProjectAccess,
   listProjects,
   listUsers,
+  removeProjectMember,
   updateOrganizationUserRole,
   type OrganizationInvite,
   type OrganizationUser,
   type ProjectMembershipRole,
   type ProjectRecord,
+  type UserProjectAccessRecord,
   type UserRole,
 } from '../api/dashboard'
 
@@ -22,11 +26,17 @@ const roleOptions: Array<{ value: UserRole; label: string }> = [
 ]
 
 type ProjectAccessSelectionRole = 'none' | ProjectMembershipRole
+type ProjectAccessDisplayRole = ProjectAccessSelectionRole | 'admin'
 
 const projectRoleOptions: Array<{ value: ProjectAccessSelectionRole; label: string }> = [
   { value: 'none', label: 'No access' },
   { value: 'viewer', label: 'Viewer' },
   { value: 'member', label: 'Member' },
+]
+
+const projectAccessDisplayOptions: Array<{ value: ProjectAccessDisplayRole; label: string }> = [
+  { value: 'admin', label: 'Admin' },
+  ...projectRoleOptions,
 ]
 
 function formatDate(value?: string | null) {
@@ -77,6 +87,8 @@ export function Users({ role }: { role: UserRole }) {
   const [createdInvite, setCreatedInvite] = useState<OrganizationInvite | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<OrganizationUser | null>(null)
   const [deleteConfirmation, setDeleteConfirmation] = useState('')
+  const [accessTarget, setAccessTarget] = useState<OrganizationUser | null>(null)
+  const [accessError, setAccessError] = useState('')
 
   const canManageUsers = role === 'admin'
 
@@ -94,6 +106,12 @@ export function Users({ role }: { role: UserRole }) {
 
   const users = useMemo(() => usersQuery.data ?? [], [usersQuery.data])
   const projects = useMemo(() => projectsQuery.data ?? [], [projectsQuery.data])
+
+  const userProjectAccessQuery = useQuery({
+    queryKey: dashboardQueryKeys.userProjectAccess(accessTarget?.id ?? ''),
+    queryFn: () => listUserProjectAccess(accessTarget?.id ?? ''),
+    enabled: canManageUsers && Boolean(accessTarget),
+  })
 
   const invalidateUsers = async () => {
     await queryClient.invalidateQueries({ queryKey: dashboardQueryKeys.users() })
@@ -145,6 +163,48 @@ export function Users({ role }: { role: UserRole }) {
       setMessage('')
       const detail = getErrorDetail(error)
       setValidationError(detail || 'Could not delete user. The organization must keep at least one admin.')
+    },
+  })
+
+  const updateProjectAccess = useMutation({
+    mutationFn: async ({
+      targetUser,
+      projectAccess,
+      nextRole,
+    }: {
+      targetUser: OrganizationUser
+      projectAccess: UserProjectAccessRecord
+      nextRole: ProjectAccessSelectionRole
+    }) => {
+      if (nextRole === 'none') {
+        if (!projectAccess.project_role || projectAccess.project_role === 'admin') return null
+        await removeProjectMember(projectAccess.project_id, targetUser.id)
+        return null
+      }
+
+      return assignProjectMember(projectAccess.project_id, {
+        user_id: targetUser.id,
+        role: nextRole,
+      })
+    },
+    onSuccess: async (_result, variables) => {
+      setAccessError('')
+      setValidationError('')
+      setMessage('Project access updated.')
+      await Promise.all([
+        queryClient.invalidateQueries({
+          queryKey: dashboardQueryKeys.userProjectAccess(variables.targetUser.id),
+        }),
+        queryClient.invalidateQueries({
+          queryKey: dashboardQueryKeys.projectMembers(variables.projectAccess.project_id),
+        }),
+        queryClient.invalidateQueries({ queryKey: dashboardQueryKeys.accessibleProjects() }),
+      ])
+    },
+    onError: error => {
+      setMessage('')
+      const detail = getErrorDetail(error)
+      setAccessError(detail || 'Could not update project access.')
     },
   })
 
@@ -203,6 +263,7 @@ export function Users({ role }: { role: UserRole }) {
   const openDeleteModal = (user: OrganizationUser) => {
     setMessage('')
     setValidationError('')
+    setAccessError('')
     setDeleteConfirmation('')
     setDeleteTarget(user)
   }
@@ -216,6 +277,25 @@ export function Users({ role }: { role: UserRole }) {
   const confirmDeleteUser = () => {
     if (!deleteTarget || deleteConfirmation !== deleteTarget.email) return
     deleteUser.mutate(deleteTarget.id)
+  }
+
+  const openProjectAccess = (user: OrganizationUser) => {
+    setMessage('')
+    setValidationError('')
+    setAccessError('')
+    setAccessTarget(user)
+  }
+
+  const changeProjectAccess = (
+    targetUser: OrganizationUser,
+    projectAccess: UserProjectAccessRecord,
+    nextRole: ProjectAccessSelectionRole,
+  ) => {
+    if (projectAccess.project_role === 'admin' || (projectAccess.project_role ?? 'none') === nextRole) return
+    setMessage('')
+    setValidationError('')
+    setAccessError('')
+    updateProjectAccess.mutate({ targetUser, projectAccess, nextRole })
   }
 
   const inviteLink = createdInvite
@@ -400,6 +480,14 @@ export function Users({ role }: { role: UserRole }) {
                       </td>
                       <td className="whitespace-nowrap px-4 py-3 text-gray-700">{formatDate(user.created_at)}</td>
                       <td className="px-4 py-3 text-right">
+                        <div className="flex justify-end gap-2">
+                          <button
+                            type="button"
+                            onClick={() => openProjectAccess(user)}
+                            className="min-h-9 rounded-md border border-gray-200 bg-white px-3 text-sm font-medium text-gray-700 hover:bg-gray-100"
+                          >
+                            Project access
+                          </button>
                         <button
                           type="button"
                           onClick={() => openDeleteModal(user)}
@@ -408,6 +496,7 @@ export function Users({ role }: { role: UserRole }) {
                         >
                           Delete
                         </button>
+                        </div>
                       </td>
                     </tr>
                   ))}
@@ -417,6 +506,72 @@ export function Users({ role }: { role: UserRole }) {
           </div>
         )}
       </section>
+
+      {accessTarget && (
+        <section className="space-y-4 rounded-lg border border-gray-200 bg-white p-4">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+            <div>
+              <h2 className="text-lg font-semibold text-gray-950">Project access</h2>
+              <p className="mt-1 text-sm text-gray-500">{accessTarget.email}</p>
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                setAccessTarget(null)
+                setAccessError('')
+              }}
+              className="min-h-9 rounded-md border border-gray-200 bg-white px-3 text-sm font-medium text-gray-700 hover:bg-gray-100"
+            >
+              Close
+            </button>
+          </div>
+          {accessError && <Alert tone="error">{accessError}</Alert>}
+          {userProjectAccessQuery.isLoading && (
+            <div className="rounded-lg border border-dashed border-gray-300 bg-gray-50 p-4 text-sm text-gray-600">
+              Loading project access...
+            </div>
+          )}
+          {userProjectAccessQuery.isError && <Alert tone="error">Could not load project access.</Alert>}
+          {!userProjectAccessQuery.isLoading &&
+            !userProjectAccessQuery.isError &&
+            (userProjectAccessQuery.data ?? []).length === 0 && (
+              <div className="rounded-lg border border-dashed border-gray-300 bg-gray-50 p-4 text-sm text-gray-600">
+                No active projects are available.
+              </div>
+            )}
+          {(userProjectAccessQuery.data ?? []).length > 0 && (
+            <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
+              {(userProjectAccessQuery.data ?? []).map(projectAccess => (
+                <div key={projectAccess.project_id} className="rounded-lg border border-gray-200 bg-gray-50 p-3">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="truncate text-sm font-medium text-gray-950">{projectAccess.project_name}</div>
+                      <div className="mt-1 text-xs text-gray-500">Retention {projectAccess.retention_days}d</div>
+                    </div>
+                    <select
+                      value={(projectAccess.project_role ?? 'none') as ProjectAccessDisplayRole}
+                      onChange={event =>
+                        changeProjectAccess(
+                          accessTarget,
+                          projectAccess,
+                          event.target.value as ProjectAccessSelectionRole,
+                        )
+                      }
+                      disabled={updateProjectAccess.isPending || projectAccess.project_role === 'admin'}
+                      className="min-h-9 w-32 rounded-md border border-gray-300 bg-white px-2 text-sm text-gray-900 disabled:bg-gray-100 disabled:text-gray-500"
+                      aria-label={`${projectAccess.project_name} existing user project role`}
+                    >
+                      {(projectAccess.project_role === 'admin' ? projectAccessDisplayOptions : projectRoleOptions).map(option => (
+                        <option key={option.value} value={option.value}>{option.label}</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
+      )}
 
       {deleteTarget && (
         <div

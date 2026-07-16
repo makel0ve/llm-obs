@@ -236,6 +236,14 @@ export type ProjectMemberAssign = {
   role: ProjectMembershipRole
 }
 
+export type UserProjectAccessRecord = {
+  project_id: string
+  project_name: string
+  project_role: UserRole | null
+  is_active: boolean
+  retention_days: number
+}
+
 export type AlertRule = {
   id: string
   project_id: string
@@ -391,6 +399,7 @@ export const dashboardQueryKeys = {
     ['audit-events', action, userId, fromDt, toDt, cursor] as const,
   projectSettings: (projectId: string) => ['project-settings', projectId] as const,
   projectMembers: (projectId: string) => ['project-members', projectId] as const,
+  userProjectAccess: (userId: string) => ['user-project-access', userId] as const,
   apiKeys: (projectId: string) => ['api-keys', projectId] as const,
   failedTasks: (projectId: string, includeResolved: boolean) =>
     ['failed-tasks', projectId, includeResolved] as const,
@@ -530,6 +539,11 @@ export async function updateProjectSettings(projectId: string, payload: ProjectS
 
 export async function listProjectMembers(projectId: string) {
   const response = await api.get<ProjectMember[]>(`/v1/projects/${projectId}/members`)
+  return response.data
+}
+
+export async function listUserProjectAccess(userId: string) {
+  const response = await api.get<UserProjectAccessRecord[]>(`/v1/users/${userId}/projects`)
   return response.data
 }
 
