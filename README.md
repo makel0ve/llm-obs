@@ -359,6 +359,9 @@ curl -X POST http://localhost:8000/v1/alerts/rules \
 ```
 
 Available metrics: `latency_p95`, `error_rate`, `cost_hourly`, `anomaly`.
+`latency_p95`, `error_rate` and `cost_hourly` are evaluated over the rule's
+`window_minutes`; `anomaly` uses the SDK/backend anomaly detectors for incoming
+spans.
 
 For Slack notifications add `notify_slack_webhook` with your Slack incoming webhook URL.
 Alert rule reads and mutations are scoped to the selected `project_id`.

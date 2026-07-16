@@ -2,6 +2,7 @@ import json
 import time
 import uuid
 from datetime import datetime
+from decimal import Decimal
 from typing import Any, TypedDict, cast
 
 import structlog
@@ -31,6 +32,8 @@ from app.services.storage import (
 )
 
 log = structlog.get_logger()
+
+WINDOWED_ALERT_METRICS = frozenset({"latency_p95", "error_rate", "cost_hourly"})
 
 
 class PayloadPrivacySettings(TypedDict):
@@ -356,57 +359,178 @@ async def check_batch_anomalies(project_id: str, spans: list[dict[str, Any]]) ->
     if not rules:
         return
 
-    for span in spans:
-        anomalies = await anomaly_svc.check(project_id=project_id, span=span)
-
-        for rule in rules:
-            triggered = False
-            value = span.get("latency_ms", 0)
-
-            if rule["metric"] == "anomaly" and anomalies:
-                triggered = True
-            elif rule["metric"] == "latency_p95":
-                if rule["condition"] == "gt" and value > float(rule["threshold"]):
-                    triggered = True
-                elif rule["condition"] == "lt" and value < float(rule["threshold"]):
-                    triggered = True
-            elif rule["metric"] == "error_rate":
-                if "high_error_rate" in anomalies:
-                    triggered = True
-            elif rule["metric"] == "cost_hourly":
-                value = float(span.get("cost_usd", 0))
-                if rule["condition"] == "gt" and value > float(rule["threshold"]):
-                    triggered = True
+    for rule in rules:
+        if rule["metric"] in WINDOWED_ALERT_METRICS:
+            async with get_db(project_id=project_id) as db:
+                triggered, value = await evaluate_windowed_alert_rule(
+                    db=db, project_id=project_id, rule=rule
+                )
 
             if not triggered:
                 continue
 
             message = (
+                f"Alert '{rule['name']}' triggered for project `{project_id}` "
+                f"metric={rule['metric']} {rule['condition']} {rule['threshold']} "
+                f"value={value} window={rule['window_minutes']}m"
+            )
+            await record_alert_if_sent(
+                notification_svc=notification_svc,
+                rule=rule,
+                value=value,
+                message=message,
+            )
+            continue
+
+        if rule["metric"] != "anomaly":
+            continue
+
+        for span in spans:
+            anomalies = await anomaly_svc.check(project_id=project_id, span=span)
+            if not anomalies:
+                continue
+
+            value = float(span.get("latency_ms", 0))
+            message = (
                 f"Alert '{rule['name']}' triggered for span `{span.get('name')}` "
-                f"model=`{span.get('model')}` "
-                f"latency={span.get('latency_ms')}ms "
-                f"metric={rule['metric']} {rule['condition']} {rule['threshold']}"
+                f"model=`{span.get('model')}` latency={span.get('latency_ms')}ms "
+                f"metric={rule['metric']} condition={rule['condition']}"
+            )
+            await record_alert_if_sent(
+                notification_svc=notification_svc,
+                rule=rule,
+                value=value,
+                message=message,
             )
 
-            sent = await notification_svc.send_alert(
-                rule=dict(rule), value=value, message=message
-            )
-            if sent:
-                async with get_db() as db:
-                    await db.execute(
-                        text(
-                            """
-                        INSERT INTO alert_events (id, rule_id, value, message)
-                        VALUES (:id, :rule_id, :value, :message)
-                        """
-                        ),
-                        {
-                            "id": str(uuid.uuid4()),
-                            "rule_id": str(rule["id"]),
-                            "value": value,
-                            "message": message,
-                        },
-                    )
-                    await db.commit()
 
-                log.info("alert_sent", rule=rule["name"], anomalies=anomalies)
+async def evaluate_windowed_alert_rule(
+    db: Any, project_id: str, rule: Any
+) -> tuple[bool, float]:
+    threshold = _rule_threshold(rule)
+    if threshold is None:
+        return False, 0.0
+
+    metric = str(rule["metric"])
+    if metric == "latency_p95":
+        value, sample_count = await _query_alert_value(
+            db=db,
+            sql="""
+                SELECT
+                    COALESCE(
+                        percentile_cont(0.95) WITHIN GROUP (ORDER BY latency_ms),
+                        0
+                    ) AS value,
+                    COUNT(*) AS sample_count
+                FROM spans
+                WHERE project_id = :project_id
+                    AND started_at >= NOW() - make_interval(mins => :window_minutes)
+            """,
+            project_id=project_id,
+            window_minutes=int(rule["window_minutes"]),
+        )
+    elif metric == "error_rate":
+        value, sample_count = await _query_alert_value(
+            db=db,
+            sql="""
+                SELECT
+                    CASE WHEN COUNT(*) = 0 THEN 0
+                        ELSE (
+                            COUNT(*) FILTER (WHERE status = 'error')::float
+                            / COUNT(*)::float
+                        ) * 100
+                    END AS value,
+                    COUNT(*) AS sample_count
+                FROM spans
+                WHERE project_id = :project_id
+                    AND started_at >= NOW() - make_interval(mins => :window_minutes)
+            """,
+            project_id=project_id,
+            window_minutes=int(rule["window_minutes"]),
+        )
+    elif metric == "cost_hourly":
+        value, sample_count = await _query_alert_value(
+            db=db,
+            sql="""
+                SELECT
+                    COALESCE(SUM(cost_usd), 0) AS value,
+                    COUNT(*) AS sample_count
+                FROM spans
+                WHERE project_id = :project_id
+                    AND started_at >= NOW() - make_interval(mins => :window_minutes)
+            """,
+            project_id=project_id,
+            window_minutes=int(rule["window_minutes"]),
+        )
+    else:
+        return False, 0.0
+
+    if sample_count <= 0:
+        return False, value
+
+    return _condition_matches(str(rule["condition"]), value, threshold), value
+
+
+async def _query_alert_value(
+    db: Any, sql: str, project_id: str, window_minutes: int
+) -> tuple[float, int]:
+    result = await db.execute(
+        text(sql),
+        {"project_id": project_id, "window_minutes": window_minutes},
+    )
+    row = result.mappings().one()
+
+    return _to_float(row["value"]), int(row["sample_count"] or 0)
+
+
+def _rule_threshold(rule: Any) -> float | None:
+    threshold = rule["threshold"]
+    if threshold is None:
+        return None
+
+    return _to_float(threshold)
+
+
+def _to_float(value: Any) -> float:
+    if isinstance(value, Decimal):
+        return float(value)
+
+    return float(value or 0)
+
+
+def _condition_matches(condition: str, value: float, threshold: float) -> bool:
+    if condition == "gt":
+        return value > threshold
+    if condition == "lt":
+        return value < threshold
+
+    return False
+
+
+async def record_alert_if_sent(
+    notification_svc: NotificationService, rule: Any, value: float, message: str
+) -> None:
+    sent = await notification_svc.send_alert(
+        rule=dict(rule), value=value, message=message
+    )
+    if not sent:
+        return
+
+    async with get_db() as db:
+        await db.execute(
+            text(
+                """
+                INSERT INTO alert_events (id, rule_id, value, message)
+                VALUES (:id, :rule_id, :value, :message)
+                """
+            ),
+            {
+                "id": str(uuid.uuid4()),
+                "rule_id": str(rule["id"]),
+                "value": value,
+                "message": message,
+            },
+        )
+        await db.commit()
+
+    log.info("alert_sent", rule=rule["name"], metric=rule["metric"])
