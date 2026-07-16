@@ -16,10 +16,7 @@ class NotificationService:
         redis = await get_redis()
         cooldown_key = f"alert_cooldown:{rule['id']}"
 
-        acquired = await redis.set(
-            cooldown_key, "1", ex=rule["cooldown_minutes"] * 60, nx=True
-        )
-        if not acquired:
+        if await redis.get(cooldown_key):
             log.debug("alert_suppressed_cooldown", rule_id=str(rule["id"]))
             return False
 
@@ -29,6 +26,9 @@ class NotificationService:
 
         if rule["notify_email"]:
             sent |= await self._email(rule, message, value)
+
+        if sent:
+            await redis.set(cooldown_key, "1", ex=rule["cooldown_minutes"] * 60)
 
         return sent
 
