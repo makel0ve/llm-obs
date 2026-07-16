@@ -8,9 +8,9 @@ log = structlog.get_logger()
 
 
 class PubSubManager:
-    def __init__(self):
-        self._queues: dict[str, set[asyncio.Queue]] = defaultdict(set)
-        self._task: asyncio.Task | None = None
+    def __init__(self) -> None:
+        self._queues: dict[str, set[asyncio.Queue[str]]] = defaultdict(set)
+        self._task: asyncio.Task[None] | None = None
 
     async def start(self, redis: Redis) -> None:
         if self._task and not self._task.done():
@@ -51,13 +51,13 @@ class PubSubManager:
                 log.error("pubsub_listener_failed", error=str(e))
                 await asyncio.sleep(3)
 
-    def subscribe(self, project_id: str) -> asyncio.Queue:
-        q: asyncio.Queue = asyncio.Queue(maxsize=50)
+    def subscribe(self, project_id: str) -> asyncio.Queue[str]:
+        q: asyncio.Queue[str] = asyncio.Queue(maxsize=50)
         self._queues[project_id].add(q)
 
         return q
 
-    def unsubscribe(self, project_id: str, q: asyncio.Queue) -> None:
+    def unsubscribe(self, project_id: str, q: asyncio.Queue[str]) -> None:
         self._queues[project_id].discard(q)
 
 
