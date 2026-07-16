@@ -1,6 +1,19 @@
 # CHANGELOG
 
 
+## v0.41.3 (2026-07-16)
+
+### Bug Fixes
+
+- Align alert rule semantics
+  ([`721cddb`](https://github.com/makel0ve/llm-obs/commit/721cddb6a77a6559d65d03e99c36f32f0947aa75))
+
+### Chores
+
+- Trigger ci for release sync
+  ([`4bc07d1`](https://github.com/makel0ve/llm-obs/commit/4bc07d10d5240d13c60f916a89af705715b41bc2))
+
+
 ## v0.41.2 (2026-07-16)
 
 ### Bug Fixes
