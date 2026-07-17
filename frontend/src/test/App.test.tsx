@@ -26,6 +26,7 @@ import {
   loginUser,
   removeProjectMember,
   registerUser,
+  retryFailedTask,
 } from '../api/dashboard'
 
 vi.mock('../api/dashboard', () => ({
@@ -112,6 +113,7 @@ const mockedListUsers = vi.mocked(listUsers)
 const mockedLoginUser = vi.mocked(loginUser)
 const mockedRemoveProjectMember = vi.mocked(removeProjectMember)
 const mockedRegisterUser = vi.mocked(registerUser)
+const mockedRetryFailedTask = vi.mocked(retryFailedTask)
 
 const project = {
   id: 'project-1',
@@ -740,5 +742,52 @@ describe('App', () => {
     })
     expect(await screen.findByText('Save this API key now. It is shown once and cannot be recovered later.')).toBeInTheDocument()
     expect(screen.getByText('llmobs_new_scoped_key')).toBeInTheDocument()
+  })
+
+  it('shows retry only for failed tasks with complete span payloads', async () => {
+    const user = userEvent.setup()
+    mockedListAccessibleProjects.mockResolvedValue([{ ...project, project_role: 'admin' }])
+    mockedListFailedTasks.mockResolvedValue([
+      {
+        id: 1,
+        task_name: 'process_span_batch',
+        project_id: project.id,
+        task_args: {
+          batch_id: 'batch-summary',
+          project_id: project.id,
+          span_count: 2,
+        },
+        error: 'boom',
+        attempts: 3,
+        failed_at: '2026-07-17T08:00:00Z',
+        resolved: false,
+      },
+      {
+        id: 2,
+        task_name: 'process_span_batch',
+        project_id: project.id,
+        task_args: {
+          batch_id: 'batch-full',
+          project_id: project.id,
+          spans: [{ span_id: 'span-1' }],
+        },
+        error: 'boom',
+        attempts: 3,
+        failed_at: '2026-07-17T08:05:00Z',
+        resolved: false,
+      },
+    ])
+    mockedRetryFailedTask.mockResolvedValue(undefined)
+    storeAdminSession('/dashboard/project-settings')
+
+    render(<App />)
+
+    expect(await screen.findByRole('heading', { name: 'Project Settings' })).toBeInTheDocument()
+    expect(await screen.findByText('Not retryable')).toBeInTheDocument()
+
+    const retryButton = screen.getByRole('button', { name: 'Retry' })
+    await user.click(retryButton)
+
+    expect(mockedRetryFailedTask.mock.calls[0][0]).toBe(2)
   })
 })
