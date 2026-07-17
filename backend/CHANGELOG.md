@@ -1,6 +1,19 @@
 # CHANGELOG
 
 
+## v0.42.1 (2026-07-17)
+
+### Bug Fixes
+
+- Reconcile retention cleanup
+  ([`18e17de`](https://github.com/makel0ve/llm-obs/commit/18e17de968a76d5304d750b921f416aaeb6e4317))
+
+### Chores
+
+- Trigger ci for release sync
+  ([`15156ed`](https://github.com/makel0ve/llm-obs/commit/15156edccde4c91c66090dad8a7a79f16b2a8ec4))
+
+
 ## v0.42.0 (2026-07-17)
 
 ### Chores
