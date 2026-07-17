@@ -1,6 +1,19 @@
 # CHANGELOG
 
 
+## v0.42.4 (2026-07-17)
+
+### Bug Fixes
+
+- Cache historical pricing correctly
+  ([`a4341e6`](https://github.com/makel0ve/llm-obs/commit/a4341e65e51d8777a567f668744663642145d227))
+
+### Chores
+
+- Trigger ci for release sync
+  ([`ec6371f`](https://github.com/makel0ve/llm-obs/commit/ec6371f58da7e85512362de671a71e1e10e75db9))
+
+
 ## v0.42.3 (2026-07-17)
 
 ### Bug Fixes
