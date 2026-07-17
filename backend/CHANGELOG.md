@@ -1,6 +1,19 @@
 # CHANGELOG
 
 
+## v0.42.2 (2026-07-17)
+
+### Bug Fixes
+
+- Load current user for jwt auth
+  ([`12769a4`](https://github.com/makel0ve/llm-obs/commit/12769a4dbec59b423806f458d0509c1f1729c218))
+
+### Chores
+
+- Trigger ci for release sync
+  ([`9563002`](https://github.com/makel0ve/llm-obs/commit/95630021848c21c7e5845a231783432733f4fef7))
+
+
 ## v0.42.1 (2026-07-17)
 
 ### Bug Fixes
