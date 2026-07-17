@@ -5,7 +5,13 @@ from uuid import uuid4
 import pytest
 
 from app.services.ingest import BatchStatusService
-from app.services.storage import parse_redact_keys, redact_payload, should_store_payload
+from app.services.storage import (
+    PayloadStorageResult,
+    StorageService,
+    parse_redact_keys,
+    redact_payload,
+    should_store_payload,
+)
 from app.workers import process_span as process_span_module
 from app.workers.process_span import process_span_batch
 
@@ -118,6 +124,22 @@ def test_should_store_payload(mode: str, has_error: bool, expected: bool):
 
 
 @pytest.mark.asyncio
+async def test_store_payload_reports_oversized_without_s3_write():
+    result = await StorageService().store_payload(
+        project_id=str(uuid4()),
+        span_id=str(uuid4()),
+        messages=[{"role": "user", "content": "private prompt"}],
+        output="private output",
+        max_bytes=1,
+        redact_keys={"content"},
+    )
+
+    assert result == PayloadStorageResult(
+        s3_key=None, status="too_large", drop_reason="max_bytes_exceeded"
+    )
+
+
+@pytest.mark.asyncio
 async def test_worker_applies_error_only_payload_policy(monkeypatch):
     project_id = str(uuid4())
     batch_id = str(uuid4())
@@ -147,7 +169,7 @@ async def test_worker_applies_error_only_payload_policy(monkeypatch):
 
     async def fake_store_payload(self, **kwargs):
         stored_payloads.append(kwargs)
-        return "payload-key"
+        return PayloadStorageResult(s3_key="payload-key", status="stored_redacted")
 
     async def fake_get_redis():
         return fake_redis
@@ -178,3 +200,58 @@ async def test_worker_applies_error_only_payload_policy(monkeypatch):
     )
     assert "secret" not in payload_json
     assert stored_payloads[0]["max_bytes"] == 262144
+
+
+@pytest.mark.asyncio
+async def test_worker_records_payload_drop_reason_for_error_only_policy(monkeypatch):
+    project_id = str(uuid4())
+    batch_id = str(uuid4())
+    ok_span = make_span_payload()
+    fake_redis = FakeRedis()
+    inserted_spans = []
+    await BatchStatusService(redis=fake_redis).create_accepted(
+        project_id=project_id, batch_id=batch_id, accepted=1
+    )
+
+    @asynccontextmanager
+    async def fake_get_db(project_id=None):
+        yield FakeDb(
+            {
+                "payload_storage_mode": "errors",
+                "payload_max_bytes": 262144,
+                "payload_redact_keys": "api_key",
+            }
+        )
+
+    async def fake_cost(self, **kwargs):
+        return "0.00000000"
+
+    async def fake_store_payload(self, **kwargs):
+        raise AssertionError("non-error span should not reach payload storage")
+
+    async def fake_bulk_insert_spans(spans: list[dict], db) -> int:
+        inserted_spans.extend(spans)
+        return len(spans)
+
+    async def fake_get_redis():
+        return fake_redis
+
+    monkeypatch.setattr(process_span_module, "get_redis", fake_get_redis)
+    monkeypatch.setattr(process_span_module, "get_db", fake_get_db)
+    monkeypatch.setattr(process_span_module.CostService, "calculate", fake_cost)
+    monkeypatch.setattr(
+        process_span_module.StorageService, "store_payload", fake_store_payload
+    )
+    monkeypatch.setattr(
+        process_span_module, "bulk_insert_spans", fake_bulk_insert_spans
+    )
+    monkeypatch.setattr(process_span_module.update_trace_aggregates, "kiq", _noop_kiq)
+    monkeypatch.setattr(process_span_module.check_batch_anomalies, "kiq", _noop_kiq)
+
+    await process_span_batch.original_func(
+        batch_id=batch_id, project_id=project_id, spans=[ok_span]
+    )
+
+    assert inserted_spans[0]["payload_s3_key"] is None
+    assert inserted_spans[0]["payload_status"] == "omitted"
+    assert inserted_spans[0]["payload_drop_reason"] == "errors_only_non_error"

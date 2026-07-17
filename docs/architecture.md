@@ -64,7 +64,9 @@ superuser or table-owner runtime connection.
 
 MinIO/S3 stores large LLM input/output payload objects when enabled. Project
 settings control payload mode, maximum payload size and comma-separated field
-names to redact before object storage.
+names to redact before object storage. PostgreSQL span rows store only payload
+object keys plus non-sensitive storage status metadata such as omitted,
+oversized or storage-failed.
 
 Redis storage is split by durability requirement. `REDIS_URL` is the cache and
 coordination Redis for rate limits, short-lived caches, batch status and the

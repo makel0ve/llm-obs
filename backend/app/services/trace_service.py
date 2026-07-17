@@ -150,7 +150,8 @@ class TraceService:
                 text("""
                 SELECT id, trace_id, parent_span_id, name, provider, model,
                     input_tokens, output_tokens, cost_usd, latency_ms,
-                    status, error, started_at, payload_s3_key, metadata
+                    status, error, started_at, payload_s3_key, payload_status,
+                    payload_drop_reason, metadata
                 FROM spans
                 WHERE trace_id = :trace_id AND project_id = :project_id
                 AND started_at >= :started_at
