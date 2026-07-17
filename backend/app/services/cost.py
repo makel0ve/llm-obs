@@ -11,6 +11,9 @@ from app.core.redis import get_redis
 class CostService:
     CACHE_TTL = 3600
 
+    def _cache_key(self, provider: str, model: str, at_time: datetime) -> str:
+        return f"pricing:{provider}:{model}:{at_time.isoformat()}"
+
     async def calculate(
         self,
         provider: str,
@@ -32,7 +35,7 @@ class CostService:
     async def _get_pricing(
         self, provider: str, model: str, at_time: datetime
     ) -> dict | None:
-        cache_key = f"pricing:{provider}:{model}"
+        cache_key = self._cache_key(provider, model, at_time)
         redis = await get_redis()
         cached = await redis.get(cache_key)
         if cached:

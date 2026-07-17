@@ -81,9 +81,15 @@ class FakeDb:
 class FakeRedis:
     def __init__(self):
         self.deleted = []
+        self.scan_keys = []
 
-    async def delete(self, key):
-        self.deleted.append(key)
+    async def delete(self, *keys):
+        self.deleted.extend(keys)
+
+    async def scan_iter(self, match: str):
+        for key in self.scan_keys:
+            if key.startswith(match.rstrip("*")):
+                yield key
 
 
 @pytest.fixture(autouse=True, scope="session")
@@ -163,6 +169,10 @@ async def test_create_pricing_closes_previous_record_and_invalidates_cache(
     fake_db, fake_redis
 ):
     valid_from = datetime.now(UTC)
+    fake_redis.scan_keys = [
+        "pricing:openai:gpt-4o:2026-06-01T00:00:00+00:00",
+        "pricing:openai:gpt-4o:2026-08-01T00:00:00+00:00",
+    ]
 
     result = await create_pricing(
         PricingCreate(
@@ -181,7 +191,11 @@ async def test_create_pricing_closes_previous_record_and_invalidates_cache(
         "model": "gpt-4o",
         "valid_from": valid_from,
     }
-    assert fake_redis.deleted == ["pricing:openai:gpt-4o"]
+    assert fake_redis.deleted == [
+        "pricing:openai:gpt-4o",
+        "pricing:openai:gpt-4o:2026-06-01T00:00:00+00:00",
+        "pricing:openai:gpt-4o:2026-08-01T00:00:00+00:00",
+    ]
 
 
 @pytest.mark.asyncio
