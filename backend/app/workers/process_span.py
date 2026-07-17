@@ -26,6 +26,7 @@ from app.services.notifications import NotificationService
 from app.services.storage import (
     DEFAULT_PAYLOAD_MAX_BYTES,
     DEFAULT_REDACT_KEYS,
+    PayloadStorageResult,
     StorageService,
     parse_redact_keys,
     should_store_payload,
@@ -40,6 +41,17 @@ class PayloadPrivacySettings(TypedDict):
     payload_storage_mode: str
     payload_max_bytes: int
     payload_redact_keys: str
+
+
+def skipped_payload_result(payload_mode: str) -> PayloadStorageResult:
+    if payload_mode == "none":
+        return PayloadStorageResult(
+            s3_key=None, status="omitted", drop_reason="storage_mode_none"
+        )
+
+    return PayloadStorageResult(
+        s3_key=None, status="omitted", drop_reason="errors_only_non_error"
+    )
 
 
 async def load_payload_privacy_settings(
@@ -108,11 +120,10 @@ async def process_span_batch(
                         at_time=started_at,
                     )
 
-                    s3_key = None
                     if should_store_payload(
                         payload_mode, has_error=bool(span_data.get("error"))
                     ):
-                        s3_key = await storage_svc.store_payload(
+                        payload_result = await storage_svc.store_payload(
                             project_id=project_id,
                             span_id=span_data["span_id"],
                             messages=span_data.get("input_messages", []),
@@ -120,6 +131,8 @@ async def process_span_batch(
                             max_bytes=payload_max_bytes,
                             redact_keys=payload_redact_keys,
                         )
+                    else:
+                        payload_result = skipped_payload_result(payload_mode)
 
                     prepared_spans.append(
                         {
@@ -139,7 +152,9 @@ async def process_span_batch(
                             "status": "error" if span_data.get("error") else "ok",
                             "error": span_data.get("error"),
                             "started_at": started_at,
-                            "payload_s3_key": s3_key,
+                            "payload_s3_key": payload_result.s3_key,
+                            "payload_status": payload_result.status,
+                            "payload_drop_reason": payload_result.drop_reason,
                             "metadata": json.dumps(span_data.get("metadata", {})),
                         }
                     )

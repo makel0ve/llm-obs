@@ -7,6 +7,7 @@ export type AlertCondition = 'gt' | 'lt' | 'anomaly'
 export type UserRole = 'admin' | 'member' | 'viewer'
 export type ApiKeyScope = 'ingest' | 'read' | 'read_write'
 export type PayloadStorageMode = 'all' | 'errors' | 'none'
+export type PayloadStorageStatus = 'stored' | 'stored_redacted' | 'omitted' | 'too_large' | 'storage_failed'
 export type ProjectMembershipRole = 'member' | 'viewer'
 
 export type AuthResponse = {
@@ -176,6 +177,8 @@ export type TraceSpan = {
   error?: string | null
   started_at: string
   payload_s3_key?: string | null
+  payload_status?: PayloadStorageStatus | null
+  payload_drop_reason?: string | null
   metadata?: Record<string, unknown> | string | null
   payload?: unknown
 }
