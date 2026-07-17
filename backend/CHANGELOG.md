@@ -1,6 +1,19 @@
 # CHANGELOG
 
 
+## v0.42.3 (2026-07-17)
+
+### Bug Fixes
+
+- Rate limit auth endpoints
+  ([`4832e78`](https://github.com/makel0ve/llm-obs/commit/4832e78dc13f97b6584b01791f71415fd5b1b3f3))
+
+### Chores
+
+- Trigger ci for release sync
+  ([`a2208a1`](https://github.com/makel0ve/llm-obs/commit/a2208a1d116970359a2e0e532dffbf573d7e2eb8))
+
+
 ## v0.42.2 (2026-07-17)
 
 ### Bug Fixes
