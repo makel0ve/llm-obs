@@ -1,6 +1,19 @@
 # CHANGELOG
 
 
+## v0.42.0 (2026-07-17)
+
+### Chores
+
+- Trigger ci for release sync
+  ([`9ae7203`](https://github.com/makel0ve/llm-obs/commit/9ae72031fae32631d339338f19e94065a7a986c3))
+
+### Features
+
+- Expose payload storage status
+  ([`68b3dc9`](https://github.com/makel0ve/llm-obs/commit/68b3dc919b4d23997bcceb10e84d9a18013f28be))
+
+
 ## v0.41.5 (2026-07-17)
 
 ### Bug Fixes
