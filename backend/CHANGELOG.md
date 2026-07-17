@@ -1,6 +1,19 @@
 # CHANGELOG
 
 
+## v0.42.5 (2026-07-17)
+
+### Bug Fixes
+
+- Route final task failures to dlq
+  ([`a35b3f4`](https://github.com/makel0ve/llm-obs/commit/a35b3f49b54cbfd548569c70dc70d0b3d8cc9d97))
+
+### Chores
+
+- Trigger ci for release sync
+  ([`269c817`](https://github.com/makel0ve/llm-obs/commit/269c817d542800b7be30592a01706543d54c8b4a))
+
+
 ## v0.42.4 (2026-07-17)
 
 ### Bug Fixes
