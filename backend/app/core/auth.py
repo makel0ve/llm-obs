@@ -57,25 +57,50 @@ def project_role_allows(role: str | None, required_role: ProjectRole) -> bool:
     return current_level >= required_level
 
 
+async def load_current_user_from_token(token: str) -> dict[str, Any]:
+    try:
+        payload = jwt.decode(
+            token,
+            settings.secret_key.get_secret_value(),
+            algorithms=[settings.jwt_algorithm],
+        )
+        user_id = payload.get("sub")
+        if not user_id:
+            raise HTTPException(status_code=401)
+
+    except JWTError:
+        raise HTTPException(status_code=401, detail="Invalid or expired token")
+
+    async with get_db() as db:
+        result = await db.execute(
+            text(
+                """
+                SELECT id, org_id, role
+                FROM users
+                WHERE id = :user_id AND is_active = true
+                """
+            ),
+            {"user_id": user_id},
+        )
+        user = result.mappings().one_or_none()
+
+    if not user:
+        raise HTTPException(status_code=401, detail="Invalid or expired token")
+
+    return {
+        "sub": str(user["id"]),
+        "org_id": str(user["org_id"]),
+        "role": user["role"],
+    }
+
+
 async def get_current_user(
     creds: HTTPAuthorizationCredentials | None = Depends(bearer_scheme),
 ) -> dict[str, Any]:
     if not creds:
         raise HTTPException(status_code=401, detail="Not authenticated")
 
-    try:
-        payload = jwt.decode(
-            creds.credentials,
-            settings.secret_key.get_secret_value(),
-            algorithms=[settings.jwt_algorithm],
-        )
-        if not payload.get("sub"):
-            raise HTTPException(status_code=401)
-
-        return payload
-
-    except JWTError:
-        raise HTTPException(status_code=401, detail="Invalid or expired token")
+    return await load_current_user_from_token(creds.credentials)
 
 
 async def get_project_from_api_key(
@@ -190,27 +215,7 @@ async def get_project_from_token_or_api_key(
         )
 
     if creds and project_id:
-        try:
-            payload = jwt.decode(
-                creds.credentials,
-                settings.secret_key.get_secret_value(),
-                algorithms=[settings.jwt_algorithm],
-            )
-            org_id = payload.get("org_id")
-            sub = payload.get("sub")
-            if not org_id or not sub:
-                raise HTTPException(status_code=401)
-
-            return await get_project_for_user(
-                project_id,
-                {
-                    "sub": sub,
-                    "org_id": org_id,
-                    "role": payload.get("role"),
-                },
-            )
-
-        except JWTError:
-            raise HTTPException(status_code=401, detail="Invalid token")
+        user = await load_current_user_from_token(creds.credentials)
+        return await get_project_for_user(project_id, user)
 
     raise HTTPException(status_code=401, detail="Authentication required")

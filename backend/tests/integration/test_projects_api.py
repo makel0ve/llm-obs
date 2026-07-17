@@ -136,7 +136,8 @@ async def test_project_lifecycle_requires_admin(client, db_session):
         {"id": registration["project_id"]},
     )
     org_id = str(org.mappings().one()["org_id"])
-    member_token = create_access_token(str(uuid.uuid4()), org_id, "member")
+    member_id = await create_org_user(db_session, org_id, role="member")
+    member_token = create_access_token(member_id, org_id, "member")
     headers = {"Authorization": f"Bearer {member_token}"}
 
     listed = await client.get("/v1/projects", headers=headers)
