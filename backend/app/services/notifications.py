@@ -7,6 +7,7 @@ import structlog
 
 from app.core.config import settings
 from app.core.redis import get_redis
+from app.schemas.alerts import _validate_https_webhook
 
 log = structlog.get_logger()
 
@@ -33,6 +34,15 @@ class NotificationService:
         return sent
 
     async def _slack(self, rule: dict, message: str) -> bool:
+        try:
+            webhook = _validate_https_webhook(rule["notify_slack_webhook"])
+        except ValueError as e:
+            log.warning("slack_webhook_invalid", error=str(e))
+            return False
+
+        if webhook is None:
+            return False
+
         blocks = [
             {
                 "type": "header",
@@ -42,9 +52,7 @@ class NotificationService:
         ]
         try:
             async with httpx.AsyncClient(timeout=5.0) as client:
-                r = await client.post(
-                    rule["notify_slack_webhook"], json={"blocks": blocks}
-                )
+                r = await client.post(webhook, json={"blocks": blocks})
                 r.raise_for_status()
 
             return True

@@ -105,3 +105,21 @@ async def test_existing_alert_cooldown_suppresses_delivery(
     assert sent is False
     assert slack_calls == 0
     assert redis.set_calls == []
+
+
+@pytest.mark.asyncio
+async def test_slack_rejects_unsafe_webhook_before_http(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    service = NotificationService()
+    rule = _rule()
+    rule["notify_slack_webhook"] = "https://127.0.0.1/hook"
+
+    def fail_client(*args: object, **kwargs: object) -> None:
+        raise AssertionError("unsafe webhook should not reach HTTP client")
+
+    monkeypatch.setattr("app.services.notifications.httpx.AsyncClient", fail_client)
+
+    sent = await service._slack(rule, message="demo")
+
+    assert sent is False
