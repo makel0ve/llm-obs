@@ -23,7 +23,13 @@ def normalize_name(value: str) -> str:
 
 async def invalidate_pricing_cache(provider: str, model: str) -> None:
     redis = await get_redis()
-    await redis.delete(f"pricing:{provider}:{model}")
+    legacy_key = f"pricing:{provider}:{model}"
+    keys = [legacy_key]
+    async for key in redis.scan_iter(match=f"{legacy_key}:*"):
+        keys.append(str(key))
+
+    if keys:
+        await redis.delete(*keys)
 
 
 @router.get("", response_model=list[PricingRecord])
