@@ -14,6 +14,7 @@ from app.core.metrics import (
 )
 from app.schemas.ingest import IngestRequest
 from app.services.ingest import BatchStatusService, IngestService
+from app.services.storage import PayloadStorageResult
 from app.workers import process_span as process_span_module
 from app.workers.process_span import process_span_batch
 from tests.factories import make_span_payload
@@ -213,7 +214,9 @@ async def test_worker_marks_batch_processed(monkeypatch, fake_redis):
         return "0.00000000"
 
     async def fake_store_payload(self, **kwargs):
-        return None
+        return PayloadStorageResult(
+            s3_key=None, status="omitted", drop_reason="below_inline_threshold"
+        )
 
     async def fake_get_redis():
         return fake_redis
@@ -252,6 +255,8 @@ async def test_worker_marks_batch_processed(monkeypatch, fake_redis):
     )
     assert _counter_value(spans_ingested, "openai", "gpt-4o", "ok") == (span_before + 1)
     assert str(inserted_spans[0]["parent_span_id"]) == span["parent_span_id"]
+    assert inserted_spans[0]["payload_status"] == "omitted"
+    assert inserted_spans[0]["payload_drop_reason"] == "below_inline_threshold"
 
 
 @pytest.mark.asyncio
@@ -272,7 +277,9 @@ async def test_worker_marks_batch_partial_failed(monkeypatch, fake_redis):
         return "0.00000000"
 
     async def fake_store_payload(self, **kwargs):
-        return None
+        return PayloadStorageResult(
+            s3_key=None, status="storage_failed", drop_reason="s3_error"
+        )
 
     async def fake_get_redis():
         return fake_redis

@@ -67,6 +67,60 @@ function JsonBlock({ value }: { value: unknown }) {
   )
 }
 
+function payloadStatusMessage(span: TraceSpan) {
+  if ('payload' in span) {
+    return span.payload_status === 'stored_redacted'
+      ? 'Payload loaded from storage with the redaction policy applied.'
+      : 'Payload loaded from storage.'
+  }
+
+  if (span.payload_s3_key) {
+    return 'Payload was stored, but it could not be loaded from object storage.'
+  }
+
+  if (span.payload_status === 'too_large') {
+    return 'Payload exceeded the project max payload bytes setting and was not stored.'
+  }
+
+  if (span.payload_status === 'storage_failed') {
+    return 'Payload storage failed before the object key was recorded.'
+  }
+
+  if (span.payload_status === 'omitted') {
+    if (span.payload_drop_reason === 'storage_mode_none') {
+      return 'Payload was omitted because project payload storage is disabled.'
+    }
+    if (span.payload_drop_reason === 'errors_only_non_error') {
+      return 'Payload was omitted because this span succeeded and project storage is errors-only.'
+    }
+    if (span.payload_drop_reason === 'below_inline_threshold') {
+      return 'Payload was below the object-storage threshold and was not stored as a large payload.'
+    }
+    return 'Payload was omitted by project storage policy.'
+  }
+
+  return 'Payload storage status is not available for this legacy span.'
+}
+
+function PayloadStatusNotice({ span }: { span: TraceSpan }) {
+  const isWarning = span.payload_s3_key || span.payload_status === 'storage_failed'
+  const isInfo = span.payload_status === 'too_large'
+  const tone = isWarning
+    ? 'border-amber-200 bg-amber-50 text-amber-800'
+    : isInfo
+      ? 'border-blue-200 bg-blue-50 text-blue-800'
+      : 'border-gray-200 bg-gray-50 text-gray-600'
+
+  return (
+    <div className={`rounded-md border p-3 text-sm ${tone}`}>
+      {payloadStatusMessage(span)}
+      {span.payload_drop_reason && (
+        <div className="mt-1 font-mono text-xs opacity-80">{span.payload_drop_reason}</div>
+      )}
+    </div>
+  )
+}
+
 function SummaryCard({
   label,
   value,
@@ -275,15 +329,12 @@ function SpanRow({
         <div className="mt-4">
           <div className="mb-2 text-sm font-medium text-gray-700">Payload</div>
           {'payload' in span ? (
-            <JsonBlock value={span.payload} />
-          ) : span.payload_s3_key ? (
-            <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
-              Payload was requested, but it could not be loaded from storage.
+            <div className="space-y-2">
+              <PayloadStatusNotice span={span} />
+              <JsonBlock value={span.payload} />
             </div>
           ) : (
-            <div className="rounded-md border border-gray-200 bg-gray-50 p-3 text-sm text-gray-600">
-              Payload was not stored for this span.
-            </div>
+            <PayloadStatusNotice span={span} />
           )}
         </div>
       )}
@@ -391,8 +442,8 @@ export function TraceDetail({ projectId }: { projectId: string }) {
 
           {includePayload && payloadCount === 0 && (
             <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
-              Payload was requested, but this trace has no stored payload objects.
-              Small payloads and demo-seeded spans may not have payloads in storage.
+              Payload was requested, but no payload objects were loaded. Span rows show the
+              storage status and drop reason when the backend recorded one.
             </div>
           )}
 

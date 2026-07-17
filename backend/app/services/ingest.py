@@ -171,11 +171,12 @@ async def bulk_insert_spans(spans: list[dict], db) -> int:
         INSERT INTO spans (id, trace_id, project_id, name, provider, model,
             parent_span_id,
             input_tokens, output_tokens, cost_usd, latency_ms, status, error,
-            started_at, payload_s3_key, metadata)
+            started_at, payload_s3_key, payload_status, payload_drop_reason, metadata)
         VALUES (:id, :trace_id, :project_id, :name, :provider, :model,
             :parent_span_id,
             :input_tokens, :output_tokens, :cost_usd, :latency_ms, :status, :error,
-            :started_at, :payload_s3_key, :metadata)
+            :started_at, :payload_s3_key, :payload_status, :payload_drop_reason,
+            :metadata)
         ON CONFLICT (id, started_at) DO NOTHING
         """
         ),

@@ -33,6 +33,8 @@ class Span(Base):
         TIMESTAMP(timezone=True), primary_key=True, nullable=False
     )
     payload_s3_key: Mapped[str | None] = mapped_column(String(500))
+    payload_status: Mapped[str | None] = mapped_column(String(30))
+    payload_drop_reason: Mapped[str | None] = mapped_column(String(100))
     metadata_: Mapped[dict[str, Any]] = mapped_column(
         "metadata", JSONB, default=dict, nullable=False
     )

@@ -1,7 +1,8 @@
 import gzip
 import json
 from collections.abc import Mapping
-from typing import Any, cast
+from dataclasses import dataclass
+from typing import Any, Literal, cast
 
 import aioboto3
 import structlog
@@ -13,6 +14,21 @@ S3_THRESHOLD_BYTES = 4 * 1024
 DEFAULT_PAYLOAD_MAX_BYTES = 256 * 1024
 DEFAULT_REDACT_KEYS = "api_key,password,secret,token,authorization"
 REDACTED_VALUE = "[redacted]"
+
+PayloadStorageStatus = Literal[
+    "stored",
+    "stored_redacted",
+    "omitted",
+    "too_large",
+    "storage_failed",
+]
+
+
+@dataclass(frozen=True)
+class PayloadStorageResult:
+    s3_key: str | None
+    status: PayloadStorageStatus
+    drop_reason: str | None = None
 
 
 def parse_redact_keys(value: str | None) -> set[str]:
@@ -59,7 +75,7 @@ class StorageService:
         output: str | None,
         max_bytes: int | None = DEFAULT_PAYLOAD_MAX_BYTES,
         redact_keys: set[str] | None = None,
-    ) -> str | None:
+    ) -> PayloadStorageResult:
         payload_data = {"messages": messages, "output": output}
         if redact_keys:
             payload_data = redact_payload(payload_data, redact_keys)
@@ -74,10 +90,14 @@ class StorageService:
                 payload_bytes=len(payload_bytes),
                 max_bytes=max_bytes,
             )
-            return None
+            return PayloadStorageResult(
+                s3_key=None, status="too_large", drop_reason="max_bytes_exceeded"
+            )
 
         if len(payload_bytes) < S3_THRESHOLD_BYTES:
-            return None
+            return PayloadStorageResult(
+                s3_key=None, status="omitted", drop_reason="below_inline_threshold"
+            )
 
         compressed = gzip.compress(payload_bytes, compresslevel=6)
         key = f"payloads/{project_id}/{span_id[:2]}/{span_id}.json.gz"
@@ -97,11 +117,17 @@ class StorageService:
                     ContentType="application/json",
                 )
 
-            return key
+            return PayloadStorageResult(
+                s3_key=key,
+                status="stored_redacted" if redact_keys else "stored",
+                drop_reason=None,
+            )
 
         except Exception as e:
             log.error("s3_store_failed", span_id=span_id, error=str(e))
-            return None
+            return PayloadStorageResult(
+                s3_key=None, status="storage_failed", drop_reason="s3_error"
+            )
 
     async def get_payload(self, s3_key: str) -> dict[str, Any] | None:
         try:
