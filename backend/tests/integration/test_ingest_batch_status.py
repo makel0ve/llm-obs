@@ -1,3 +1,4 @@
+import asyncio
 from contextlib import asynccontextmanager
 from uuid import uuid4
 
@@ -31,6 +32,19 @@ class FakeRedis:
     async def setex(self, key: str, ttl: int, value: str):
         self.values[key] = value
         return True
+
+    async def set(
+        self, key: str, value: str, *, ex: int | None = None, nx: bool = False
+    ):
+        if nx and key in self.values:
+            return None
+
+        self.values[key] = value
+        return True
+
+    async def delete(self, key: str):
+        self.values.pop(key, None)
+        return 1
 
     async def publish(self, channel: str, message: str):
         self.published.append((channel, message))
@@ -138,6 +152,120 @@ async def test_ingest_creates_accepted_batch_status(monkeypatch, fake_redis):
         == status_payload
     )
     assert _simple_counter_value(ingest_batches_accepted) == accepted_before + 1
+
+
+@pytest.mark.asyncio
+async def test_ingest_reuses_atomic_idempotency_reservation(monkeypatch, fake_redis):
+    project_id = str(uuid4())
+    service = IngestService(redis=fake_redis)
+    enqueued = []
+    payload = IngestRequest(spans=[make_span_payload()], idempotency_key="idem-key")
+
+    class FakeProcessSpanBatch:
+        async def kiq(self, **kwargs):
+            enqueued.append(kwargs)
+
+    monkeypatch.setattr(
+        process_span_module, "process_span_batch", FakeProcessSpanBatch()
+    )
+
+    first = await ingest_spans(
+        payload=payload,
+        response=Response(),
+        project=_project(project_id),
+        service=service,
+        rate_limiter=FakeRateLimiter(),
+    )
+    second = await ingest_spans(
+        payload=payload,
+        response=Response(),
+        project=_project(project_id),
+        service=service,
+        rate_limiter=FakeRateLimiter(),
+    )
+
+    assert second == first
+    assert len(enqueued) == 1
+    assert enqueued[0]["batch_id"] == first.batch_id
+
+
+@pytest.mark.asyncio
+async def test_ingest_rejects_idempotency_key_for_different_body(
+    monkeypatch, fake_redis
+):
+    project_id = str(uuid4())
+    service = IngestService(redis=fake_redis)
+    enqueued = []
+
+    class FakeProcessSpanBatch:
+        async def kiq(self, **kwargs):
+            enqueued.append(kwargs)
+
+    monkeypatch.setattr(
+        process_span_module, "process_span_batch", FakeProcessSpanBatch()
+    )
+
+    await ingest_spans(
+        payload=IngestRequest(spans=[make_span_payload()], idempotency_key="idem-key"),
+        response=Response(),
+        project=_project(project_id),
+        service=service,
+        rate_limiter=FakeRateLimiter(),
+    )
+
+    changed_span = make_span_payload()
+    changed_span["metadata"] = {"changed": True}
+    with pytest.raises(HTTPException) as exc_info:
+        await ingest_spans(
+            payload=IngestRequest(spans=[changed_span], idempotency_key="idem-key"),
+            response=Response(),
+            project=_project(project_id),
+            service=service,
+            rate_limiter=FakeRateLimiter(),
+        )
+
+    assert exc_info.value.status_code == 409
+    assert len(enqueued) == 1
+
+
+@pytest.mark.asyncio
+async def test_concurrent_identical_idempotency_requests_enqueue_once(
+    monkeypatch, fake_redis
+):
+    project_id = str(uuid4())
+    service = IngestService(redis=fake_redis)
+    enqueued = []
+    payload = IngestRequest(spans=[make_span_payload()], idempotency_key="idem-key")
+
+    class FakeProcessSpanBatch:
+        async def kiq(self, **kwargs):
+            await asyncio.sleep(0)
+            enqueued.append(kwargs)
+
+    monkeypatch.setattr(
+        process_span_module, "process_span_batch", FakeProcessSpanBatch()
+    )
+
+    first, second = await asyncio.gather(
+        ingest_spans(
+            payload=payload,
+            response=Response(),
+            project=_project(project_id),
+            service=service,
+            rate_limiter=FakeRateLimiter(),
+        ),
+        ingest_spans(
+            payload=payload,
+            response=Response(),
+            project=_project(project_id),
+            service=service,
+            rate_limiter=FakeRateLimiter(),
+        ),
+    )
+
+    assert second == first
+    assert len(enqueued) == 1
+    assert enqueued[0]["batch_id"] == first.batch_id
 
 
 @pytest.mark.asyncio

@@ -1,6 +1,8 @@
+import hashlib
 import json
 import uuid
 from datetime import UTC, datetime
+from typing import Any
 
 import structlog
 from fastapi import Depends
@@ -14,6 +16,16 @@ from app.schemas.ingest import BatchStatusResponse, SpanSchema
 log = structlog.get_logger()
 IDEMPOTENCY_TTL = 86_400
 BATCH_STATUS_TTL = 86_400
+
+
+class IdempotencyConflictError(Exception):
+    pass
+
+
+def ingest_request_hash(spans: list[SpanSchema]) -> str:
+    payload = [span.model_dump(mode="json") for span in spans]
+    canonical = json.dumps(payload, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
 
 class BatchStatusService:
@@ -116,8 +128,13 @@ class IngestService:
         self._redis = redis
         self._batch_status = BatchStatusService(redis=redis)
 
-    async def accept_batch(self, project_id: str, spans: list[SpanSchema]) -> str:
-        batch_id = str(uuid.uuid4())
+    async def new_batch_id(self) -> str:
+        return str(uuid.uuid4())
+
+    async def accept_batch(
+        self, project_id: str, spans: list[SpanSchema], batch_id: str | None = None
+    ) -> str:
+        batch_id = batch_id or await self.new_batch_id()
         from app.workers.process_span import process_span_batch
 
         await self._batch_status.create_accepted(
@@ -140,16 +157,33 @@ class IngestService:
         log.info("batch_accepted", batch_id=batch_id, span_count=len(spans))
         return batch_id
 
-    async def get_idempotency_result(self, project_id: str, key: str) -> dict | None:
+    async def reserve_idempotency_result(
+        self, project_id: str, key: str, request_hash: str, result: dict[str, Any]
+    ) -> dict[str, Any] | None:
         redis_key = f"idempotency:{project_id}:{key}"
-        existing = await self._redis.get(redis_key)
-        return json.loads(existing) if existing else None
+        record = {"request_hash": request_hash, "result": result}
+        reserved = await self._redis.set(
+            redis_key,
+            json.dumps(record),
+            ex=IDEMPOTENCY_TTL,
+            nx=True,
+        )
+        if reserved:
+            return None
 
-    async def save_idempotency_result(
-        self, project_id: str, key: str, result: dict
-    ) -> None:
+        existing = await self._redis.get(redis_key)
+        if not existing:
+            return None
+
+        existing_record = json.loads(existing)
+        if existing_record.get("request_hash") != request_hash:
+            raise IdempotencyConflictError
+
+        return existing_record.get("result")
+
+    async def release_idempotency_result(self, project_id: str, key: str) -> None:
         redis_key = f"idempotency:{project_id}:{key}"
-        await self._redis.setex(redis_key, IDEMPOTENCY_TTL, json.dumps(result))
+        await self._redis.delete(redis_key)
 
     async def get_batch_status(
         self, project_id: str, batch_id: str
