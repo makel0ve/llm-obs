@@ -323,6 +323,8 @@ After deployment, add pricing for your models so cost tracking works. Admin
 users can manage prices in the dashboard Pricing page. Pricing records are
 historical: adding a new price for the same provider/model closes the previous
 active interval at the new `valid_from` timestamp.
+Cost calculation cache keys include the span timestamp used for the historical
+lookup, and pricing edits clear cached entries for that provider/model.
 
 Pricing is also available through the API:
 
