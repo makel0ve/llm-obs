@@ -1,6 +1,19 @@
 # CHANGELOG
 
 
+## v0.42.6 (2026-07-17)
+
+### Bug Fixes
+
+- Reserve idempotency keys atomically
+  ([`6e0f9db`](https://github.com/makel0ve/llm-obs/commit/6e0f9dbe09290194549ba80a5f2818783d3714f4))
+
+### Chores
+
+- Trigger ci for release sync
+  ([`0e5a740`](https://github.com/makel0ve/llm-obs/commit/0e5a740d6e2ddd36be2971009e8961775ba22f4a))
+
+
 ## v0.42.5 (2026-07-17)
 
 ### Bug Fixes
