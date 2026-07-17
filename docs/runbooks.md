@@ -141,6 +141,12 @@ docker compose --env-file infra/.env -f infra/docker-compose.prod.yml logs --tai
 docker compose --env-file infra/.env -f infra/docker-compose.prod.yml logs --tail=100 scheduler
 ```
 
+The scheduler runs retention cleanup daily. Retention deletes old span payload
+objects only under the owning project's `payloads/{project_id}/` prefix, then
+deletes matching old spans in batches and removes trace rows that no longer
+have spans. If object deletion fails, the affected span rows are left for the
+next retry instead of orphaning payload objects.
+
 Production Compose exposes backend port `8000` and frontend port `3000` on the
 host. Put a reverse proxy in front of those ports for public deployments. The
 application containers do not terminate TLS themselves.
