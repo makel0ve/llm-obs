@@ -3,11 +3,12 @@ import re
 import secrets
 import uuid
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from sqlalchemy import text
 
 from app.core.auth import create_access_token, hash_password, verify_password
 from app.core.db import get_db
+from app.core.ratelimit import AuthRateLimiter, get_auth_rate_limiter
 from app.schemas.auth import (
     LoginRequest,
     LoginResponse,
@@ -18,8 +19,24 @@ from app.schemas.auth import (
 router = APIRouter(prefix="/v1/auth", tags=["auth"])
 
 
+def auth_rate_limit_identifier(request: Request, action: str) -> str:
+    host = request.client.host if request.client else "unknown"
+    return f"{action}:{host}"
+
+
 @router.post("/register", status_code=201, response_model=RegisterResponse)
-async def register(body: RegisterRequest):
+async def register(
+    body: RegisterRequest,
+    request: Request,
+    response: Response,
+    rate_limiter: AuthRateLimiter = Depends(get_auth_rate_limiter),
+):
+    await rate_limiter.check(
+        identifier=auth_rate_limit_identifier(request, "register"),
+        action="register",
+        response=response,
+    )
+
     async with get_db() as db:
         async with db.begin():
             exists = await db.execute(
@@ -84,7 +101,18 @@ async def register(body: RegisterRequest):
 
 
 @router.post("/login", response_model=LoginResponse)
-async def login(body: LoginRequest):
+async def login(
+    body: LoginRequest,
+    request: Request,
+    response: Response,
+    rate_limiter: AuthRateLimiter = Depends(get_auth_rate_limiter),
+):
+    await rate_limiter.check(
+        identifier=auth_rate_limit_identifier(request, "login"),
+        action="login",
+        response=response,
+    )
+
     async with get_db() as db:
         r = await db.execute(
             text(
