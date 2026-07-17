@@ -143,6 +143,10 @@ discard buffered spans.
 Accepted ingest batches return a `batch_id`. Check asynchronous processing with
 the project API key:
 
+Repeated ingest requests with the same `idempotency_key` and identical spans
+return the original `batch_id` without enqueueing another batch. Reusing the
+same idempotency key with a different request body returns `409 Conflict`.
+
 ```bash
 curl -H "X-API-Key: $LLM_OBS_API_KEY" \
   http://localhost:8000/v1/ingest/batches/YOUR_BATCH_ID
