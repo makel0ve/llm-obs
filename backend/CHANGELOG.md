@@ -1,6 +1,24 @@
 # CHANGELOG
 
 
+## v0.41.5 (2026-07-17)
+
+### Bug Fixes
+
+- Validate alert targets
+  ([`759c8cd`](https://github.com/makel0ve/llm-obs/commit/759c8cd1a7ec4142b6d55d5ce3afafc22a70f9e6))
+
+### Chores
+
+- Trigger ci for release sync
+  ([`7c3dd29`](https://github.com/makel0ve/llm-obs/commit/7c3dd29a944e3c98e6b8693bcc26664369ce0d8c))
+
+### Testing
+
+- Keep alert access payload valid
+  ([`f5fcd39`](https://github.com/makel0ve/llm-obs/commit/f5fcd39f022977b9ab432a4fe667df8585765f7c))
+
+
 ## v0.41.4 (2026-07-16)
 
 ### Bug Fixes
