@@ -181,6 +181,8 @@ Backend settings are loaded from `backend/.env.prod` in production.
 | `JWT_ALGORITHM` | JWT algorithm | Default `HS256`. |
 | `JWT_ACCESS_TOKEN_EXPIRE_MINUTES` | Login token lifetime | Default `1440`. |
 | `API_RATE_LIMIT_PER_MINUTE` | API rate limit | Tune per deployment. |
+| `AUTH_RATE_LIMIT_PER_MINUTE` | Login/register rate limit | Default `20` per endpoint/IP. |
+| `AUTH_RATE_LIMIT_WINDOW_SECONDS` | Login/register rate window | Default `60`. |
 | `CORS_ALLOWED_ORIGINS` | Dashboard origins | Set the public dashboard origin, comma-separated if multiple. |
 | `S3_BUCKET` | Payload bucket | Default `llm-obs-payloads`. |
 | `S3_ENDPOINT_URL` | S3-compatible endpoint | Use `http://minio:9000` for compose MinIO. |
