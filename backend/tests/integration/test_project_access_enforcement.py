@@ -106,7 +106,7 @@ def alert_rule_body(project_id: str) -> dict[str, object]:
         "window_minutes": 5,
         "cooldown_minutes": 15,
         "notify_slack_webhook": None,
-        "notify_email": None,
+        "notify_email": "alerts@example.com",
     }
 
 
