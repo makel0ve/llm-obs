@@ -1,6 +1,19 @@
 # CHANGELOG
 
 
+## v0.42.7 (2026-07-19)
+
+### Bug Fixes
+
+- Report accurate batch insert counts
+  ([`c96da9e`](https://github.com/makel0ve/llm-obs/commit/c96da9e983ba74f7282b7fb09fad075af01416bb))
+
+### Chores
+
+- Trigger ci for release sync
+  ([`0d58aa7`](https://github.com/makel0ve/llm-obs/commit/0d58aa7f114aa0864c89788acc78b0714ed62f55))
+
+
 ## v0.42.6 (2026-07-17)
 
 ### Bug Fixes
