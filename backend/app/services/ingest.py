@@ -2,20 +2,22 @@ import hashlib
 import json
 import uuid
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, cast
 
 import structlog
 from fastapi import Depends
 from redis.asyncio import Redis
-from sqlalchemy import text
+from sqlalchemy.dialects.postgresql import insert
 
 from app.core.metrics import ingest_batches_accepted, ingest_batches_failed
 from app.core.redis import get_redis
+from app.models.span import Span
 from app.schemas.ingest import BatchStatusResponse, SpanSchema
 
 log = structlog.get_logger()
 IDEMPOTENCY_TTL = 86_400
 BATCH_STATUS_TTL = 86_400
+SpanIdentity = tuple[Any, datetime]
 
 
 class IdempotencyConflictError(Exception):
@@ -195,27 +197,18 @@ def get_ingest_service(redis: Redis = Depends(get_redis)) -> IngestService:
     return IngestService(redis=redis)
 
 
-async def bulk_insert_spans(spans: list[dict], db) -> int:
+async def bulk_insert_spans(spans: list[dict], db) -> list[SpanIdentity]:
     if not spans:
-        return 0
+        return []
 
-    await db.execute(
-        text(
-            """
-        INSERT INTO spans (id, trace_id, project_id, name, provider, model,
-            parent_span_id,
-            input_tokens, output_tokens, cost_usd, latency_ms, status, error,
-            started_at, payload_s3_key, payload_status, payload_drop_reason, metadata)
-        VALUES (:id, :trace_id, :project_id, :name, :provider, :model,
-            :parent_span_id,
-            :input_tokens, :output_tokens, :cost_usd, :latency_ms, :status, :error,
-            :started_at, :payload_s3_key, :payload_status, :payload_drop_reason,
-            :metadata)
-        ON CONFLICT (id, started_at) DO NOTHING
-        """
-        ),
-        spans,
+    span_table = cast(Any, Span.__table__)
+    stmt = (
+        insert(span_table)
+        .values(spans)
+        .on_conflict_do_nothing(index_elements=["id", "started_at"])
+        .returning(span_table.c.id, span_table.c.started_at)
     )
+    result = await db.execute(stmt)
     await db.commit()
 
-    return len(spans)
+    return [(row.id, row.started_at) for row in result.all()]

@@ -349,9 +349,9 @@ async def test_worker_marks_batch_processed(monkeypatch, fake_redis):
     async def fake_get_redis():
         return fake_redis
 
-    async def fake_bulk_insert_spans(spans: list[dict], db) -> int:
+    async def fake_bulk_insert_spans(spans: list[dict], db):
         inserted_spans.extend(spans)
-        return len(spans)
+        return [(span["id"], span["started_at"]) for span in spans]
 
     monkeypatch.setattr(process_span_module, "get_redis", fake_get_redis)
     monkeypatch.setattr(process_span_module, "get_db", fake_get_db)
@@ -385,6 +385,65 @@ async def test_worker_marks_batch_processed(monkeypatch, fake_redis):
     assert str(inserted_spans[0]["parent_span_id"]) == span["parent_span_id"]
     assert inserted_spans[0]["payload_status"] == "omitted"
     assert inserted_spans[0]["payload_drop_reason"] == "below_inline_threshold"
+
+
+@pytest.mark.asyncio
+async def test_worker_counts_only_inserted_spans_when_duplicates_are_ignored(
+    monkeypatch, fake_redis
+):
+    project_id = str(uuid4())
+    batch_id = str(uuid4())
+    inserted_span = make_span_payload()
+    duplicate_span = make_span_payload()
+    await BatchStatusService(redis=fake_redis).create_accepted(
+        project_id=project_id, batch_id=batch_id, accepted=2
+    )
+
+    @asynccontextmanager
+    async def fake_get_db(project_id=None):
+        yield FakeDb()
+
+    async def fake_cost(self, **kwargs):
+        return "0.00000000"
+
+    async def fake_store_payload(self, **kwargs):
+        return PayloadStorageResult(
+            s3_key=None, status="omitted", drop_reason="below_inline_threshold"
+        )
+
+    async def fake_get_redis():
+        return fake_redis
+
+    async def fake_bulk_insert_spans(spans: list[dict], db):
+        return [(spans[0]["id"], spans[0]["started_at"])]
+
+    monkeypatch.setattr(process_span_module, "get_redis", fake_get_redis)
+    monkeypatch.setattr(process_span_module, "get_db", fake_get_db)
+    monkeypatch.setattr(process_span_module.CostService, "calculate", fake_cost)
+    monkeypatch.setattr(
+        process_span_module.StorageService, "store_payload", fake_store_payload
+    )
+    monkeypatch.setattr(
+        process_span_module, "bulk_insert_spans", fake_bulk_insert_spans
+    )
+    monkeypatch.setattr(process_span_module.update_trace_aggregates, "kiq", _noop_kiq)
+    monkeypatch.setattr(process_span_module.check_batch_anomalies, "kiq", _noop_kiq)
+
+    span_before = _counter_value(spans_ingested, "openai", "gpt-4o", "ok")
+    await process_span_batch.original_func(
+        batch_id=batch_id, project_id=project_id, spans=[inserted_span, duplicate_span]
+    )
+
+    status = await BatchStatusService(redis=fake_redis).get(
+        project_id=project_id, batch_id=batch_id
+    )
+    assert status is not None
+    assert status.status == "processed"
+    assert status.accepted == 2
+    assert status.processed == 1
+    assert status.failed == 0
+    assert _counter_value(spans_ingested, "openai", "gpt-4o", "ok") == (span_before + 1)
+    assert len(fake_redis.published) == 1
 
 
 @pytest.mark.asyncio
@@ -443,5 +502,5 @@ async def test_worker_marks_batch_partial_failed(monkeypatch, fake_redis):
     )
 
 
-async def _bulk_insert_spans(spans: list[dict], db) -> int:
-    return len(spans)
+async def _bulk_insert_spans(spans: list[dict], db):
+    return [(span["id"], span["started_at"]) for span in spans]
