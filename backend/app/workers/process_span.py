@@ -1,6 +1,7 @@
 import json
 import time
 import uuid
+from collections import Counter
 from datetime import datetime
 from decimal import Decimal
 from typing import Any, TypedDict, cast
@@ -21,7 +22,7 @@ from app.core.redis import get_redis
 from app.core.taskiq import broker
 from app.services.anomaly import AnomalyService
 from app.services.cost import CostService
-from app.services.ingest import BatchStatusService, bulk_insert_spans
+from app.services.ingest import BatchStatusService, SpanIdentity, bulk_insert_spans
 from app.services.notifications import NotificationService
 from app.services.storage import (
     DEFAULT_PAYLOAD_MAX_BYTES,
@@ -52,6 +53,23 @@ def skipped_payload_result(payload_mode: str) -> PayloadStorageResult:
     return PayloadStorageResult(
         s3_key=None, status="omitted", drop_reason="errors_only_non_error"
     )
+
+
+def select_inserted_spans(
+    prepared_spans: list[dict[str, Any]], inserted_identities: list[SpanIdentity]
+) -> list[dict[str, Any]]:
+    remaining = Counter(inserted_identities)
+    inserted_spans: list[dict[str, Any]] = []
+
+    for span in prepared_spans:
+        identity = (span["id"], span["started_at"])
+        if remaining[identity] <= 0:
+            continue
+
+        inserted_spans.append(span)
+        remaining[identity] -= 1
+
+    return inserted_spans
 
 
 async def load_payload_privacy_settings(
@@ -169,10 +187,14 @@ async def process_span_batch(
                     )
                     continue
 
-            await bulk_insert_spans(prepared_spans, db)
+            inserted_identities = await bulk_insert_spans(prepared_spans, db)
+            inserted_spans = select_inserted_spans(
+                prepared_spans=prepared_spans,
+                inserted_identities=inserted_identities,
+            )
 
             trace_map: dict[Any, dict[str, Any]] = {}
-            for span in prepared_spans:
+            for span in inserted_spans:
                 tid = span["trace_id"]
                 if (
                     tid not in trace_map
@@ -192,7 +214,7 @@ async def process_span_batch(
 
             await db.commit()
 
-            for span_data in prepared_spans:
+            for span_data in inserted_spans:
                 spans_ingested.labels(
                     provider=span_data["provider"],
                     model=span_data["model"],
@@ -221,7 +243,7 @@ async def process_span_batch(
         await batch_status.mark_finished(
             project_id=project_id,
             batch_id=batch_id,
-            processed=len(prepared_spans),
+            processed=len(inserted_spans),
             failed=failed_count,
         )
         processing_status = "partial_failed" if failed_count else "processed"

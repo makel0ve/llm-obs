@@ -59,8 +59,8 @@ async def _noop_kiq(*args, **kwargs):
     return None
 
 
-async def _bulk_insert_spans(spans: list[dict], db) -> int:
-    return len(spans)
+async def _bulk_insert_spans(spans: list[dict], db):
+    return [(span["id"], span["started_at"]) for span in spans]
 
 
 @pytest.fixture(autouse=True, scope="session")
@@ -229,9 +229,9 @@ async def test_worker_records_payload_drop_reason_for_error_only_policy(monkeypa
     async def fake_store_payload(self, **kwargs):
         raise AssertionError("non-error span should not reach payload storage")
 
-    async def fake_bulk_insert_spans(spans: list[dict], db) -> int:
+    async def fake_bulk_insert_spans(spans: list[dict], db):
         inserted_spans.extend(spans)
-        return len(spans)
+        return [(span["id"], span["started_at"]) for span in spans]
 
     async def fake_get_redis():
         return fake_redis
