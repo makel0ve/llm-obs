@@ -1,6 +1,19 @@
 # CHANGELOG
 
 
+## v0.42.8 (2026-07-20)
+
+### Bug Fixes
+
+- Make audit logging consistency explicit
+  ([`0cc4493`](https://github.com/makel0ve/llm-obs/commit/0cc44930f8564a24f9e3f95ed09d67174667cb7b))
+
+### Chores
+
+- Trigger ci for release sync
+  ([`db01e99`](https://github.com/makel0ve/llm-obs/commit/db01e99aa7f27bcc4a39562594629226dd4e477d))
+
+
 ## v0.42.7 (2026-07-19)
 
 ### Bug Fixes
