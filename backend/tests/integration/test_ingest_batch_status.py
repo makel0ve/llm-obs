@@ -51,6 +51,11 @@ class FakeRedis:
         return 1
 
 
+class FailingPublishRedis(FakeRedis):
+    async def publish(self, channel: str, message: str):
+        raise RuntimeError("redis publish unavailable")
+
+
 class FakeRateLimiter:
     async def check(self, project_id: str, response):
         response.headers["X-RateLimit-Limit"] = "1000"
@@ -68,6 +73,9 @@ class FakeResult:
 
 
 class FakeDb:
+    def __init__(self):
+        self.commit_count = 0
+
     async def execute(self, *args, **kwargs):
         return FakeResult(
             {
@@ -78,6 +86,7 @@ class FakeDb:
         )
 
     async def commit(self):
+        self.commit_count += 1
         return None
 
 
@@ -95,6 +104,40 @@ def _simple_counter_value(counter) -> float:
 
 async def _noop_kiq(*args, **kwargs):
     return None
+
+
+def _patch_worker_common(monkeypatch, redis, db):
+    @asynccontextmanager
+    async def fake_get_db(project_id=None):
+        yield db
+
+    async def fake_cost(self, **kwargs):
+        return "0.00000000"
+
+    async def fake_store_payload(self, **kwargs):
+        return PayloadStorageResult(
+            s3_key=None, status="omitted", drop_reason="below_inline_threshold"
+        )
+
+    async def fake_get_redis():
+        return redis
+
+    monkeypatch.setattr(process_span_module, "get_redis", fake_get_redis)
+    monkeypatch.setattr(process_span_module, "get_db", fake_get_db)
+    monkeypatch.setattr(process_span_module.CostService, "calculate", fake_cost)
+    monkeypatch.setattr(
+        process_span_module.StorageService, "store_payload", fake_store_payload
+    )
+
+
+class FailingKiq:
+    def __init__(self, error: str):
+        self.error = error
+        self.called = False
+
+    async def kiq(self, **kwargs):
+        self.called = True
+        raise RuntimeError(self.error)
 
 
 @pytest.fixture(autouse=True, scope="session")
@@ -494,6 +537,217 @@ async def test_worker_marks_batch_partial_failed(monkeypatch, fake_redis):
     assert status.status == "partial_failed"
     assert status.processed == 1
     assert status.failed == 1
+    assert _counter_value(ingest_batches_processed, "partial_failed") == (
+        processed_before + 1
+    )
+    assert _counter_value(ingest_spans_dropped, "processing_error") == (
+        dropped_before + 1
+    )
+
+
+@pytest.mark.asyncio
+async def test_worker_failure_after_span_insert_leaves_committed_spans_without_trace(
+    monkeypatch, fake_redis
+):
+    project_id = str(uuid4())
+    batch_id = str(uuid4())
+    span = make_span_payload()
+    db = FakeDb()
+    committed_spans = []
+    aggregate_task_calls = []
+    anomaly_task_calls = []
+    await BatchStatusService(redis=fake_redis).create_accepted(
+        project_id=project_id, batch_id=batch_id, accepted=1
+    )
+    _patch_worker_common(monkeypatch, fake_redis, db)
+
+    async def fake_bulk_insert_spans(spans: list[dict], db):
+        committed_spans.extend(spans)
+        await db.commit()
+        return [(span["id"], span["started_at"]) for span in spans]
+
+    async def fail_trace_row(**kwargs):
+        raise RuntimeError("trace insert failed after spans commit")
+
+    async def capture_aggregate(**kwargs):
+        aggregate_task_calls.append(kwargs)
+
+    async def capture_anomaly(**kwargs):
+        anomaly_task_calls.append(kwargs)
+
+    monkeypatch.setattr(
+        process_span_module, "bulk_insert_spans", fake_bulk_insert_spans
+    )
+    monkeypatch.setattr(process_span_module, "ensure_trace_row", fail_trace_row)
+    monkeypatch.setattr(
+        process_span_module.update_trace_aggregates, "kiq", capture_aggregate
+    )
+    monkeypatch.setattr(
+        process_span_module.check_batch_anomalies, "kiq", capture_anomaly
+    )
+
+    failed_before = _counter_value(ingest_batches_failed, "worker")
+    with pytest.raises(RuntimeError, match="trace insert failed"):
+        await process_span_batch.original_func(
+            batch_id=batch_id, project_id=project_id, spans=[span]
+        )
+
+    status = await BatchStatusService(redis=fake_redis).get(
+        project_id=project_id, batch_id=batch_id
+    )
+    assert status is not None
+    assert status.status == "failed"
+    assert status.error == "trace insert failed after spans commit"
+    assert len(committed_spans) == 1
+    assert db.commit_count == 1
+    assert fake_redis.published == []
+    assert aggregate_task_calls == []
+    assert anomaly_task_calls == []
+    assert _counter_value(ingest_batches_failed, "worker") == failed_before + 1
+
+
+@pytest.mark.asyncio
+async def test_worker_failure_during_pubsub_keeps_db_committed_but_marks_failed(
+    monkeypatch,
+):
+    project_id = str(uuid4())
+    batch_id = str(uuid4())
+    span = make_span_payload()
+    redis = FailingPublishRedis()
+    db = FakeDb()
+    committed_spans = []
+    trace_rows = []
+    await BatchStatusService(redis=redis).create_accepted(
+        project_id=project_id, batch_id=batch_id, accepted=1
+    )
+    _patch_worker_common(monkeypatch, redis, db)
+
+    async def fake_bulk_insert_spans(spans: list[dict], db):
+        committed_spans.extend(spans)
+        await db.commit()
+        return [(span["id"], span["started_at"]) for span in spans]
+
+    async def fake_ensure_trace_row(**kwargs):
+        trace_rows.append(kwargs)
+        return kwargs["started_at"]
+
+    monkeypatch.setattr(
+        process_span_module, "bulk_insert_spans", fake_bulk_insert_spans
+    )
+    monkeypatch.setattr(process_span_module, "ensure_trace_row", fake_ensure_trace_row)
+    monkeypatch.setattr(process_span_module.update_trace_aggregates, "kiq", _noop_kiq)
+    monkeypatch.setattr(process_span_module.check_batch_anomalies, "kiq", _noop_kiq)
+
+    with pytest.raises(RuntimeError, match="redis publish unavailable"):
+        await process_span_batch.original_func(
+            batch_id=batch_id, project_id=project_id, spans=[span]
+        )
+
+    status = await BatchStatusService(redis=redis).get(
+        project_id=project_id, batch_id=batch_id
+    )
+    assert status is not None
+    assert status.status == "failed"
+    assert status.error == "redis publish unavailable"
+    assert len(committed_spans) == 1
+    assert len(trace_rows) == 1
+    assert db.commit_count == 2
+
+
+@pytest.mark.asyncio
+async def test_worker_failure_during_aggregate_enqueue_keeps_db_committed(
+    monkeypatch, fake_redis
+):
+    project_id = str(uuid4())
+    batch_id = str(uuid4())
+    span = make_span_payload()
+    db = FakeDb()
+    committed_spans = []
+    trace_rows = []
+    failing_aggregate = FailingKiq("aggregate enqueue unavailable")
+    await BatchStatusService(redis=fake_redis).create_accepted(
+        project_id=project_id, batch_id=batch_id, accepted=1
+    )
+    _patch_worker_common(monkeypatch, fake_redis, db)
+
+    async def fake_bulk_insert_spans(spans: list[dict], db):
+        committed_spans.extend(spans)
+        await db.commit()
+        return [(span["id"], span["started_at"]) for span in spans]
+
+    async def fake_ensure_trace_row(**kwargs):
+        trace_rows.append(kwargs)
+        return kwargs["started_at"]
+
+    monkeypatch.setattr(
+        process_span_module, "bulk_insert_spans", fake_bulk_insert_spans
+    )
+    monkeypatch.setattr(process_span_module, "ensure_trace_row", fake_ensure_trace_row)
+    monkeypatch.setattr(
+        process_span_module.update_trace_aggregates, "kiq", failing_aggregate.kiq
+    )
+    monkeypatch.setattr(process_span_module.check_batch_anomalies, "kiq", _noop_kiq)
+
+    with pytest.raises(RuntimeError, match="aggregate enqueue unavailable"):
+        await process_span_batch.original_func(
+            batch_id=batch_id, project_id=project_id, spans=[span]
+        )
+
+    status = await BatchStatusService(redis=fake_redis).get(
+        project_id=project_id, batch_id=batch_id
+    )
+    assert status is not None
+    assert status.status == "failed"
+    assert status.error == "aggregate enqueue unavailable"
+    assert len(committed_spans) == 1
+    assert len(trace_rows) == 1
+    assert len(fake_redis.published) == 1
+    assert db.commit_count == 2
+    assert failing_aggregate.called is True
+
+
+@pytest.mark.asyncio
+async def test_worker_transient_like_cost_error_is_currently_partial_failed(
+    monkeypatch, fake_redis
+):
+    project_id = str(uuid4())
+    batch_id = str(uuid4())
+    span = make_span_payload()
+    db = FakeDb()
+    inserted_spans = []
+    await BatchStatusService(redis=fake_redis).create_accepted(
+        project_id=project_id, batch_id=batch_id, accepted=1
+    )
+    _patch_worker_common(monkeypatch, fake_redis, db)
+
+    async def failing_cost(self, **kwargs):
+        raise RuntimeError("pricing database unavailable")
+
+    async def fake_bulk_insert_spans(spans: list[dict], db):
+        inserted_spans.extend(spans)
+        return []
+
+    monkeypatch.setattr(process_span_module.CostService, "calculate", failing_cost)
+    monkeypatch.setattr(
+        process_span_module, "bulk_insert_spans", fake_bulk_insert_spans
+    )
+    monkeypatch.setattr(process_span_module.update_trace_aggregates, "kiq", _noop_kiq)
+    monkeypatch.setattr(process_span_module.check_batch_anomalies, "kiq", _noop_kiq)
+
+    processed_before = _counter_value(ingest_batches_processed, "partial_failed")
+    dropped_before = _counter_value(ingest_spans_dropped, "processing_error")
+    await process_span_batch.original_func(
+        batch_id=batch_id, project_id=project_id, spans=[span]
+    )
+
+    status = await BatchStatusService(redis=fake_redis).get(
+        project_id=project_id, batch_id=batch_id
+    )
+    assert status is not None
+    assert status.status == "partial_failed"
+    assert status.processed == 0
+    assert status.failed == 1
+    assert inserted_spans == []
     assert _counter_value(ingest_batches_processed, "partial_failed") == (
         processed_before + 1
     )
