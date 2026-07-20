@@ -65,43 +65,62 @@ class OutboxService:
     async def claim_pending(
         self, *, event_type: str, project_id: str | None = None, limit: int = 100
     ) -> list[OutboxEventPayload]:
-        project_filter = ""
         params: dict[str, Any] = {
             "event_type": event_type,
             "limit": limit,
             "max_attempts": OUTBOX_MAX_ATTEMPTS,
         }
         if project_id is not None:
-            project_filter = "AND project_id = :project_id"
             params["project_id"] = project_id
+            query = text(
+                """
+                WITH next_events AS (
+                    SELECT id
+                    FROM outbox_events
+                    WHERE event_type = :event_type
+                        AND status IN ('PENDING', 'FAILED')
+                        AND attempts < :max_attempts
+                        AND available_at <= TIMEZONE('utc', now())
+                        AND project_id = :project_id
+                    ORDER BY created_at ASC
+                    LIMIT :limit
+                    FOR UPDATE SKIP LOCKED
+                )
+                UPDATE outbox_events
+                SET status = 'PROCESSING',
+                    attempts = attempts + 1,
+                    locked_at = TIMEZONE('utc', now()),
+                    updated_at = TIMEZONE('utc', now())
+                WHERE id IN (SELECT id FROM next_events)
+                RETURNING id, project_id, event_type, event_key, payload, attempts
+                """
+            )
+        else:
+            query = text(
+                """
+                WITH next_events AS (
+                    SELECT id
+                    FROM outbox_events
+                    WHERE event_type = :event_type
+                        AND status IN ('PENDING', 'FAILED')
+                        AND attempts < :max_attempts
+                        AND available_at <= TIMEZONE('utc', now())
+                    ORDER BY created_at ASC
+                    LIMIT :limit
+                    FOR UPDATE SKIP LOCKED
+                )
+                UPDATE outbox_events
+                SET status = 'PROCESSING',
+                    attempts = attempts + 1,
+                    locked_at = TIMEZONE('utc', now()),
+                    updated_at = TIMEZONE('utc', now())
+                WHERE id IN (SELECT id FROM next_events)
+                RETURNING id, project_id, event_type, event_key, payload, attempts
+                """
+            )
 
         async with get_db(project_id=project_id) as db:
-            result = await db.execute(
-                text(
-                    f"""
-                    WITH next_events AS (
-                        SELECT id
-                        FROM outbox_events
-                        WHERE event_type = :event_type
-                            AND status IN ('PENDING', 'FAILED')
-                            AND attempts < :max_attempts
-                            AND available_at <= TIMEZONE('utc', now())
-                            {project_filter}
-                        ORDER BY created_at ASC
-                        LIMIT :limit
-                        FOR UPDATE SKIP LOCKED
-                    )
-                    UPDATE outbox_events
-                    SET status = 'PROCESSING',
-                        attempts = attempts + 1,
-                        locked_at = TIMEZONE('utc', now()),
-                        updated_at = TIMEZONE('utc', now())
-                    WHERE id IN (SELECT id FROM next_events)
-                    RETURNING id, project_id, event_type, event_key, payload, attempts
-                    """
-                ),
-                params,
-            )
+            result = await db.execute(query, params)
             rows = result.mappings().all()
             await db.commit()
 
