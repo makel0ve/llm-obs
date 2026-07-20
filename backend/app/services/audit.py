@@ -15,25 +15,56 @@ async def log_audit(
     user_id: str | None = None,
     resource_id: str | None = None,
     metadata: dict[str, Any] | None = None,
+    db: Any | None = None,
 ) -> None:
+    if db is not None:
+        await _insert_audit_event(
+            db=db,
+            org_id=org_id,
+            action=action,
+            user_id=user_id,
+            resource_id=resource_id,
+            metadata=metadata,
+        )
+        return
+
     try:
         async with get_db() as db:
-            await db.execute(
-                text(
-                    """
-                INSERT INTO audit_log (org_id, user_id, action, resource_id, metadata)
-                VALUES (:org, :user, :action, :resource, :meta)
-                """
-                ),
-                {
-                    "org": org_id,
-                    "user": user_id,
-                    "action": action,
-                    "resource": resource_id,
-                    "meta": json.dumps(metadata or {}),
-                },
+            await _insert_audit_event(
+                db=db,
+                org_id=org_id,
+                action=action,
+                user_id=user_id,
+                resource_id=resource_id,
+                metadata=metadata,
             )
             await db.commit()
 
     except Exception as e:
         log.error("audit_log_failed", action=action, org_id=org_id, error=str(e))
+
+
+async def _insert_audit_event(
+    *,
+    db: Any,
+    org_id: str,
+    action: str,
+    user_id: str | None,
+    resource_id: str | None,
+    metadata: dict[str, Any] | None,
+) -> None:
+    await db.execute(
+        text(
+            """
+        INSERT INTO audit_log (org_id, user_id, action, resource_id, metadata)
+        VALUES (:org, :user, :action, :resource, :meta)
+        """
+        ),
+        {
+            "org": org_id,
+            "user": user_id,
+            "action": action,
+            "resource": resource_id,
+            "meta": json.dumps(metadata or {}),
+        },
+    )
