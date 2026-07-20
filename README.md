@@ -116,6 +116,7 @@ post-deploy smoke checks. Backup and restore procedures live in
 Product and integration documentation:
 
 - [Architecture](docs/architecture.md)
+- [Browser token storage decision](docs/browser-token-storage.md)
 - [SDK integration guide](docs/sdk-integration.md)
 - [Troubleshooting](docs/troubleshooting.md)
 - [Roadmap and known limitations](docs/roadmap.md)
