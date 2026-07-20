@@ -147,9 +147,10 @@ deletes matching old spans in batches and removes trace rows that no longer
 have spans. If object deletion fails, the affected span rows are left for the
 next retry instead of orphaning payload objects.
 
-Production Compose exposes backend port `8000` and frontend port `3000` on the
-host. Put a reverse proxy in front of those ports for public deployments. The
-application containers do not terminate TLS themselves.
+Production Compose binds backend port `8000`, frontend port `3000` and the
+optional Mailpit ports `1025`/`8025` to `127.0.0.1` on the host. Put a reverse
+proxy on the host in front of the frontend and backend ports for public
+deployments. The application containers do not terminate TLS themselves.
 
 Minimum reverse proxy assumptions:
 
@@ -157,12 +158,14 @@ Minimum reverse proxy assumptions:
 - route the dashboard host to frontend port `3000`;
 - route API paths such as `/v1`, `/ready`, `/health`, `/worker-health` and
   `/metrics` to backend port `8000`;
+- expose `/ready`, `/worker-health` and `/metrics` only to trusted operators or
+  monitoring systems, not to the public internet;
 - forward `Host`, `X-Forwarded-Proto` and client IP headers if the proxy
   supports them;
 - set `CORS_ALLOWED_ORIGINS` in `backend/.env.prod` to the public dashboard
   origin, for example `https://obs.example.com`;
-- keep backend, Postgres, Redis, Redis queue, PgBouncer and MinIO ports private
-  unless there is an explicit operational need to expose them.
+- keep backend, Mailpit, Postgres, Redis, Redis queue, PgBouncer and MinIO ports
+  private unless there is an explicit operational need to expose them.
 
 ## Environment Variables
 
