@@ -1,3 +1,4 @@
+from fastapi import FastAPI
 from prometheus_client import Counter, Histogram
 from prometheus_fastapi_instrumentator import Instrumentator
 
@@ -38,5 +39,5 @@ failed_tasks = Counter(
 )
 
 
-def setup_metrics(app):
+def setup_metrics(app: FastAPI) -> None:
     Instrumentator().instrument(app).expose(app)

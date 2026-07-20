@@ -1,4 +1,5 @@
 from datetime import UTC, datetime
+from typing import Any
 
 import structlog
 
@@ -12,7 +13,7 @@ log = structlog.get_logger()
 
 @dlq_broker.task
 async def handle_failed_task(
-    task_name: str, task_args: dict, error: str, attempts: int
+    task_name: str, task_args: dict[str, Any], error: str, attempts: int
 ) -> None:
     log.error(
         "task_failed_permanently", task=task_name, attempts=attempts, error=error[:500]

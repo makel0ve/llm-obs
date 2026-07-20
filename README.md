@@ -117,6 +117,7 @@ Product and integration documentation:
 
 - [Architecture](docs/architecture.md)
 - [Browser token storage decision](docs/browser-token-storage.md)
+- [Audit regression coverage](docs/audit-regression-coverage.md)
 - [SDK integration guide](docs/sdk-integration.md)
 - [Troubleshooting](docs/troubleshooting.md)
 - [Roadmap and known limitations](docs/roadmap.md)
