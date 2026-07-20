@@ -40,16 +40,17 @@ span rows, then removes trace rows that no longer have spans.
 ## Ingest Flow
 
 1. The Python SDK records spans with decorators or provider patching.
-2. The SDK sends batches to `POST /v1/spans` with a project API key.
-3. The API authenticates the key, rate-limits the project and enqueues the batch.
-4. OTLP ingest accepts native 16/32 character hex span and trace IDs by mapping
+2. The SDK sends JSON span batches to `POST /v1/ingest` with a project API key.
+3. OTLP HTTP trace export accepts native payloads at `POST /v1/traces`.
+4. The API authenticates the key, rate-limits the project and enqueues the batch.
+5. OTLP ingest accepts native 16/32 character hex span and trace IDs by mapping
    them deterministically to internal UUIDs, while malformed spans are reported
    through OTLP `partialSuccess.rejectedSpans`.
-5. Workers process spans asynchronously, update trace aggregates and evaluate
+6. Workers process spans asynchronously, update trace aggregates and evaluate
    alert rules.
-6. Large payloads are stored in MinIO/S3 only when project payload settings
+7. Large payloads are stored in MinIO/S3 only when project payload settings
    allow it.
-7. The dashboard reads metrics, traces and analytics from the query API.
+8. The dashboard reads metrics, traces and analytics from the query API.
 
 Accepted ingest requests return a `batch_id`. Processing can still fail later,
 so operational checks should include the batch status API, failed-task API and
