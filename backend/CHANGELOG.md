@@ -1,6 +1,27 @@
 # CHANGELOG
 
 
+## v0.42.11 (2026-07-20)
+
+### Bug Fixes
+
+- Make worker span trace writes atomic
+  ([`85e82a2`](https://github.com/makel0ve/llm-obs/commit/85e82a24258e7f650d809b3b39447155f7573c24))
+
+### Chores
+
+- Ignore local planning files
+  ([`ce45783`](https://github.com/makel0ve/llm-obs/commit/ce45783b5d75d3c8b8d19ea268c3b25dfc364375))
+
+- Trigger ci for release sync
+  ([`eb1a2fa`](https://github.com/makel0ve/llm-obs/commit/eb1a2fa8da1a54976e2053a4305ecd68f56398a2))
+
+### Testing
+
+- Add worker failure injection baseline
+  ([`65fa8ef`](https://github.com/makel0ve/llm-obs/commit/65fa8ef1ee8c4a21620056721645a2b248807aa8))
+
+
 ## v0.42.10 (2026-07-20)
 
 ### Bug Fixes
