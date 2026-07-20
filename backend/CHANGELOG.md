@@ -1,6 +1,19 @@
 # CHANGELOG
 
 
+## v0.42.12 (2026-07-20)
+
+### Bug Fixes
+
+- Classify worker transient errors
+  ([`7dbf635`](https://github.com/makel0ve/llm-obs/commit/7dbf635018b6eba2b9e6ee66673f361f5c9caf38))
+
+### Chores
+
+- Trigger ci for release sync
+  ([`83f34b3`](https://github.com/makel0ve/llm-obs/commit/83f34b359e549f9effcaedb5f42916c104eb9b76))
+
+
 ## v0.42.11 (2026-07-20)
 
 ### Bug Fixes
