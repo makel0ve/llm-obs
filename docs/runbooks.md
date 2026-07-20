@@ -383,6 +383,20 @@ Check Prometheus metrics:
 curl -f http://localhost:8000/metrics | grep llmobs_ingest
 ```
 
+For public deployments, verify the reverse proxy does not expose operator-only
+endpoints to unauthenticated external users:
+
+```bash
+curl -I https://obs.example.com/ready
+curl -I https://obs.example.com/worker-health
+curl -I https://obs.example.com/metrics
+```
+
+Those external checks should return `403`, `404` or another proxy-level denial
+unless the caller is on a trusted operator or monitoring path. The backend still
+binds these endpoints on localhost for Compose healthchecks and local
+monitoring.
+
 Create or verify a login through the dashboard at <http://localhost:3000>.
 
 Register a first admin user if this is a fresh deployment:
