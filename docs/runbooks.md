@@ -219,6 +219,28 @@ MinIO container bootstrap:
 | `MINIO_ROOT_USER` | MinIO root user |
 | `MINIO_ROOT_PASSWORD` | MinIO root password |
 
+## Resource Guidance
+
+Production Compose does not set hard CPU or memory limits by default because
+self-hosted deployments vary from single-VM installs to dedicated service
+hosts. Start with at least the following reserved capacity and tighten limits
+only after observing real traffic:
+
+| Service | Starting reservation |
+| --- | --- |
+| `postgres` | 1 CPU, 1 GiB RAM, persistent disk sized for trace retention |
+| `backend` | 1 CPU, 512 MiB RAM per two Gunicorn workers |
+| `worker` | 1 CPU, 512 MiB RAM, more if payload processing or alert volume grows |
+| `scheduler` | 0.25 CPU, 256 MiB RAM |
+| `redis` | 512 MiB RAM, aligned with the configured cache maxmemory |
+| `redis-queue` | 512 MiB RAM plus persistent disk for AOF growth |
+| `minio` | 1 CPU, 512 MiB RAM, persistent disk sized for stored payloads |
+| `frontend` | 0.25 CPU, 128 MiB RAM |
+
+Alert if container restarts increase, `/ready` fails, `/worker-health` becomes
+stale, Redis memory approaches `maxmemory`, Redis queue AOF grows unexpectedly,
+or Postgres disk usage approaches the retention budget.
+
 ## Migrations
 
 Check the current Alembic head:
@@ -325,6 +347,12 @@ The Compose files separate Redis responsibilities. `redis` handles cache,
 rate-limit counters, batch status and live pub/sub. `redis-queue` handles
 Taskiq queues, task results and the DLQ with AOF persistence and `noeviction`,
 so accepted ingest work is not subject to cache eviction.
+
+Production container healthchecks cover HTTP-facing services directly:
+Postgres, MinIO, PgBouncer, backend readiness and frontend nginx. Worker and
+scheduler containers are supervised by `restart: unless-stopped`; their
+end-to-end liveness is intentionally checked through `/worker-health` instead of
+a process-only container healthcheck.
 
 `/worker-health` depends on the scheduler and worker services. The scheduler
 enqueues a lightweight heartbeat task every minute, and the worker updates the
