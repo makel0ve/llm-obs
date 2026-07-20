@@ -168,6 +168,12 @@ Minimum reverse proxy assumptions:
 
 Backend settings are loaded from `backend/.env.prod` in production.
 
+Production Compose pins third-party service images to explicit version tags:
+Postgres/pgvector, Redis, MinIO, PgBouncer and Mailpit should be upgraded by an
+intentional Compose change. The project-owned `backend`, `worker`, `scheduler`
+and `frontend` services are built from the checked-out source tree rather than
+pulled from a registry; deploy from a reviewed commit or release tag.
+
 | Variable | Purpose | Production notes |
 | --- | --- | --- |
 | `ENVIRONMENT` | Runtime mode | Set to `production`. |
