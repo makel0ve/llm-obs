@@ -64,6 +64,12 @@ while Alembic migrations use the owner/admin migration role. This keeps trace
 RLS as a database-level defense-in-depth boundary instead of relying on a
 superuser or table-owner runtime connection.
 
+Governance mutations for users, projects and API keys write audit events in the
+same database transaction as the audited change. If the audit insert fails, the
+mutation fails and rolls back instead of silently committing an unaudited admin
+change. Legacy `log_audit` calls without an active transaction remain
+best-effort and suppress audit storage failures.
+
 MinIO/S3 stores large LLM input/output payload objects when enabled. Project
 settings control payload mode, maximum payload size and comma-separated field
 names to redact before object storage. PostgreSQL span rows store only payload

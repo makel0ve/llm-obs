@@ -321,11 +321,12 @@ async def test_create_invite_uses_admin_org_and_returns_token(monkeypatch):
 
     assert result["role"] == "viewer"
     assert result["invite_token"] == "raw-token"
-    insert_params = db.params[-1]
+    insert_params = next(params for params in db.params if "token_hash" in params)
     assert insert_params["org"] == org_id
     assert insert_params["token_hash"] == users_api.hash_invite_token("raw-token")
     assert audit_events == [
         {
+            "db": db,
             "org_id": org_id,
             "user_id": audit_events[0]["user_id"],
             "action": "user.invite.create",

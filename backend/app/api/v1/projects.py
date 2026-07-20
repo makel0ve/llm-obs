@@ -183,13 +183,14 @@ async def create_project(
             )
             record = serialize_project_record(result.mappings().one())
 
-    await log_audit(
-        org_id=user["org_id"],
-        user_id=user["sub"],
-        action="project.create",
-        resource_id=record["id"],
-        metadata={"name": name},
-    )
+            await log_audit(
+                db=db,
+                org_id=user["org_id"],
+                user_id=user["sub"],
+                action="project.create",
+                resource_id=record["id"],
+                metadata={"name": name},
+            )
 
     record["api_key"] = raw_key
     record["note"] = "Save this key — it won't be shown again"
@@ -228,16 +229,17 @@ async def rotate_api_key(
             if not result.one_or_none():
                 raise HTTPException(404, "Project not found")
 
+            await log_audit(
+                db=db,
+                org_id=user["org_id"],
+                user_id=user["sub"],
+                action="api_key.rotate",
+                resource_id=project_id,
+            )
+
     redis = await get_redis()
     await redis.delete(f"apikey:{project['api_key_hash']}")
     await redis.delete(f"apikey:{new_hash}")
-
-    await log_audit(
-        org_id=user["org_id"],
-        user_id=user["sub"],
-        action="api_key.rotate",
-        resource_id=project_id,
-    )
 
     return {"api_key": raw_key, "note": "Save this key — it won't be shown again"}
 
@@ -320,13 +322,14 @@ async def assign_project_member(
             )
             membership = dict(result.mappings().one())
 
-    await log_audit(
-        org_id=user["org_id"],
-        user_id=user["sub"],
-        action="project.member.assign",
-        resource_id=project_id,
-        metadata={"target_user_id": body.user_id, "role": body.role},
-    )
+            await log_audit(
+                db=db,
+                org_id=user["org_id"],
+                user_id=user["sub"],
+                action="project.member.assign",
+                resource_id=project_id,
+                metadata={"target_user_id": body.user_id, "role": body.role},
+            )
 
     return serialize_project_member_record(
         {
@@ -375,13 +378,14 @@ async def remove_project_member(
             if not result.one_or_none():
                 raise HTTPException(404, "Project membership not found")
 
-    await log_audit(
-        org_id=user["org_id"],
-        user_id=user["sub"],
-        action="project.member.remove",
-        resource_id=project_id,
-        metadata={"target_user_id": user_id},
-    )
+            await log_audit(
+                db=db,
+                org_id=user["org_id"],
+                user_id=user["sub"],
+                action="project.member.remove",
+                resource_id=project_id,
+                metadata={"target_user_id": user_id},
+            )
 
 
 @router.get("/{project_id}/api-keys", response_model=list[ProjectApiKeyRecord])
@@ -464,13 +468,14 @@ async def create_api_key(
             record = serialize_api_key_record(result.mappings().one())
             record["api_key"] = raw_key
 
-    await log_audit(
-        org_id=user["org_id"],
-        user_id=user["sub"],
-        action="api_key.create",
-        resource_id=project_id,
-        metadata={"name": body.name, "scope": body.scope},
-    )
+            await log_audit(
+                db=db,
+                org_id=user["org_id"],
+                user_id=user["sub"],
+                action="api_key.create",
+                resource_id=project_id,
+                metadata={"name": body.name, "scope": body.scope},
+            )
 
     return record
 
@@ -505,16 +510,17 @@ async def revoke_api_key(
             if not row:
                 raise HTTPException(404, "API key not found")
 
+            await log_audit(
+                db=db,
+                org_id=user["org_id"],
+                user_id=user["sub"],
+                action="api_key.revoke",
+                resource_id=project_id,
+                metadata={"key_id": key_id},
+            )
+
     redis = await get_redis()
     await redis.delete(f"apikey:{row['key_hash']}")
-
-    await log_audit(
-        org_id=user["org_id"],
-        user_id=user["sub"],
-        action="api_key.revoke",
-        resource_id=project_id,
-        metadata={"key_id": key_id},
-    )
 
     return {"revoked": True}
 
@@ -603,14 +609,14 @@ async def update_settings(
         if not row:
             raise HTTPException(404, "Project not found")
 
+        await log_audit(
+            db=db,
+            org_id=user["org_id"],
+            user_id=user["sub"],
+            action="project.settings.update",
+            resource_id=project_id,
+            metadata=values,
+        )
         await db.commit()
-
-    await log_audit(
-        org_id=user["org_id"],
-        user_id=user["sub"],
-        action="project.settings.update",
-        resource_id=project_id,
-        metadata=values,
-    )
 
     return dict(row)
