@@ -15,7 +15,12 @@ from app.core.metrics import (
     spans_ingested,
 )
 from app.schemas.ingest import IngestRequest
-from app.services.ingest import BatchStatusService, IngestService
+from app.services.ingest import (
+    BatchStatusService,
+    IdempotencyConflictError,
+    IdempotencyInProgressError,
+    IngestService,
+)
 from app.services.storage import PayloadStorageResult
 from app.workers import process_span as process_span_module
 from app.workers.process_span import process_span_batch
@@ -60,6 +65,44 @@ class FailingPublishRedis(FakeRedis):
 class FakeRateLimiter:
     async def check(self, project_id: str, response):
         response.headers["X-RateLimit-Limit"] = "1000"
+
+
+class MemoryIdempotencyStore:
+    def __init__(self):
+        self.records = {}
+        self.lock = asyncio.Lock()
+
+    async def reserve(self, project_id: str, key: str, request_hash: str, result: dict):
+        record_key = (project_id, key)
+        async with self.lock:
+            existing = self.records.get(record_key)
+            if existing is None:
+                self.records[record_key] = {
+                    "request_hash": request_hash,
+                    "status": "PENDING",
+                    "result": result,
+                }
+                return None
+
+            if existing["request_hash"] != request_hash:
+                raise IdempotencyConflictError
+
+            if existing["status"] == "COMMITTED":
+                return existing["result"]
+
+            if existing["status"] == "FAILED":
+                existing.update(status="PENDING", result=result)
+                return None
+
+            raise IdempotencyInProgressError
+
+    async def commit(
+        self, project_id: str, key: str, request_hash: str, result: dict
+    ) -> None:
+        self.records[(project_id, key)].update(status="COMMITTED", result=result)
+
+    async def fail(self, project_id: str, key: str, request_hash: str) -> None:
+        self.records[(project_id, key)].update(status="FAILED", result=None)
 
 
 class FakeResult:
@@ -201,7 +244,8 @@ async def test_ingest_creates_accepted_batch_status(monkeypatch, fake_redis):
 @pytest.mark.asyncio
 async def test_ingest_reuses_atomic_idempotency_reservation(monkeypatch, fake_redis):
     project_id = str(uuid4())
-    service = IngestService(redis=fake_redis)
+    idempotency_store = MemoryIdempotencyStore()
+    service = IngestService(redis=fake_redis, idempotency_store=idempotency_store)
     enqueued = []
     payload = IngestRequest(spans=[make_span_payload()], idempotency_key="idem-key")
 
@@ -231,6 +275,7 @@ async def test_ingest_reuses_atomic_idempotency_reservation(monkeypatch, fake_re
     assert second == first
     assert len(enqueued) == 1
     assert enqueued[0]["batch_id"] == first.batch_id
+    assert idempotency_store.records[(project_id, "idem-key")]["status"] == "COMMITTED"
 
 
 @pytest.mark.asyncio
@@ -238,7 +283,9 @@ async def test_ingest_rejects_idempotency_key_for_different_body(
     monkeypatch, fake_redis
 ):
     project_id = str(uuid4())
-    service = IngestService(redis=fake_redis)
+    service = IngestService(
+        redis=fake_redis, idempotency_store=MemoryIdempotencyStore()
+    )
     enqueued = []
 
     class FakeProcessSpanBatch:
@@ -277,7 +324,9 @@ async def test_concurrent_identical_idempotency_requests_enqueue_once(
     monkeypatch, fake_redis
 ):
     project_id = str(uuid4())
-    service = IngestService(redis=fake_redis)
+    service = IngestService(
+        redis=fake_redis, idempotency_store=MemoryIdempotencyStore()
+    )
     enqueued = []
     payload = IngestRequest(spans=[make_span_payload()], idempotency_key="idem-key")
 
@@ -290,7 +339,7 @@ async def test_concurrent_identical_idempotency_requests_enqueue_once(
         process_span_module, "process_span_batch", FakeProcessSpanBatch()
     )
 
-    first, second = await asyncio.gather(
+    results = await asyncio.gather(
         ingest_spans(
             payload=payload,
             response=Response(),
@@ -305,11 +354,60 @@ async def test_concurrent_identical_idempotency_requests_enqueue_once(
             service=service,
             rate_limiter=FakeRateLimiter(),
         ),
+        return_exceptions=True,
     )
 
-    assert second == first
+    successes = [result for result in results if not isinstance(result, Exception)]
+    errors = [result for result in results if isinstance(result, HTTPException)]
+    assert len(successes) == 1
+    assert len(errors) == 1
+    assert errors[0].status_code == 409
+    assert errors[0].detail == "Idempotency key is already being processed"
     assert len(enqueued) == 1
-    assert enqueued[0]["batch_id"] == first.batch_id
+    assert enqueued[0]["batch_id"] == successes[0].batch_id
+
+
+@pytest.mark.asyncio
+async def test_idempotency_failed_enqueue_can_be_retried(monkeypatch, fake_redis):
+    project_id = str(uuid4())
+    idempotency_store = MemoryIdempotencyStore()
+    service = IngestService(redis=fake_redis, idempotency_store=idempotency_store)
+    payload = IngestRequest(spans=[make_span_payload()], idempotency_key="idem-key")
+    attempts = 0
+
+    class FlakyProcessSpanBatch:
+        async def kiq(self, **kwargs):
+            nonlocal attempts
+            attempts += 1
+            if attempts == 1:
+                raise RuntimeError("queue unavailable")
+
+    monkeypatch.setattr(
+        process_span_module, "process_span_batch", FlakyProcessSpanBatch()
+    )
+
+    with pytest.raises(RuntimeError):
+        await ingest_spans(
+            payload=payload,
+            response=Response(),
+            project=_project(project_id),
+            service=service,
+            rate_limiter=FakeRateLimiter(),
+        )
+
+    assert idempotency_store.records[(project_id, "idem-key")]["status"] == "FAILED"
+
+    retry = await ingest_spans(
+        payload=payload,
+        response=Response(),
+        project=_project(project_id),
+        service=service,
+        rate_limiter=FakeRateLimiter(),
+    )
+
+    assert retry.accepted == 1
+    assert attempts == 2
+    assert idempotency_store.records[(project_id, "idem-key")]["status"] == "COMMITTED"
 
 
 @pytest.mark.asyncio

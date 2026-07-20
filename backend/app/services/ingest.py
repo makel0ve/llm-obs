@@ -1,27 +1,45 @@
 import hashlib
 import json
 import uuid
+from collections.abc import Mapping
 from datetime import UTC, datetime
-from typing import Any, cast
+from typing import Any, Protocol, cast
 
 import structlog
 from fastapi import Depends
 from redis.asyncio import Redis
+from sqlalchemy import text
 from sqlalchemy.dialects.postgresql import insert
 
+from app.core.db import get_db
 from app.core.metrics import ingest_batches_accepted, ingest_batches_failed
 from app.core.redis import get_redis
 from app.models.span import Span
 from app.schemas.ingest import BatchStatusResponse, SpanSchema
 
 log = structlog.get_logger()
-IDEMPOTENCY_TTL = 86_400
 BATCH_STATUS_TTL = 86_400
 SpanIdentity = tuple[Any, datetime]
 
 
 class IdempotencyConflictError(Exception):
     pass
+
+
+class IdempotencyInProgressError(Exception):
+    pass
+
+
+class IdempotencyStore(Protocol):
+    async def reserve(
+        self, project_id: str, key: str, request_hash: str, result: dict[str, Any]
+    ) -> dict[str, Any] | None: ...
+
+    async def commit(
+        self, project_id: str, key: str, request_hash: str, result: dict[str, Any]
+    ) -> None: ...
+
+    async def fail(self, project_id: str, key: str, request_hash: str) -> None: ...
 
 
 def ingest_request_hash(spans: list[SpanSchema]) -> str:
@@ -125,10 +143,163 @@ class BatchStatusService:
         return f"ingest_batch:{project_id}:{batch_id}"
 
 
+def _normalize_result(value: Any) -> dict[str, Any] | None:
+    if value is None:
+        return None
+    if isinstance(value, str):
+        return cast(dict[str, Any], json.loads(value))
+    if isinstance(value, Mapping):
+        return dict(value)
+
+    return cast(dict[str, Any], value)
+
+
+class PostgresIdempotencyStore:
+    async def reserve(
+        self, project_id: str, key: str, request_hash: str, result: dict[str, Any]
+    ) -> dict[str, Any] | None:
+        result_json = json.dumps(result)
+        async with get_db() as db:
+            inserted = await db.execute(
+                text(
+                    """
+                    INSERT INTO idempotency_records (
+                        project_id, idempotency_key, request_hash, status, result
+                    )
+                    VALUES (
+                        :project_id, :key, :request_hash, 'PENDING',
+                        CAST(:result AS jsonb)
+                    )
+                    ON CONFLICT (project_id, idempotency_key) DO NOTHING
+                    RETURNING status
+                    """
+                ),
+                {
+                    "project_id": project_id,
+                    "key": key,
+                    "request_hash": request_hash,
+                    "result": result_json,
+                },
+            )
+            if inserted.mappings().one_or_none():
+                await db.commit()
+                return None
+
+            existing = await db.execute(
+                text(
+                    """
+                    SELECT request_hash, status, result
+                    FROM idempotency_records
+                    WHERE project_id = :project_id AND idempotency_key = :key
+                    """
+                ),
+                {"project_id": project_id, "key": key},
+            )
+            row = existing.mappings().one()
+
+            if row["request_hash"] != request_hash:
+                raise IdempotencyConflictError
+
+            if row["status"] == "COMMITTED":
+                return _normalize_result(row["result"])
+
+            if row["status"] == "FAILED":
+                await db.execute(
+                    text(
+                        """
+                        UPDATE idempotency_records
+                        SET status = 'PENDING',
+                            result = CAST(:result AS jsonb),
+                            updated_at = TIMEZONE('utc', now())
+                        WHERE project_id = :project_id AND idempotency_key = :key
+                        """
+                    ),
+                    {"project_id": project_id, "key": key, "result": result_json},
+                )
+                await db.commit()
+                return None
+
+            raise IdempotencyInProgressError
+
+    async def commit(
+        self, project_id: str, key: str, request_hash: str, result: dict[str, Any]
+    ) -> None:
+        await self._set_status(
+            project_id=project_id,
+            key=key,
+            request_hash=request_hash,
+            status="COMMITTED",
+            result=result,
+        )
+
+    async def fail(self, project_id: str, key: str, request_hash: str) -> None:
+        await self._set_status(
+            project_id=project_id,
+            key=key,
+            request_hash=request_hash,
+            status="FAILED",
+            result=None,
+        )
+
+    async def _set_status(
+        self,
+        *,
+        project_id: str,
+        key: str,
+        request_hash: str,
+        status: str,
+        result: dict[str, Any] | None,
+    ) -> None:
+        async with get_db() as db:
+            if result is None:
+                await db.execute(
+                    text(
+                        """
+                        UPDATE idempotency_records
+                        SET status = :status,
+                            result = NULL,
+                            updated_at = TIMEZONE('utc', now())
+                        WHERE project_id = :project_id
+                            AND idempotency_key = :key
+                            AND request_hash = :request_hash
+                        """
+                    ),
+                    {
+                        "project_id": project_id,
+                        "key": key,
+                        "request_hash": request_hash,
+                        "status": status,
+                    },
+                )
+            else:
+                await db.execute(
+                    text(
+                        """
+                        UPDATE idempotency_records
+                        SET status = :status,
+                            result = CAST(:result AS jsonb),
+                            updated_at = TIMEZONE('utc', now())
+                        WHERE project_id = :project_id
+                            AND idempotency_key = :key
+                            AND request_hash = :request_hash
+                        """
+                    ),
+                    {
+                        "project_id": project_id,
+                        "key": key,
+                        "request_hash": request_hash,
+                        "status": status,
+                        "result": json.dumps(result),
+                    },
+                )
+            await db.commit()
+
+
 class IngestService:
-    def __init__(self, redis: Redis):
+    def __init__(self, redis: Redis, idempotency_store: IdempotencyStore | None = None):
         self._redis = redis
         self._batch_status = BatchStatusService(redis=redis)
+        self._idempotency = idempotency_store or PostgresIdempotencyStore()
 
     async def new_batch_id(self) -> str:
         return str(uuid.uuid4())
@@ -162,30 +333,17 @@ class IngestService:
     async def reserve_idempotency_result(
         self, project_id: str, key: str, request_hash: str, result: dict[str, Any]
     ) -> dict[str, Any] | None:
-        redis_key = f"idempotency:{project_id}:{key}"
-        record = {"request_hash": request_hash, "result": result}
-        reserved = await self._redis.set(
-            redis_key,
-            json.dumps(record),
-            ex=IDEMPOTENCY_TTL,
-            nx=True,
-        )
-        if reserved:
-            return None
+        return await self._idempotency.reserve(project_id, key, request_hash, result)
 
-        existing = await self._redis.get(redis_key)
-        if not existing:
-            return None
+    async def commit_idempotency_result(
+        self, project_id: str, key: str, request_hash: str, result: dict[str, Any]
+    ) -> None:
+        await self._idempotency.commit(project_id, key, request_hash, result)
 
-        existing_record = json.loads(existing)
-        if existing_record.get("request_hash") != request_hash:
-            raise IdempotencyConflictError
-
-        return existing_record.get("result")
-
-    async def release_idempotency_result(self, project_id: str, key: str) -> None:
-        redis_key = f"idempotency:{project_id}:{key}"
-        await self._redis.delete(redis_key)
+    async def mark_idempotency_failed(
+        self, project_id: str, key: str, request_hash: str
+    ) -> None:
+        await self._idempotency.fail(project_id, key, request_hash)
 
     async def get_batch_status(
         self, project_id: str, batch_id: str
