@@ -27,6 +27,11 @@ from app.services.anomaly import AnomalyService
 from app.services.cost import CostService
 from app.services.ingest import BatchStatusService, SpanIdentity, bulk_insert_spans
 from app.services.notifications import NotificationService
+from app.services.outbox import (
+    OUTBOX_SPAN_INSERTED,
+    OutboxService,
+    enqueue_outbox_event,
+)
 from app.services.storage import (
     DEFAULT_PAYLOAD_MAX_BYTES,
     DEFAULT_REDACT_KEYS,
@@ -235,6 +240,20 @@ async def process_span_batch(
                     status=span["status"],
                 )
 
+            for span_data in inserted_spans:
+                await enqueue_outbox_event(
+                    db=db,
+                    project_id=uuid.UUID(project_id),
+                    event_type=OUTBOX_SPAN_INSERTED,
+                    event_key=str(span_data["id"]),
+                    payload={
+                        "span_id": str(span_data["id"]),
+                        "name": span_data.get("name"),
+                        "latency_ms": span_data["latency_ms"],
+                        "status": span_data["status"],
+                    },
+                )
+
             await db.commit()
 
             for span_data in inserted_spans:
@@ -243,16 +262,16 @@ async def process_span_batch(
                     model=span_data["model"],
                     status=span_data["status"],
                 ).inc()
-                await redis.publish(
-                    f"project:{project_id}:new_span",
-                    json.dumps(
-                        {
-                            "span_id": str(span_data["id"]),
-                            "name": span_data.get("name"),
-                            "latency_ms": span_data["latency_ms"],
-                            "status": span_data["status"],
-                        }
-                    ),
+
+        if inserted_spans:
+            try:
+                await deliver_span_outbox_events.kiq(project_id=project_id)
+            except Exception as e:
+                log.warning(
+                    "outbox_delivery_enqueue_failed",
+                    project_id=project_id,
+                    batch_id=batch_id,
+                    error=str(e),
                 )
 
         for trace_id, span in trace_map.items():
@@ -347,6 +366,31 @@ async def ensure_trace_row(
         },
     )
     return started_at
+
+
+@broker.task(retry_on_error=True, max_retries=3, schedule=[{"cron": "* * * * *"}])
+async def deliver_span_outbox_events(
+    project_id: str | None = None, limit: int = 100
+) -> None:
+    outbox = OutboxService()
+    events = await outbox.claim_pending(
+        event_type=OUTBOX_SPAN_INSERTED, project_id=project_id, limit=limit
+    )
+    if not events:
+        return
+
+    redis = await get_redis()
+    for event in events:
+        try:
+            await redis.publish(
+                f"project:{event.project_id}:new_span",
+                json.dumps(event.payload),
+            )
+        except Exception as e:
+            await outbox.mark_failed(event.id, str(e))
+            raise
+
+        await outbox.mark_delivered(event.id)
 
 
 @broker.task

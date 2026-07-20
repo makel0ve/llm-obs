@@ -68,6 +68,13 @@ def patch_app_engine():
     yield
 
 
+@pytest.fixture(autouse=True)
+def patch_outbox_delivery_enqueue(monkeypatch):
+    monkeypatch.setattr(
+        process_span_module.deliver_span_outbox_events, "kiq", _noop_kiq
+    )
+
+
 def make_span_payload() -> dict:
     trace_id = str(uuid4())
     span_id = str(uuid4())
