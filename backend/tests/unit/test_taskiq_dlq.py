@@ -1,10 +1,12 @@
-from typing import Any
+from typing import Any, cast
+from urllib.parse import urlparse
 
 import pytest
 from taskiq.message import TaskiqMessage
 from taskiq.result import TaskiqResult
 
 from app.core import taskiq as taskiq_module
+from app.core.config import settings
 from app.core.taskiq import DLQRetryMiddleware
 from app.workers import dlq as dlq_module
 
@@ -39,7 +41,9 @@ def _result() -> TaskiqResult[None]:
 
 
 @pytest.mark.asyncio
-async def test_final_retry_failure_is_sent_to_dlq_with_safe_args(monkeypatch):
+async def test_final_retry_failure_is_sent_to_dlq_with_safe_args(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     captured: dict[str, Any] = {}
 
     class FakeHandleFailedTask:
@@ -80,7 +84,9 @@ async def test_final_retry_failure_is_sent_to_dlq_with_safe_args(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_intermediate_retry_failure_is_not_sent_to_dlq(monkeypatch):
+async def test_intermediate_retry_failure_is_not_sent_to_dlq(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     captured: list[dict[str, Any]] = []
     scheduled: list[float] = []
 
@@ -107,7 +113,9 @@ async def test_intermediate_retry_failure_is_not_sent_to_dlq(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_retry_disabled_failure_is_not_sent_to_dlq(monkeypatch):
+async def test_retry_disabled_failure_is_not_sent_to_dlq(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     captured: list[dict[str, Any]] = []
 
     class FakeHandleFailedTask:
@@ -126,7 +134,7 @@ async def test_retry_disabled_failure_is_not_sent_to_dlq(monkeypatch):
     assert captured == []
 
 
-def test_positional_process_span_args_are_summarized_for_dlq():
+def test_positional_process_span_args_are_summarized_for_dlq() -> None:
     task_args = taskiq_module._task_args_for_dlq(
         _message(
             args=[
@@ -142,3 +150,20 @@ def test_positional_process_span_args_are_summarized_for_dlq():
         "project_id": "project-1",
         "span_count": 1,
     }
+
+
+def test_taskiq_uses_durable_queue_redis_for_broker_results_and_dlq() -> None:
+    expected_url = urlparse(settings.effective_redis_queue_url)
+    expected_connection = {
+        "host": expected_url.hostname,
+        "port": expected_url.port or 6379,
+        "db": int((expected_url.path or "/0").lstrip("/") or "0"),
+    }
+    broker = cast(Any, taskiq_module.broker)
+    result_backend = cast(Any, broker.result_backend)
+    dlq_broker = cast(Any, taskiq_module.dlq_broker)
+
+    assert broker.connection_pool.connection_kwargs == expected_connection
+    assert result_backend.redis_pool.connection_kwargs == expected_connection
+    assert dlq_broker.connection_pool.connection_kwargs == expected_connection
+    assert dlq_broker.queue_name == "llm-obs-dlq"
