@@ -1,4 +1,5 @@
 from datetime import UTC, datetime
+from typing import Any
 
 import structlog
 from fastapi import APIRouter, HTTPException
@@ -14,13 +15,13 @@ log = structlog.get_logger()
 
 
 @router.get("/health")
-async def liveness() -> dict:
+async def liveness() -> dict[str, str]:
     return {"status": "ok"}
 
 
 @router.get("/ready")
-async def readiness() -> dict:
-    checks = {}
+async def readiness() -> dict[str, Any]:
+    checks: dict[str, str] = {}
     ok = True
 
     try:
@@ -30,17 +31,17 @@ async def readiness() -> dict:
         checks["postgres"] = "ok"
 
     except Exception as e:
-        checks["postgres"] = f"error: {e}"
+        checks["postgres"] = "error"
         ok = False
         log.error("readiness_postgres_failed", error=str(e))
 
     try:
         redis = await get_redis()
-        await redis.ping()  # type: ignore[misc]
+        await redis.ping()
         checks["redis"] = "ok"
 
     except Exception as e:
-        checks["redis"] = f"error: {e}"
+        checks["redis"] = "error"
         ok = False
         log.error("readiness_redis_failed", error=str(e))
 
@@ -51,16 +52,16 @@ async def readiness() -> dict:
 
 
 @router.get("/worker-health")
-async def worker_health() -> dict:
+async def worker_health() -> dict[str, Any]:
     try:
         redis = await get_redis()
-        last_seen_raw = await redis.get(WORKER_HEARTBEAT_KEY)  # type: ignore[misc]
+        last_seen_raw = await redis.get(WORKER_HEARTBEAT_KEY)
 
     except Exception as e:
         log.error("worker_health_redis_failed", error=str(e))
         raise HTTPException(
             status_code=503,
-            detail={"status": "error", "worker": f"redis error: {e}"},
+            detail={"status": "error", "worker": "redis error"},
         ) from e
 
     max_age = settings.worker_heartbeat_max_age_seconds
