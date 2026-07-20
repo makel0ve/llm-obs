@@ -146,17 +146,18 @@ async def create_invite(
             )
             invite["invite_token"] = raw_token
 
-    await log_audit(
-        org_id=user["org_id"],
-        user_id=user["sub"],
-        action="user.invite.create",
-        resource_id=invite["id"],
-        metadata={
-            "email": body.email,
-            "role": body.role,
-            "project_assignment_count": len(invite["project_assignments"]),
-        },
-    )
+            await log_audit(
+                db=db,
+                org_id=user["org_id"],
+                user_id=user["sub"],
+                action="user.invite.create",
+                resource_id=invite["id"],
+                metadata={
+                    "email": body.email,
+                    "role": body.role,
+                    "project_assignment_count": len(invite["project_assignments"]),
+                },
+            )
 
     return invite
 
@@ -259,19 +260,20 @@ async def accept_invite(body: UserInviteAccept) -> dict[str, Any]:
                 else None
             )
 
-    await log_audit(
-        org_id=str(invite["org_id"]),
-        user_id=user_id,
-        action="user.invite.accept",
-        resource_id=str(invite["id"]),
-        metadata={
-            "email": invite["email"],
-            "role": invite["role"],
-            "project_assignment_count": len(
-                serialize_project_assignments(invite["project_assignments"])
-            ),
-        },
-    )
+            await log_audit(
+                db=db,
+                org_id=str(invite["org_id"]),
+                user_id=user_id,
+                action="user.invite.accept",
+                resource_id=str(invite["id"]),
+                metadata={
+                    "email": invite["email"],
+                    "role": invite["role"],
+                    "project_assignment_count": len(
+                        serialize_project_assignments(invite["project_assignments"])
+                    ),
+                },
+            )
 
     return {
         "access_token": create_access_token(
@@ -397,17 +399,18 @@ async def update_user_role(
 
             updated = result.mappings().one()
 
-    await log_audit(
-        org_id=user["org_id"],
-        user_id=user["sub"],
-        action="user.role.update",
-        resource_id=user_id,
-        metadata={
-            "email": target["email"],
-            "old_role": target["role"],
-            "new_role": body.role,
-        },
-    )
+            await log_audit(
+                db=db,
+                org_id=user["org_id"],
+                user_id=user["sub"],
+                action="user.role.update",
+                resource_id=user_id,
+                metadata={
+                    "email": target["email"],
+                    "old_role": target["role"],
+                    "new_role": body.role,
+                },
+            )
 
     return updated
 
@@ -467,10 +470,11 @@ async def delete_user(
             if not result.one_or_none():
                 raise HTTPException(404, "User not found")
 
-    await log_audit(
-        org_id=user["org_id"],
-        user_id=user["sub"],
-        action="user.delete",
-        resource_id=user_id,
-        metadata={"email": target["email"], "role": target["role"]},
-    )
+            await log_audit(
+                db=db,
+                org_id=user["org_id"],
+                user_id=user["sub"],
+                action="user.delete",
+                resource_id=user_id,
+                metadata={"email": target["email"], "role": target["role"]},
+            )

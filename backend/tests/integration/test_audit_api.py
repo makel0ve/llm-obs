@@ -8,6 +8,7 @@ from fastapi import HTTPException
 
 from app.api.v1 import audit as audit_api
 from app.api.v1.audit import list_audit_events, parse_metadata
+from app.services import audit as audit_service
 
 
 class FakeResult:
@@ -31,6 +32,11 @@ class FakeDb:
         return FakeResult(rows=self.rows)
 
 
+class FailingAuditDb:
+    async def execute(self, statement, params=None):
+        raise RuntimeError("audit insert failed")
+
+
 @pytest.fixture(autouse=True, scope="session")
 def patch_app_engine():
     yield
@@ -48,6 +54,36 @@ def test_parse_metadata_accepts_json_strings():
     assert parse_metadata('{"role": "viewer"}') == {"role": "viewer"}
     assert parse_metadata("not-json") == {}
     assert parse_metadata(["not", "dict"]) == {}
+
+
+@pytest.mark.asyncio
+async def test_same_transaction_audit_write_propagates_failure():
+    with pytest.raises(RuntimeError, match="audit insert failed"):
+        await audit_service.log_audit(
+            db=FailingAuditDb(),
+            org_id=str(uuid4()),
+            user_id=str(uuid4()),
+            action="user.role.update",
+            resource_id=str(uuid4()),
+            metadata={"old_role": "member", "new_role": "admin"},
+        )
+
+
+@pytest.mark.asyncio
+async def test_best_effort_audit_write_suppresses_failure(monkeypatch):
+    @asynccontextmanager
+    async def fake_get_db():
+        yield FailingAuditDb()
+
+    monkeypatch.setattr(audit_service, "get_db", fake_get_db)
+
+    await audit_service.log_audit(
+        org_id=str(uuid4()),
+        user_id=str(uuid4()),
+        action="user.role.update",
+        resource_id=str(uuid4()),
+        metadata={"old_role": "member", "new_role": "admin"},
+    )
 
 
 @pytest.mark.asyncio
