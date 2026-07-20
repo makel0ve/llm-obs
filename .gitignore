@@ -228,6 +228,8 @@ infra/.env
 infra/pgbouncer_userlist.txt
 PROJECT_DEVELOPMENT_PLAN.md
 PROJECT_DEVELOPMENT_PLAN_2.md
+PROJECT_DEVELOPMENT_PLAN_3.md
+t.md
 
 # Local secrets and private keys
 .ssh/
