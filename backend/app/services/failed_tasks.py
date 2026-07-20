@@ -1,7 +1,9 @@
 import json
+from datetime import datetime
 from typing import Any
 
 from sqlalchemy import text
+from sqlalchemy.ext.asyncio import AsyncSession
 
 SAFE_ARG_KEYS = frozenset({"batch_id", "project_id"})
 SENSITIVE_KEY_PARTS = ("api_key", "authorization", "password", "secret", "token")
@@ -33,7 +35,7 @@ def extract_project_id(task_args: dict[str, Any]) -> str | None:
     return str(project_id) if project_id else None
 
 
-async def resolve_org_id(db, project_id: str | None) -> str | None:
+async def resolve_org_id(db: AsyncSession, project_id: str | None) -> str | None:
     if not project_id:
         return None
 
@@ -46,13 +48,13 @@ async def resolve_org_id(db, project_id: str | None) -> str | None:
 
 
 async def record_failed_task(
-    db,
+    db: AsyncSession,
     *,
     task_name: str,
     task_args: dict[str, Any],
     error: str,
     attempts: int,
-    failed_at,
+    failed_at: datetime,
 ) -> None:
     project_id = extract_project_id(task_args)
     org_id = await resolve_org_id(db, project_id)
