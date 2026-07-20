@@ -209,6 +209,5 @@ async def bulk_insert_spans(spans: list[dict], db) -> list[SpanIdentity]:
         .returning(span_table.c.id, span_table.c.started_at)
     )
     result = await db.execute(stmt)
-    await db.commit()
 
     return [(row.id, row.started_at) for row in result.all()]
