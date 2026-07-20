@@ -7,8 +7,11 @@ from decimal import Decimal
 from typing import Any, TypedDict, cast
 
 import structlog
+from botocore.exceptions import BotoCoreError, ClientError
 from dateutil.parser import parse as parse_dt
+from redis.exceptions import RedisError
 from sqlalchemy import text
+from sqlalchemy.exc import SQLAlchemyError
 
 from app.core.db import get_db
 from app.core.metrics import (
@@ -36,6 +39,14 @@ from app.services.storage import (
 log = structlog.get_logger()
 
 WINDOWED_ALERT_METRICS = frozenset({"latency_p95", "error_rate", "cost_hourly"})
+TRANSIENT_SPAN_ERRORS = (
+    SQLAlchemyError,
+    RedisError,
+    BotoCoreError,
+    ClientError,
+    TimeoutError,
+    ConnectionError,
+)
 
 
 class PayloadPrivacySettings(TypedDict):
@@ -70,6 +81,10 @@ def select_inserted_spans(
         remaining[identity] -= 1
 
     return inserted_spans
+
+
+def is_transient_span_processing_error(exc: Exception) -> bool:
+    return isinstance(exc, TRANSIENT_SPAN_ERRORS)
 
 
 async def load_payload_privacy_settings(
@@ -178,6 +193,14 @@ async def process_span_batch(
                     )
 
                 except Exception as e:
+                    if is_transient_span_processing_error(e):
+                        log.warning(
+                            "span_processing_transient_failed",
+                            span_id=span_data.get("span_id"),
+                            error=str(e),
+                        )
+                        raise
+
                     failed_count += 1
                     ingest_spans_dropped.labels(reason="processing_error").inc()
                     log.error(
