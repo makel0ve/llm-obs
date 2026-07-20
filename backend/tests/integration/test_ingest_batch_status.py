@@ -546,14 +546,14 @@ async def test_worker_marks_batch_partial_failed(monkeypatch, fake_redis):
 
 
 @pytest.mark.asyncio
-async def test_worker_failure_after_span_insert_leaves_committed_spans_without_trace(
+async def test_worker_failure_after_span_insert_rolls_back_spans_and_trace(
     monkeypatch, fake_redis
 ):
     project_id = str(uuid4())
     batch_id = str(uuid4())
     span = make_span_payload()
     db = FakeDb()
-    committed_spans = []
+    attempted_spans = []
     aggregate_task_calls = []
     anomaly_task_calls = []
     await BatchStatusService(redis=fake_redis).create_accepted(
@@ -562,12 +562,11 @@ async def test_worker_failure_after_span_insert_leaves_committed_spans_without_t
     _patch_worker_common(monkeypatch, fake_redis, db)
 
     async def fake_bulk_insert_spans(spans: list[dict], db):
-        committed_spans.extend(spans)
-        await db.commit()
+        attempted_spans.extend(spans)
         return [(span["id"], span["started_at"]) for span in spans]
 
     async def fail_trace_row(**kwargs):
-        raise RuntimeError("trace insert failed after spans commit")
+        raise RuntimeError("trace insert failed before db commit")
 
     async def capture_aggregate(**kwargs):
         aggregate_task_calls.append(kwargs)
@@ -597,9 +596,9 @@ async def test_worker_failure_after_span_insert_leaves_committed_spans_without_t
     )
     assert status is not None
     assert status.status == "failed"
-    assert status.error == "trace insert failed after spans commit"
-    assert len(committed_spans) == 1
-    assert db.commit_count == 1
+    assert status.error == "trace insert failed before db commit"
+    assert len(attempted_spans) == 1
+    assert db.commit_count == 0
     assert fake_redis.published == []
     assert aggregate_task_calls == []
     assert anomaly_task_calls == []
@@ -624,7 +623,6 @@ async def test_worker_failure_during_pubsub_keeps_db_committed_but_marks_failed(
 
     async def fake_bulk_insert_spans(spans: list[dict], db):
         committed_spans.extend(spans)
-        await db.commit()
         return [(span["id"], span["started_at"]) for span in spans]
 
     async def fake_ensure_trace_row(**kwargs):
@@ -651,7 +649,7 @@ async def test_worker_failure_during_pubsub_keeps_db_committed_but_marks_failed(
     assert status.error == "redis publish unavailable"
     assert len(committed_spans) == 1
     assert len(trace_rows) == 1
-    assert db.commit_count == 2
+    assert db.commit_count == 1
 
 
 @pytest.mark.asyncio
@@ -672,7 +670,6 @@ async def test_worker_failure_during_aggregate_enqueue_keeps_db_committed(
 
     async def fake_bulk_insert_spans(spans: list[dict], db):
         committed_spans.extend(spans)
-        await db.commit()
         return [(span["id"], span["started_at"]) for span in spans]
 
     async def fake_ensure_trace_row(**kwargs):
@@ -702,7 +699,7 @@ async def test_worker_failure_during_aggregate_enqueue_keeps_db_committed(
     assert len(committed_spans) == 1
     assert len(trace_rows) == 1
     assert len(fake_redis.published) == 1
-    assert db.commit_count == 2
+    assert db.commit_count == 1
     assert failing_aggregate.called is True
 
 
