@@ -1,6 +1,19 @@
 # CHANGELOG
 
 
+## v0.42.13 (2026-07-20)
+
+### Bug Fixes
+
+- Add durable idempotency state machine
+  ([`b676ff2`](https://github.com/makel0ve/llm-obs/commit/b676ff23ceaeabc3c94ea7ee9954d269079f35c6))
+
+### Chores
+
+- Trigger ci for release sync
+  ([`cbc743a`](https://github.com/makel0ve/llm-obs/commit/cbc743a7377f3156f6140d2d0e3529468577f09f))
+
+
 ## v0.42.12 (2026-07-20)
 
 ### Bug Fixes
