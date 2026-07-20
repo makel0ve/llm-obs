@@ -1,6 +1,38 @@
 # CHANGELOG
 
 
+## v0.42.10 (2026-07-20)
+
+### Bug Fixes
+
+- Restrict metrics and readiness exposure
+  ([`f793f16`](https://github.com/makel0ve/llm-obs/commit/f793f16e634a1a2a7ab764aa04c7cc9b5f032daf))
+
+### Chores
+
+- Harden production healthchecks
+  ([`c6b366d`](https://github.com/makel0ve/llm-obs/commit/c6b366d8477e683f70ea5e7d522b2915de701517))
+
+- Pin production images
+  ([`3e2a3af`](https://github.com/makel0ve/llm-obs/commit/3e2a3af9a2597b9bb90bc3074b0334fd9532c140))
+
+- Restrict production service exposure
+  ([`5c22dac`](https://github.com/makel0ve/llm-obs/commit/5c22dacbbd609d4e41d77a156184af50dcf6e9af))
+
+- Trigger ci for release sync
+  ([`5e13de8`](https://github.com/makel0ve/llm-obs/commit/5e13de82b2280ae9f5d1a9b6ae2f28225f53f29e))
+
+### Documentation
+
+- Decide browser token storage
+  ([`907fcf4`](https://github.com/makel0ve/llm-obs/commit/907fcf49a0db2a5afa822a45da84c6c0e9c2a3a1))
+
+### Testing
+
+- Expand audit regression coverage
+  ([`d12ae05`](https://github.com/makel0ve/llm-obs/commit/d12ae0513c892409b61bf29982bf555871ccb571))
+
+
 ## v0.42.9 (2026-07-20)
 
 ### Bug Fixes
