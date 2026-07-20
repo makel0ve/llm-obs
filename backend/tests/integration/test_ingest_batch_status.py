@@ -4,6 +4,7 @@ from uuid import uuid4
 
 import pytest
 from fastapi import HTTPException, Response
+from sqlalchemy.exc import SQLAlchemyError
 
 from app.api.v1.ingest import get_ingest_batch_status, ingest_spans
 from app.core.metrics import (
@@ -704,7 +705,7 @@ async def test_worker_failure_during_aggregate_enqueue_keeps_db_committed(
 
 
 @pytest.mark.asyncio
-async def test_worker_transient_like_cost_error_is_currently_partial_failed(
+async def test_worker_transient_cost_error_is_retryable_worker_failure(
     monkeypatch, fake_redis
 ):
     project_id = str(uuid4())
@@ -718,7 +719,7 @@ async def test_worker_transient_like_cost_error_is_currently_partial_failed(
     _patch_worker_common(monkeypatch, fake_redis, db)
 
     async def failing_cost(self, **kwargs):
-        raise RuntimeError("pricing database unavailable")
+        raise SQLAlchemyError("pricing database unavailable")
 
     async def fake_bulk_insert_spans(spans: list[dict], db):
         inserted_spans.extend(spans)
@@ -731,26 +732,24 @@ async def test_worker_transient_like_cost_error_is_currently_partial_failed(
     monkeypatch.setattr(process_span_module.update_trace_aggregates, "kiq", _noop_kiq)
     monkeypatch.setattr(process_span_module.check_batch_anomalies, "kiq", _noop_kiq)
 
-    processed_before = _counter_value(ingest_batches_processed, "partial_failed")
+    failed_before = _counter_value(ingest_batches_failed, "worker")
     dropped_before = _counter_value(ingest_spans_dropped, "processing_error")
-    await process_span_batch.original_func(
-        batch_id=batch_id, project_id=project_id, spans=[span]
-    )
+    with pytest.raises(SQLAlchemyError, match="pricing database unavailable"):
+        await process_span_batch.original_func(
+            batch_id=batch_id, project_id=project_id, spans=[span]
+        )
 
     status = await BatchStatusService(redis=fake_redis).get(
         project_id=project_id, batch_id=batch_id
     )
     assert status is not None
-    assert status.status == "partial_failed"
+    assert status.status == "failed"
     assert status.processed == 0
-    assert status.failed == 1
+    assert status.failed == 0
+    assert status.error == "pricing database unavailable"
     assert inserted_spans == []
-    assert _counter_value(ingest_batches_processed, "partial_failed") == (
-        processed_before + 1
-    )
-    assert _counter_value(ingest_spans_dropped, "processing_error") == (
-        dropped_before + 1
-    )
+    assert _counter_value(ingest_batches_failed, "worker") == failed_before + 1
+    assert _counter_value(ingest_spans_dropped, "processing_error") == dropped_before
 
 
 async def _bulk_insert_spans(spans: list[dict], db):
