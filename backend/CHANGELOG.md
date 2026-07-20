@@ -1,6 +1,22 @@
 # CHANGELOG
 
 
+## v0.42.14 (2026-07-20)
+
+### Bug Fixes
+
+- Add transactional outbox foundation
+  ([`0f7a904`](https://github.com/makel0ve/llm-obs/commit/0f7a9048c4d872b17ed630c57693d12ea9ae84c2))
+
+- Add transactional outbox foundation
+  ([`80f8c21`](https://github.com/makel0ve/llm-obs/commit/80f8c21c82564b9c3a3c2637abaad149403a5e26))
+
+### Chores
+
+- Trigger ci for release sync
+  ([`2c7fb3a`](https://github.com/makel0ve/llm-obs/commit/2c7fb3aea45ad36ece9159685a008f0e40b0ae77))
+
+
 ## v0.42.13 (2026-07-20)
 
 ### Bug Fixes
