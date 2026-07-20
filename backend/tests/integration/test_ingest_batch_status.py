@@ -1,4 +1,5 @@
 import asyncio
+import json
 from contextlib import asynccontextmanager
 from uuid import uuid4
 
@@ -21,6 +22,7 @@ from app.services.ingest import (
     IdempotencyInProgressError,
     IngestService,
 )
+from app.services.outbox import OUTBOX_SPAN_INSERTED, OutboxEventPayload
 from app.services.storage import PayloadStorageResult
 from app.workers import process_span as process_span_module
 from app.workers.process_span import process_span_batch
@@ -187,6 +189,13 @@ class FailingKiq:
 @pytest.fixture(autouse=True, scope="session")
 def patch_app_engine():
     yield
+
+
+@pytest.fixture(autouse=True)
+def patch_outbox_delivery_enqueue(monkeypatch):
+    monkeypatch.setattr(
+        process_span_module.deliver_span_outbox_events, "kiq", _noop_kiq
+    )
 
 
 @pytest.fixture
@@ -537,6 +546,7 @@ async def test_worker_counts_only_inserted_spans_when_duplicates_are_ignored(
     batch_id = str(uuid4())
     inserted_span = make_span_payload()
     duplicate_span = make_span_payload()
+    outbox_events = []
     await BatchStatusService(redis=fake_redis).create_accepted(
         project_id=project_id, batch_id=batch_id, accepted=2
     )
@@ -559,6 +569,9 @@ async def test_worker_counts_only_inserted_spans_when_duplicates_are_ignored(
     async def fake_bulk_insert_spans(spans: list[dict], db):
         return [(spans[0]["id"], spans[0]["started_at"])]
 
+    async def fake_enqueue_outbox_event(**kwargs):
+        outbox_events.append(kwargs)
+
     monkeypatch.setattr(process_span_module, "get_redis", fake_get_redis)
     monkeypatch.setattr(process_span_module, "get_db", fake_get_db)
     monkeypatch.setattr(process_span_module.CostService, "calculate", fake_cost)
@@ -567,6 +580,9 @@ async def test_worker_counts_only_inserted_spans_when_duplicates_are_ignored(
     )
     monkeypatch.setattr(
         process_span_module, "bulk_insert_spans", fake_bulk_insert_spans
+    )
+    monkeypatch.setattr(
+        process_span_module, "enqueue_outbox_event", fake_enqueue_outbox_event
     )
     monkeypatch.setattr(process_span_module.update_trace_aggregates, "kiq", _noop_kiq)
     monkeypatch.setattr(process_span_module.check_batch_anomalies, "kiq", _noop_kiq)
@@ -585,7 +601,10 @@ async def test_worker_counts_only_inserted_spans_when_duplicates_are_ignored(
     assert status.processed == 1
     assert status.failed == 0
     assert _counter_value(spans_ingested, "openai", "gpt-4o", "ok") == (span_before + 1)
-    assert len(fake_redis.published) == 1
+    assert fake_redis.published == []
+    assert len(outbox_events) == 1
+    assert outbox_events[0]["event_type"] == OUTBOX_SPAN_INSERTED
+    assert outbox_events[0]["event_key"] == str(inserted_span["span_id"])
 
 
 @pytest.mark.asyncio
@@ -705,7 +724,7 @@ async def test_worker_failure_after_span_insert_rolls_back_spans_and_trace(
 
 
 @pytest.mark.asyncio
-async def test_worker_failure_during_pubsub_keeps_db_committed_but_marks_failed(
+async def test_worker_writes_pubsub_outbox_before_commit_and_processes_batch(
     monkeypatch,
 ):
     project_id = str(uuid4())
@@ -715,6 +734,7 @@ async def test_worker_failure_during_pubsub_keeps_db_committed_but_marks_failed(
     db = FakeDb()
     committed_spans = []
     trace_rows = []
+    outbox_events = []
     await BatchStatusService(redis=redis).create_accepted(
         project_id=project_id, batch_id=batch_id, accepted=1
     )
@@ -728,27 +748,100 @@ async def test_worker_failure_during_pubsub_keeps_db_committed_but_marks_failed(
         trace_rows.append(kwargs)
         return kwargs["started_at"]
 
+    async def fake_enqueue_outbox_event(**kwargs):
+        assert db.commit_count == 0
+        outbox_events.append(kwargs)
+
     monkeypatch.setattr(
         process_span_module, "bulk_insert_spans", fake_bulk_insert_spans
     )
     monkeypatch.setattr(process_span_module, "ensure_trace_row", fake_ensure_trace_row)
+    monkeypatch.setattr(
+        process_span_module, "enqueue_outbox_event", fake_enqueue_outbox_event
+    )
     monkeypatch.setattr(process_span_module.update_trace_aggregates, "kiq", _noop_kiq)
     monkeypatch.setattr(process_span_module.check_batch_anomalies, "kiq", _noop_kiq)
 
-    with pytest.raises(RuntimeError, match="redis publish unavailable"):
-        await process_span_batch.original_func(
-            batch_id=batch_id, project_id=project_id, spans=[span]
-        )
+    await process_span_batch.original_func(
+        batch_id=batch_id, project_id=project_id, spans=[span]
+    )
 
     status = await BatchStatusService(redis=redis).get(
         project_id=project_id, batch_id=batch_id
     )
     assert status is not None
-    assert status.status == "failed"
-    assert status.error == "redis publish unavailable"
+    assert status.status == "processed"
+    assert status.error is None
     assert len(committed_spans) == 1
     assert len(trace_rows) == 1
     assert db.commit_count == 1
+    assert redis.published == []
+    assert len(outbox_events) == 1
+    assert outbox_events[0]["event_type"] == OUTBOX_SPAN_INSERTED
+    assert outbox_events[0]["event_key"] == span["span_id"]
+    assert outbox_events[0]["payload"] == {
+        "span_id": span["span_id"],
+        "name": span["name"],
+        "latency_ms": span["latency_ms"],
+        "status": "ok",
+    }
+
+
+@pytest.mark.asyncio
+async def test_span_outbox_delivery_marks_failed_then_retry_delivered(monkeypatch):
+    project_id = uuid4()
+    event_id = uuid4()
+    event = OutboxEventPayload(
+        id=event_id,
+        project_id=project_id,
+        event_type=OUTBOX_SPAN_INSERTED,
+        event_key=str(uuid4()),
+        payload={
+            "span_id": str(uuid4()),
+            "name": "llm_call",
+            "latency_ms": 42,
+            "status": "ok",
+        },
+        attempts=1,
+    )
+    redis = FailingPublishRedis()
+    failed = []
+    delivered = []
+
+    class FakeOutboxService:
+        async def claim_pending(self, **kwargs):
+            return [event]
+
+        async def mark_failed(self, event_id, error):
+            failed.append((event_id, error))
+
+        async def mark_delivered(self, event_id):
+            delivered.append(event_id)
+
+    async def fake_get_redis():
+        return redis
+
+    monkeypatch.setattr(process_span_module, "OutboxService", FakeOutboxService)
+    monkeypatch.setattr(process_span_module, "get_redis", fake_get_redis)
+
+    with pytest.raises(RuntimeError, match="redis publish unavailable"):
+        await process_span_module.deliver_span_outbox_events.original_func(
+            project_id=project_id
+        )
+
+    assert failed == [(event_id, "redis publish unavailable")]
+    assert delivered == []
+
+    redis = FakeRedis()
+    await process_span_module.deliver_span_outbox_events.original_func(
+        project_id=str(project_id)
+    )
+
+    assert len(redis.published) == 1
+    channel, message = redis.published[0]
+    assert channel == f"project:{project_id}:new_span"
+    assert json.loads(message) == event.payload
+    assert delivered == [event_id]
 
 
 @pytest.mark.asyncio
@@ -761,6 +854,7 @@ async def test_worker_failure_during_aggregate_enqueue_keeps_db_committed(
     db = FakeDb()
     committed_spans = []
     trace_rows = []
+    outbox_events = []
     failing_aggregate = FailingKiq("aggregate enqueue unavailable")
     await BatchStatusService(redis=fake_redis).create_accepted(
         project_id=project_id, batch_id=batch_id, accepted=1
@@ -775,10 +869,16 @@ async def test_worker_failure_during_aggregate_enqueue_keeps_db_committed(
         trace_rows.append(kwargs)
         return kwargs["started_at"]
 
+    async def fake_enqueue_outbox_event(**kwargs):
+        outbox_events.append(kwargs)
+
     monkeypatch.setattr(
         process_span_module, "bulk_insert_spans", fake_bulk_insert_spans
     )
     monkeypatch.setattr(process_span_module, "ensure_trace_row", fake_ensure_trace_row)
+    monkeypatch.setattr(
+        process_span_module, "enqueue_outbox_event", fake_enqueue_outbox_event
+    )
     monkeypatch.setattr(
         process_span_module.update_trace_aggregates, "kiq", failing_aggregate.kiq
     )
@@ -797,7 +897,8 @@ async def test_worker_failure_during_aggregate_enqueue_keeps_db_committed(
     assert status.error == "aggregate enqueue unavailable"
     assert len(committed_spans) == 1
     assert len(trace_rows) == 1
-    assert len(fake_redis.published) == 1
+    assert fake_redis.published == []
+    assert len(outbox_events) == 1
     assert db.commit_count == 1
     assert failing_aggregate.called is True
 

@@ -6,6 +6,7 @@ from app.models.failed_task import FailedTask  # noqa: F401
 from app.models.idempotency_record import IdempotencyRecord  # noqa: F401
 from app.models.model_pricing import ModelPrice  # noqa: F401
 from app.models.organization import Organization  # noqa: F401
+from app.models.outbox_event import OutboxEvent  # noqa: F401
 from app.models.project import Project  # noqa: F401
 from app.models.project_membership import ProjectMembership  # noqa: F401
 from app.models.span import Span  # noqa: F401
