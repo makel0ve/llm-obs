@@ -1,6 +1,24 @@
 # CHANGELOG
 
 
+## v0.42.9 (2026-07-20)
+
+### Bug Fixes
+
+- Reconnect sse streams
+  ([`51990f7`](https://github.com/makel0ve/llm-obs/commit/51990f7e728700a02dfc6ce4f08a93b1652d1cf3))
+
+### Chores
+
+- Trigger ci for release sync
+  ([`0650021`](https://github.com/makel0ve/llm-obs/commit/06500219b6ac69004f0cdcd7c283526b7e39490b))
+
+### Documentation
+
+- Align ingest endpoint references
+  ([`c6012ee`](https://github.com/makel0ve/llm-obs/commit/c6012eec788331f96c7b05573f10b95cf669b5e1))
+
+
 ## v0.42.8 (2026-07-20)
 
 ### Bug Fixes
