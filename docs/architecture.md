@@ -89,6 +89,11 @@ Dashboard users authenticate with JWT sessions. Admin-only pages include
 Pricing, Users, Audit Log and Project Settings. Users can be invited with a
 24-hour token and set their own password when accepting the invite.
 
+The browser dashboard stores the login JWT in `localStorage` for the next
+release and sends it as `Authorization: Bearer ...`; the accepted risk,
+mitigations and cookie migration boundary are documented in
+`docs/browser-token-storage.md`.
+
 Project API keys are separate from login tokens. They are hashed at rest,
 displayed once, scoped to ingest/read/read-write operations and can be revoked
 from Project Settings.
