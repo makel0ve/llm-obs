@@ -1,6 +1,19 @@
 # CHANGELOG
 
 
+## v0.42.20 (2026-07-21)
+
+### Bug Fixes
+
+- Make sdk provider patching idempotent
+  ([`17fc902`](https://github.com/makel0ve/llm-obs/commit/17fc9027c70bf4a124b85448254d67e58a807fbd))
+
+### Chores
+
+- Trigger ci for release sync
+  ([`c06d967`](https://github.com/makel0ve/llm-obs/commit/c06d967427436ca7e6df517fa21cf124084c3fe2))
+
+
 ## v0.42.19 (2026-07-21)
 
 ### Bug Fixes
