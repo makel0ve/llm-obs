@@ -163,6 +163,14 @@ if __name__ == "__main__":
     asyncio.run(main())
 ```
 
+## Streaming async patching
+
+Patched OpenAI and Anthropic async clients also support provider streaming
+through `stream=True`. The SDK records the provider span after the returned async
+stream is fully consumed, so latency covers generation until the last chunk. If
+your application stops consuming a stream early, close it with
+`await stream.aclose()` when the provider stream exposes that method.
+
 ## Smoke example
 
 Run the safe demo span sender from the repository root:
