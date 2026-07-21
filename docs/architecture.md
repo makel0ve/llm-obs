@@ -33,9 +33,12 @@ FastAPI query/admin API
 
 Production Compose adds PgBouncer between the backend services and PostgreSQL.
 The scheduler runs maintenance jobs such as retention cleanup and partition
-management. Retention cleanup is project-scoped and batched: it deletes payload
-objects under the project's `payloads/{project_id}/` prefix before removing old
-span rows, then removes trace rows that no longer have spans.
+management. Partition maintenance uses the owner/admin migration connection to
+create future monthly trace/span partitions ahead of time and warns if rows are
+accumulating in default partitions. Retention cleanup is project-scoped and
+batched: it deletes payload objects under the project's `payloads/{project_id}/`
+prefix before removing old span rows, then removes trace rows that no longer
+have spans.
 
 ## Ingest Flow
 

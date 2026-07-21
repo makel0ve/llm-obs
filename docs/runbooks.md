@@ -141,11 +141,18 @@ docker compose --env-file infra/.env -f infra/docker-compose.prod.yml logs --tai
 docker compose --env-file infra/.env -f infra/docker-compose.prod.yml logs --tail=100 scheduler
 ```
 
-The scheduler runs retention cleanup daily. Retention deletes old span payload
-objects only under the owning project's `payloads/{project_id}/` prefix, then
-deletes matching old spans in batches and removes trace rows that no longer
-have spans. If object deletion fails, the affected span rows are left for the
-next retry instead of orphaning payload objects.
+The scheduler runs retention cleanup daily and checks future trace/span
+partitions daily. Partition maintenance creates monthly partitions two months
+ahead with row-level security enabled and forced, using `MIGRATION_DATABASE_URL`
+because partition DDL requires the owner/admin role. It also logs warnings when
+`spans_default` or `traces_default` contains rows, or when rows in a target
+future range make partition creation unsafe.
+
+Retention deletes old span payload objects only under the owning project's
+`payloads/{project_id}/` prefix, then deletes matching old spans in batches and
+removes trace rows that no longer have spans. If object deletion fails, the
+affected span rows are left for the next retry instead of orphaning payload
+objects.
 
 Production Compose binds backend port `8000`, frontend port `3000` and the
 optional Mailpit ports `1025`/`8025` to `127.0.0.1` on the host. Put a reverse
@@ -182,7 +189,7 @@ pulled from a registry; deploy from a reviewed commit or release tag.
 | `ENVIRONMENT` | Runtime mode | Set to `production`. |
 | `SECRET_KEY` | JWT signing secret | Use a random 32+ character value. |
 | `DATABASE_URL` | Runtime SQLAlchemy async URL | Use `POSTGRES_APP_USER` through PgBouncer at `pgbouncer:6432` in production compose. The role must not be superuser, table owner or `BYPASSRLS`. |
-| `MIGRATION_DATABASE_URL` | Alembic SQLAlchemy async URL | Use the owner/admin role directly against `postgres:5432` for migrations and grants. If omitted, Alembic falls back to `DATABASE_URL`. |
+| `MIGRATION_DATABASE_URL` | Alembic SQLAlchemy async URL | Use the owner/admin role directly against `postgres:5432` for migrations, grants and partition maintenance DDL. If omitted, Alembic and maintenance DDL fall back to `DATABASE_URL`. |
 | `DATABASE_POOL_SIZE` | Backend DB pool size | Keep conservative when using PgBouncer. |
 | `DATABASE_MAX_OVERFLOW` | Backend DB overflow connections | Keep conservative when using PgBouncer. |
 | `REDIS_URL` | Redis cache/pubsub/rate-limit URL | Use `redis://redis:6379/0` in compose. This Redis may use bounded memory and cache eviction. |

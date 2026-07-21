@@ -6,12 +6,13 @@ import structlog
 from sqlalchemy import text
 
 from app.core.config import settings
-from app.core.db import get_db
+from app.core.db import get_db, get_maintenance_db
 from app.core.taskiq import broker
 
 log = structlog.get_logger()
 RETENTION_BATCH_SIZE = 1000
 S3_DELETE_BATCH_SIZE = 1000
+PARTITION_LOOKAHEAD_MONTHS = 2
 
 
 def _is_project_payload_key(project_id: str, key: str) -> bool:
@@ -144,82 +145,156 @@ async def _delete_stale_traces(db, project_id: str, cutoff: datetime) -> int:
     return int(result.rowcount or 0)
 
 
-@broker.task(schedule=[{"cron": "0 1 28 * *"}])
-async def create_next_month_partition() -> None:
-    now = datetime.now(UTC)
-    if now.month == 12:
-        y, m = now.year + 1, 1
+def _month_start(dt: datetime) -> datetime:
+    return datetime(dt.year, dt.month, 1, tzinfo=UTC)
 
-    else:
-        y, m = now.year, now.month + 1
 
-    start_str = f"{y}-{m:02d}-01"
-    if m == 12:
-        end_str = f"{y + 1}-01-01"
+def _add_months(month_start: datetime, months: int) -> datetime:
+    month_index = month_start.month - 1 + months
+    year = month_start.year + month_index // 12
+    month = month_index % 12 + 1
+    return datetime(year, month, 1, tzinfo=UTC)
 
-    else:
-        end_str = f"{y}-{m + 1:02d}-01"
 
-    suffix = f"{y}_{m:02d}"
+def _partition_suffix(month_start: datetime) -> str:
+    return f"{month_start.year}_{month_start.month:02d}"
 
-    async with get_db() as db:
+
+def _future_partition_months(
+    now: datetime, lookahead_months: int = PARTITION_LOOKAHEAD_MONTHS
+) -> list[datetime]:
+    current_month = _month_start(now)
+    return [
+        _add_months(current_month, offset) for offset in range(1, lookahead_months + 1)
+    ]
+
+
+async def _default_partition_row_count(
+    db, table_name: str, start: datetime | None = None, end: datetime | None = None
+) -> int:
+    if table_name not in {"spans", "traces"}:
+        raise ValueError("Unsupported partitioned table")
+
+    time_filter = ""
+    params: dict[str, datetime] = {}
+    if start is not None and end is not None:
+        time_filter = "WHERE started_at >= :start AND started_at < :end"
+        params = {"start": start, "end": end}
+
+    result = await db.execute(
+        text(
+            f"""
+            SELECT COUNT(*) AS row_count
+            FROM {table_name}_default
+            {time_filter}
+            """  # nosec B608
+        ),
+        params,
+    )
+    row = result.mappings().one()
+    return int(row["row_count"])
+
+
+async def _log_default_partition_growth(db) -> dict[str, int]:
+    counts = {
+        table_name: await _default_partition_row_count(db, table_name)
+        for table_name in ("spans", "traces")
+    }
+    for table_name, row_count in counts.items():
+        if row_count > 0:
+            log.warning(
+                "default_partition_has_rows",
+                table=table_name,
+                row_count=row_count,
+            )
+        else:
+            log.info("default_partition_empty", table=table_name)
+
+    return counts
+
+
+async def _create_month_partition(db, table_name: str, month_start: datetime) -> bool:
+    if table_name not in {"spans", "traces"}:
+        raise ValueError("Unsupported partitioned table")
+
+    month_end = _add_months(month_start, 1)
+    suffix = _partition_suffix(month_start)
+    default_rows = await _default_partition_row_count(
+        db, table_name, start=month_start, end=month_end
+    )
+    if default_rows > 0:
+        log.warning(
+            "partition_creation_skipped_default_rows",
+            table=table_name,
+            suffix=suffix,
+            default_rows=default_rows,
+        )
+        return False
+
+    partition_name = f"{table_name}_{suffix}"
+    start_str = month_start.date().isoformat()
+    end_str = month_end.date().isoformat()
+    await db.execute(
+        text(
+            f"""
+            CREATE TABLE IF NOT EXISTS {partition_name}
+            PARTITION OF {table_name}
+            FOR VALUES FROM ('{start_str}') TO ('{end_str}')
+            """  # nosec B608
+        )
+    )
+    await db.execute(
+        text(
+            f"""
+            ALTER TABLE {partition_name} ENABLE ROW LEVEL SECURITY
+            """  # nosec B608
+        )
+    )
+    await db.execute(
+        text(
+            f"""
+            ALTER TABLE {partition_name} FORCE ROW LEVEL SECURITY
+            """  # nosec B608
+        )
+    )
+    return True
+
+
+@broker.task(schedule=[{"cron": "0 1 * * *"}])
+async def create_next_month_partition(
+    now: datetime | None = None,
+    lookahead_months: int = PARTITION_LOOKAHEAD_MONTHS,
+) -> None:
+    now = now or datetime.now(UTC)
+
+    async with get_maintenance_db() as db:
         try:
-            await db.execute(
-                text(
-                    f"""
-                    CREATE TABLE IF NOT EXISTS traces_{suffix}
-                    PARTITION OF traces
-                    FOR VALUES FROM (:start_str) TO (:end_str)
-                    """,
-                ),
-                {"start_str": str(start_str), "end_str": str(end_str)},
-            )
-            await db.execute(
-                text(
-                    f"""
-                    ALTER TABLE traces_{suffix} ENABLE ROW LEVEL SECURITY
-                    """,
-                )
-            )
-            await db.execute(
-                text(
-                    f"""
-                    ALTER TABLE traces_{suffix} FORCE ROW LEVEL SECURITY
-                    """,
-                )
-            )
-            await db.execute(
-                text(
-                    f"""
-                    CREATE TABLE IF NOT EXISTS spans_{suffix}
-                    PARTITION OF spans
-                    FOR VALUES FROM (:start_str) TO (:end_str)
-                    """,
-                ),
-                {"start_str": str(start_str), "end_str": str(end_str)},
-            )
-            await db.execute(
-                text(
-                    f"""
-                    ALTER TABLE spans_{suffix} ENABLE ROW LEVEL SECURITY
-                    """,
-                )
-            )
-            await db.execute(
-                text(
-                    f"""
-                    ALTER TABLE spans_{suffix} FORCE ROW LEVEL SECURITY
-                    """,
-                )
-            )
+            await _log_default_partition_growth(db)
+            created: list[str] = []
+            skipped: list[str] = []
+            for month_start in _future_partition_months(now, lookahead_months):
+                suffix = _partition_suffix(month_start)
+                for table_name in ("traces", "spans"):
+                    was_created = await _create_month_partition(
+                        db, table_name, month_start
+                    )
+                    target = f"{table_name}_{suffix}"
+                    if was_created:
+                        created.append(target)
+                    else:
+                        skipped.append(target)
+
             await db.commit()
             log.info(
-                "partition_created", suffix=suffix, start_str=start_str, end_str=end_str
+                "future_partitions_checked",
+                created=created,
+                skipped=skipped,
+                lookahead_months=lookahead_months,
             )
 
         except Exception as e:
             await db.rollback()
-            log.error("partition_creation_failed", suffix=suffix, error=str(e))
+            log.error("future_partition_check_failed", error=str(e))
             raise
 
 
