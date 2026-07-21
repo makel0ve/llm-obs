@@ -1,6 +1,19 @@
 # CHANGELOG
 
 
+## v0.42.18 (2026-07-21)
+
+### Bug Fixes
+
+- Add sdk idempotency key per batch
+  ([`debaa76`](https://github.com/makel0ve/llm-obs/commit/debaa760a178876ed037fc338655ca4578ad88cf))
+
+### Chores
+
+- Trigger ci for release sync
+  ([`a19418b`](https://github.com/makel0ve/llm-obs/commit/a19418b3eee734f3c759459dea5915525f6307ac))
+
+
 ## v0.42.17 (2026-07-21)
 
 ### Bug Fixes
