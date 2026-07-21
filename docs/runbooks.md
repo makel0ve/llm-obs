@@ -269,6 +269,22 @@ For local development:
 docker compose -f infra/docker-compose.yml exec backend alembic upgrade head
 ```
 
+Run the existing-database migration smoke test locally:
+
+```bash
+docker compose -f infra/docker-compose.yml exec backend \
+  env RUN_MIGRATION_SMOKE=1 pytest tests/integration/test_migration_smoke.py -q
+```
+
+The smoke test creates an isolated temporary database, upgrades it to the
+`e5f6a7b8c9d0` baseline revision, inserts a minimal org/project/trace/span
+fixture, upgrades to `head`, then verifies that the existing rows survived, the
+new ingest-delivery tables and span payload columns exist, trace/span partitions
+still have `ENABLE/FORCE ROW LEVEL SECURITY`, and a generated runtime role can
+only see project rows after `app.current_project_id` is set. It uses
+`MIGRATION_DATABASE_URL` as the owner/admin connection and leaves the main local
+database untouched.
+
 Database rollback must be planned per migration. Only use `alembic downgrade`
 after verifying the target migration has a safe downgrade path and after taking
 a database backup. For production incidents, prefer restoring from a known-good

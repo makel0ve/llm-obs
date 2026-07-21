@@ -26,6 +26,13 @@ jobs:
       - uses: actions/setup-python@v5
         with: { python-version: "3.11", cache: pip }
       - run: cd backend && pip install -e ".[test]"
+      - run: cd backend && pytest tests/integration/test_migration_smoke.py -q
+        env:
+          RUN_MIGRATION_SMOKE: "1"
+          DATABASE_URL: postgresql+asyncpg://llmobs:llmobs_test@localhost/llmobs_test
+          MIGRATION_DATABASE_URL: postgresql+asyncpg://llmobs:llmobs_test@localhost/llmobs_test
+          SECRET_KEY: ci-secret-key-for-testing-only-32chars
+          ENVIRONMENT: test
       - run: cd backend && alembic upgrade head
         env:
           DATABASE_URL: postgresql+asyncpg://llmobs:llmobs_test@localhost/llmobs_test
