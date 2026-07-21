@@ -53,6 +53,8 @@ class LLMTracer:
         self._api_key = api_key
         self._endpoint = endpoint
         self._buffer: deque[SpanData] = deque(maxlen=buffer_size)
+        self._pending_batches: deque[list[SpanData]] = deque()
+        self._pending_spans = 0
         self._flush_interval = flush_interval
         self._flush_task: asyncio.Task | None = None
         self._shutting_down = False
@@ -92,18 +94,22 @@ class LLMTracer:
                 pass
 
         if flush:
-            sent = await self._flush()
-            if not sent:
-                self._final_delivery_failures += 1
-                log.warning(
-                    "llm_obs_shutdown_flush_failed",
-                    buffered_spans=len(self._buffer),
-                    final_delivery_failures=self._final_delivery_failures,
-                    flush_reason=self._flush_reason,
-                )
+            while self._has_buffered_spans():
+                sent = await self._flush()
+                if not sent:
+                    self._final_delivery_failures += 1
+                    log.warning(
+                        "llm_obs_shutdown_flush_failed",
+                        buffered_spans=self._buffered_spans_count(),
+                        final_delivery_failures=self._final_delivery_failures,
+                        flush_reason=self._flush_reason,
+                    )
+                    break
 
         else:
             self._buffer.clear()
+            self._pending_batches.clear()
+            self._pending_spans = 0
 
         await self._transport.aclose()
         if self._atexit_registered:
@@ -122,7 +128,7 @@ class LLMTracer:
         await self.shutdown()
 
     def _sync_flush_on_exit(self) -> None:
-        if self._closed or not self._buffer:
+        if self._closed or not self._has_buffered_spans():
             return
 
         loop = None
@@ -137,7 +143,10 @@ class LLMTracer:
             if loop.is_running() or loop.is_closed():
                 return
 
-            loop.run_until_complete(self._flush())
+            while self._has_buffered_spans():
+                sent = loop.run_until_complete(self._flush())
+                if not sent:
+                    break
 
         except Exception:
             pass
@@ -151,23 +160,38 @@ class LLMTracer:
             await self._flush()
 
     async def _flush(self) -> bool:
-        if not self._buffer:
+        spans = self._pop_next_flush_batch()
+        if not spans:
             return True
 
-        spans = []
-        while self._buffer:
-            spans.append(self._buffer.popleft())
-
-        if spans:
-            sent = await self._transport.send_batch(
-                [self._span_to_dict(s) for s in spans]
-            )
-            if not sent:
-                self._failed_flushes += 1
-                self._buffer.extendleft(reversed(spans))
-                return False
+        sent = await self._transport.send_batch([self._span_to_dict(s) for s in spans])
+        if not sent:
+            self._failed_flushes += 1
+            self._push_failed_batch(spans)
+            return False
 
         return True
+
+    def _pop_next_flush_batch(self) -> list[SpanData]:
+        if self._pending_batches:
+            spans = self._pending_batches.popleft()
+            self._pending_spans -= len(spans)
+            return spans
+
+        active_spans: list[SpanData] = []
+        while self._buffer:
+            active_spans.append(self._buffer.popleft())
+        return active_spans
+
+    def _push_failed_batch(self, spans: list[SpanData]) -> None:
+        self._pending_batches.appendleft(spans)
+        self._pending_spans += len(spans)
+
+    def _has_buffered_spans(self) -> bool:
+        return bool(self._buffer) or self._pending_spans > 0
+
+    def _buffered_spans_count(self) -> int:
+        return len(self._buffer) + self._pending_spans
 
     @property
     def last_flush_diagnostics(self) -> TransportDiagnostics | None:
@@ -179,7 +203,7 @@ class LLMTracer:
             dropped_spans=self._dropped_spans,
             failed_flushes=self._failed_flushes,
             final_delivery_failures=self._final_delivery_failures,
-            buffered_spans=len(self._buffer),
+            buffered_spans=self._buffered_spans_count(),
             buffer_size=self._buffer.maxlen,
             last_drop_reason=self._last_drop_reason,
             last_flush_reason=self._flush_reason,
