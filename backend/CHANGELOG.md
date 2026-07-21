@@ -1,6 +1,27 @@
 # CHANGELOG
 
 
+## v0.42.17 (2026-07-21)
+
+### Bug Fixes
+
+- Split sdk active and failed flush buffers
+  ([`ffe0e2f`](https://github.com/makel0ve/llm-obs/commit/ffe0e2f2711153645abfb641645135d1d1049944))
+
+### Chores
+
+- Trigger ci for release sync
+  ([`5e0e8ea`](https://github.com/makel0ve/llm-obs/commit/5e0e8eaa6dcacda914b55de56f002b563c6771f4))
+
+### Testing
+
+- Add existing database migration smoke
+  ([`ea68c3d`](https://github.com/makel0ve/llm-obs/commit/ea68c3da7dbf8ed853a92389c607a9de216c313d))
+
+- Add sdk buffer failure baseline
+  ([`b53f57b`](https://github.com/makel0ve/llm-obs/commit/b53f57b806e4949e3f94ee2dc924c0e28a6b65b0))
+
+
 ## v0.42.16 (2026-07-21)
 
 ### Bug Fixes
