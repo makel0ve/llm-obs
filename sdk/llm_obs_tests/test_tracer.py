@@ -1,3 +1,4 @@
+import asyncio
 import json
 
 import pytest
@@ -227,6 +228,17 @@ def make_span(name: str = "test") -> SpanData:
     )
 
 
+async def no_sleep(_delay: float) -> None:
+    return None
+
+
+def disable_transport_backoff(
+    monkeypatch: pytest.MonkeyPatch, transport: HttpTransport
+) -> None:
+    monkeypatch.setattr("llm_obs.transport.asyncio.sleep", no_sleep)
+    monkeypatch.setattr(transport, "_jitter", lambda _attempt: 0)
+
+
 @pytest.mark.asyncio
 async def test_shutdown_flush_true_sends_buffer():
     tracer = llm_obs.init(api_key="test", endpoint="http://server")
@@ -264,11 +276,7 @@ async def test_shutdown_flush_false_discards_buffer_without_http():
 async def test_shutdown_flush_failure_keeps_safe_diagnostics(monkeypatch):
     tracer = llm_obs.init(api_key="test", endpoint="http://server")
 
-    async def no_sleep(_delay):
-        return None
-
-    monkeypatch.setattr("llm_obs.transport.asyncio.sleep", no_sleep)
-    monkeypatch.setattr(tracer._transport, "_jitter", lambda _attempt: 0)
+    disable_transport_backoff(monkeypatch, tracer._transport)
 
     with respx.mock:
         respx.post("http://server/v1/ingest").mock(
@@ -348,11 +356,7 @@ def test_sync_flush_on_exit_flushes_buffer(monkeypatch):
 async def test_transport_retries_5xx_then_succeeds(monkeypatch):
     transport = HttpTransport(endpoint="http://server", api_key="test")
 
-    async def no_sleep(_delay):
-        return None
-
-    monkeypatch.setattr("llm_obs.transport.asyncio.sleep", no_sleep)
-    monkeypatch.setattr(transport, "_jitter", lambda _attempt: 0)
+    disable_transport_backoff(monkeypatch, transport)
 
     with respx.mock:
         route = respx.post("http://server/v1/ingest").mock(
@@ -380,11 +384,7 @@ async def test_transport_retries_5xx_then_succeeds(monkeypatch):
 async def test_transport_records_final_http_failure_after_retries(monkeypatch):
     transport = HttpTransport(endpoint="http://server", api_key="test")
 
-    async def no_sleep(_delay):
-        return None
-
-    monkeypatch.setattr("llm_obs.transport.asyncio.sleep", no_sleep)
-    monkeypatch.setattr(transport, "_jitter", lambda _attempt: 0)
+    disable_transport_backoff(monkeypatch, transport)
 
     with respx.mock:
         route = respx.post("http://server/v1/ingest").mock(
@@ -406,6 +406,92 @@ async def test_transport_records_final_http_failure_after_retries(monkeypatch):
     assert transport.last_diagnostics.reason == "http_error"
     assert transport.last_diagnostics.status_code == 503
     assert transport.last_diagnostics.attempts == 3
+
+
+@pytest.mark.asyncio
+async def test_transport_records_final_timeout_after_retries(monkeypatch):
+    transport = HttpTransport(endpoint="http://server", api_key="test")
+    disable_transport_backoff(monkeypatch, transport)
+
+    with respx.mock:
+        route = respx.post("http://server/v1/ingest").mock(
+            side_effect=httpx.ReadTimeout("server accepted request but timed out")
+        )
+
+        sent = await transport.send_batch([{"span_id": "s1"}])
+
+    await transport.aclose()
+
+    assert sent is False
+    assert route.call_count == 3
+    assert transport.last_diagnostics is not None
+    assert transport.last_diagnostics.ok is False
+    assert transport.last_diagnostics.reason == "connection_error"
+    assert transport.last_diagnostics.error_type == "ReadTimeout"
+    assert transport.last_diagnostics.attempts == 3
+    assert transport.last_diagnostics.spans_count == 1
+
+
+@pytest.mark.asyncio
+async def test_transport_records_final_connection_reset_after_retries(monkeypatch):
+    transport = HttpTransport(endpoint="http://server", api_key="test")
+    disable_transport_backoff(monkeypatch, transport)
+
+    with respx.mock:
+        route = respx.post("http://server/v1/ingest").mock(
+            side_effect=httpx.ConnectError("connection reset by peer")
+        )
+
+        sent = await transport.send_batch([{"span_id": "s1"}])
+
+    await transport.aclose()
+
+    assert sent is False
+    assert route.call_count == 3
+    assert transport.last_diagnostics is not None
+    assert transport.last_diagnostics.ok is False
+    assert transport.last_diagnostics.reason == "connection_error"
+    assert transport.last_diagnostics.error_type == "ConnectError"
+    assert transport.last_diagnostics.attempts == 3
+    assert transport.last_diagnostics.spans_count == 1
+
+
+@pytest.mark.asyncio
+async def test_failed_long_flush_can_evict_spans_recorded_while_in_flight(
+    monkeypatch,
+):
+    tracer = LLMTracer(api_key="test", endpoint="http://server", buffer_size=3)
+    started = asyncio.Event()
+    release = asyncio.Event()
+
+    async def fail_after_release(_spans: list[dict]) -> bool:
+        started.set()
+        await release.wait()
+        return False
+
+    monkeypatch.setattr(tracer._transport, "send_batch", fail_after_release)
+
+    for name in ("old_1", "old_2", "old_3"):
+        tracer.record(make_span(name))
+
+    flush_task = asyncio.create_task(tracer._flush())
+    await started.wait()
+
+    assert len(tracer._buffer) == 0
+
+    for name in ("new_1", "new_2", "new_3"):
+        tracer.record(make_span(name))
+
+    assert [span.name for span in tracer._buffer] == ["new_1", "new_2", "new_3"]
+    assert tracer.sdk_diagnostics.dropped_spans == 0
+
+    release.set()
+    sent = await flush_task
+
+    assert sent is False
+    assert [span.name for span in tracer._buffer] == ["old_1", "old_2", "old_3"]
+    assert tracer.sdk_diagnostics.failed_flushes == 1
+    assert tracer.sdk_diagnostics.dropped_spans == 0
 
 
 @pytest.mark.asyncio
