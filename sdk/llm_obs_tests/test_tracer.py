@@ -37,6 +37,74 @@ async def test_shutdown_allows_reinitialization():
     assert llm_obs.get_tracer() is second
 
 
+def test_init_without_running_loop_does_not_schedule_background_start(monkeypatch):
+    loop = asyncio.new_event_loop()
+    scheduled = False
+
+    def fail_if_scheduled(_coro):
+        nonlocal scheduled
+        scheduled = True
+        raise AssertionError("start should not be scheduled on a non-running loop")
+
+    monkeypatch.setattr("llm_obs.asyncio.ensure_future", fail_if_scheduled)
+    asyncio.set_event_loop(loop)
+    try:
+        tracer = llm_obs.init(api_key="k", endpoint="http://test")
+    finally:
+        asyncio.set_event_loop(None)
+        loop.close()
+
+    assert tracer._flush_task is None
+    assert scheduled is False
+
+
+@pytest.mark.asyncio
+async def test_init_schedules_background_start_on_running_loop():
+    tracer = llm_obs.init(api_key="k", endpoint="http://test")
+
+    await asyncio.sleep(0)
+
+    assert tracer._flush_task is not None
+    assert not tracer._flush_task.done()
+
+
+@pytest.mark.asyncio
+async def test_repeated_start_reuses_existing_flush_loop():
+    tracer = LLMTracer(api_key="k", endpoint="http://test")
+
+    await tracer.start()
+    first_task = tracer._flush_task
+    await tracer.start()
+
+    assert first_task is not None
+    assert tracer._flush_task is first_task
+    assert not first_task.done()
+
+    await tracer.shutdown(flush=False)
+
+
+@pytest.mark.asyncio
+async def test_shutdown_without_start_is_idempotent():
+    tracer = LLMTracer(api_key="k", endpoint="http://test")
+
+    await tracer.shutdown(flush=False)
+    await tracer.shutdown(flush=False)
+
+    assert tracer._closed is True
+    assert tracer._flush_task is None
+
+
+def test_tracer_start_shutdown_inside_asyncio_run():
+    async def main() -> None:
+        tracer = LLMTracer(api_key="k", endpoint="http://test")
+        await tracer.start()
+        assert tracer._flush_task is not None
+        await tracer.shutdown(flush=False)
+        assert tracer._closed is True
+
+    asyncio.run(main())
+
+
 @pytest.mark.asyncio
 async def test_trace_decorator_records_span():
     tracer = llm_obs.init(api_key="test", endpoint="http://test")

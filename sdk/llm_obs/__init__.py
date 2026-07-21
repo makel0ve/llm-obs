@@ -19,15 +19,11 @@ def _env_debug_enabled() -> bool:
 
 def _schedule_start(tracer: LLMTracer) -> None:
     try:
-        loop = asyncio.get_event_loop()
-        if loop.is_running():
-            loop.create_task(tracer.start())
-
-        else:
-            asyncio.ensure_future(tracer.start())
-
+        loop = asyncio.get_running_loop()
     except RuntimeError:
         pass
+    else:
+        loop.create_task(tracer.start())
 
 
 def init(
