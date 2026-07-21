@@ -1,3 +1,4 @@
+import json
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta
 from typing import TypedDict
@@ -55,7 +56,7 @@ class FakeDb:
                 ]
             )
 
-        if "SELECT id, payload_s3_key" in sql:
+        if "SELECT id, started_at, payload_s3_key" in sql:
             assert self._project_context == self._state.project_id
             batch = [
                 span
@@ -67,11 +68,14 @@ class FakeDb:
 
         if "DELETE FROM spans" in sql:
             assert self._project_context == self._state.project_id
-            span_ids = {str(span_id) for span_id in params["span_ids"]}
+            span_keys = {
+                (str(row["id"]), datetime.fromisoformat(str(row["started_at"])))
+                for row in json.loads(str(params["span_keys"]))
+            }
             deleted = [
                 span
                 for span in self._state.spans
-                if span["id"] in span_ids
+                if self._state.span_key(span) in span_keys
                 and self._state.span_key(span) not in self._state.deleted_span_keys
             ]
             self._state.deleted_span_keys.update(
@@ -222,7 +226,7 @@ async def test_retention_keeps_span_when_payload_delete_fails(
 
 
 @pytest.mark.asyncio
-async def test_retention_currently_deletes_fresh_span_with_duplicate_id(
+async def test_retention_deletes_only_expired_span_with_duplicate_id(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     state = RetentionState()
@@ -260,8 +264,5 @@ async def test_retention_currently_deletes_fresh_span_with_duplicate_id(
 
     await maintenance.run_data_retention.original_func()
 
-    assert state.deleted_span_keys == {
-        (duplicate_span_id, state.expired_started_at),
-        (duplicate_span_id, state.fresh_started_at),
-    }
+    assert state.deleted_span_keys == {(duplicate_span_id, state.expired_started_at)}
     assert state.deleted_traces == 1

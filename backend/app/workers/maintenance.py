@@ -1,3 +1,4 @@
+import json
 from datetime import UTC, datetime, timedelta
 
 import aioboto3
@@ -76,7 +77,7 @@ async def _fetch_retention_batch(db, project_id: str, cutoff: datetime) -> list[
     result = await db.execute(
         text(
             """
-            SELECT id, payload_s3_key
+            SELECT id, started_at, payload_s3_key
             FROM spans
             WHERE project_id = :pid AND started_at < :cutoff
             ORDER BY started_at ASC
@@ -88,18 +89,35 @@ async def _fetch_retention_batch(db, project_id: str, cutoff: datetime) -> list[
     return [dict(row) for row in result.mappings().all()]
 
 
-async def _delete_span_batch(db, project_id: str, span_ids: list[str]) -> int:
-    if not span_ids:
+async def _delete_span_batch(db, project_id: str, span_keys: list[dict]) -> int:
+    if not span_keys:
         return 0
 
+    serialized_span_keys = [
+        {
+            "id": str(row["id"]),
+            "started_at": row["started_at"].isoformat()
+            if isinstance(row["started_at"], datetime)
+            else str(row["started_at"]),
+        }
+        for row in span_keys
+    ]
     result = await db.execute(
         text(
             """
+            WITH selected_spans AS (
+                SELECT id::uuid, started_at::timestamptz
+                FROM jsonb_to_recordset(CAST(:span_keys AS jsonb))
+                    AS selected(id text, started_at text)
+            )
             DELETE FROM spans
-            WHERE project_id = :pid AND id::text = ANY(:span_ids)
+            USING selected_spans
+            WHERE spans.project_id = :pid
+                AND spans.id = selected_spans.id
+                AND spans.started_at = selected_spans.started_at
             """
         ),
-        {"pid": project_id, "span_ids": span_ids},
+        {"pid": project_id, "span_keys": json.dumps(serialized_span_keys)},
     )
     await db.commit()
     return int(result.rowcount or 0)
@@ -232,8 +250,8 @@ async def run_data_retention() -> None:
                 row["payload_s3_key"] for row in batch if row.get("payload_s3_key")
             ]
             deleted_payload_keys = await _delete_s3_objects(pid, payload_keys)
-            span_ids_to_delete = [
-                str(row["id"])
+            span_keys_to_delete = [
+                {"id": row["id"], "started_at": row["started_at"]}
                 for row in batch
                 if not row.get("payload_s3_key")
                 or row["payload_s3_key"] in deleted_payload_keys
@@ -241,7 +259,7 @@ async def run_data_retention() -> None:
             ]
 
             async with get_db(project_id=pid) as db:
-                deleted = await _delete_span_batch(db, pid, span_ids_to_delete)
+                deleted = await _delete_span_batch(db, pid, span_keys_to_delete)
 
             if deleted == 0:
                 log.warning(
