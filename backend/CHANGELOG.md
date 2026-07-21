@@ -1,6 +1,19 @@
 # CHANGELOG
 
 
+## v0.43.0 (2026-07-21)
+
+### Chores
+
+- Trigger ci for release sync
+  ([`167e476`](https://github.com/makel0ve/llm-obs/commit/167e4764977802a6b2e2af0065a0e9c370725b6e))
+
+### Features
+
+- Instrument sdk provider streams
+  ([`e41cbb8`](https://github.com/makel0ve/llm-obs/commit/e41cbb8c208190d1f53ed96e72efc5ae6aac938d))
+
+
 ## v0.42.20 (2026-07-21)
 
 ### Bug Fixes
