@@ -317,8 +317,10 @@ async def test_failed_flush_keeps_buffered_spans():
         sent = await tracer._flush()
 
         assert sent is False
-        assert len(tracer._buffer) == 1
-        assert tracer._buffer[0].name == "test"
+        assert len(tracer._buffer) == 0
+        assert len(tracer._pending_batches) == 1
+        assert tracer._pending_batches[0][0].name == "test"
+        assert tracer.sdk_diagnostics.buffered_spans == 1
         diagnostics = llm_obs.get_diagnostics()
         assert diagnostics is not None
         assert diagnostics.ok is False
@@ -350,6 +352,25 @@ def test_sync_flush_on_exit_flushes_buffer(monkeypatch):
 
     assert flushed
     assert len(tracer._buffer) == 0
+
+
+def test_sync_flush_on_exit_flushes_pending_before_active(monkeypatch):
+    tracer = LLMTracer(api_key="test", endpoint="http://server")
+    sent_batches: list[list[str]] = []
+
+    async def send_batch(spans: list[dict]) -> bool:
+        sent_batches.append([span["name"] for span in spans])
+        return True
+
+    monkeypatch.setattr(tracer._transport, "send_batch", send_batch)
+    tracer._pending_batches.append([make_span("old")])
+    tracer._pending_spans = 1
+    tracer.record(make_span("new"))
+
+    tracer._sync_flush_on_exit()
+
+    assert sent_batches == [["old"], ["new"]]
+    assert tracer.sdk_diagnostics.buffered_spans == 0
 
 
 @pytest.mark.asyncio
@@ -457,19 +478,23 @@ async def test_transport_records_final_connection_reset_after_retries(monkeypatc
 
 
 @pytest.mark.asyncio
-async def test_failed_long_flush_can_evict_spans_recorded_while_in_flight(
+async def test_failed_long_flush_preserves_new_spans_and_retries_failed_batch_first(
     monkeypatch,
 ):
     tracer = LLMTracer(api_key="test", endpoint="http://server", buffer_size=3)
     started = asyncio.Event()
     release = asyncio.Event()
+    sent_batches: list[list[str]] = []
 
-    async def fail_after_release(_spans: list[dict]) -> bool:
-        started.set()
-        await release.wait()
-        return False
+    async def fail_first_batch_after_release(spans: list[dict]) -> bool:
+        sent_batches.append([span["name"] for span in spans])
+        if len(sent_batches) == 1:
+            started.set()
+            await release.wait()
+            return False
+        return True
 
-    monkeypatch.setattr(tracer._transport, "send_batch", fail_after_release)
+    monkeypatch.setattr(tracer._transport, "send_batch", fail_first_batch_after_release)
 
     for name in ("old_1", "old_2", "old_3"):
         tracer.record(make_span(name))
@@ -489,9 +514,28 @@ async def test_failed_long_flush_can_evict_spans_recorded_while_in_flight(
     sent = await flush_task
 
     assert sent is False
-    assert [span.name for span in tracer._buffer] == ["old_1", "old_2", "old_3"]
+    assert [span.name for span in tracer._pending_batches[0]] == [
+        "old_1",
+        "old_2",
+        "old_3",
+    ]
+    assert [span.name for span in tracer._buffer] == ["new_1", "new_2", "new_3"]
     assert tracer.sdk_diagnostics.failed_flushes == 1
     assert tracer.sdk_diagnostics.dropped_spans == 0
+    assert tracer.sdk_diagnostics.buffered_spans == 6
+
+    assert await tracer._flush() is True
+    assert [span.name for span in tracer._buffer] == ["new_1", "new_2", "new_3"]
+
+    assert await tracer._flush() is True
+    assert len(tracer._buffer) == 0
+    assert len(tracer._pending_batches) == 0
+    assert tracer.sdk_diagnostics.buffered_spans == 0
+    assert sent_batches == [
+        ["old_1", "old_2", "old_3"],
+        ["old_1", "old_2", "old_3"],
+        ["new_1", "new_2", "new_3"],
+    ]
 
 
 @pytest.mark.asyncio
