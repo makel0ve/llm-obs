@@ -86,6 +86,39 @@ async def test_openai_patch_records_success_usage_output_and_parent_span():
 
 
 @pytest.mark.asyncio
+async def test_openai_double_patch_is_noop_for_success_and_nested_parent_span():
+    tracer = llm_obs.init(api_key="test", endpoint="http://test")
+    response = SimpleNamespace(
+        choices=[
+            SimpleNamespace(message=SimpleNamespace(content="openai response")),
+        ],
+        usage=SimpleNamespace(prompt_tokens=12, completion_tokens=7),
+    )
+    completions = FakeOpenAICompletions(response=response)
+    client = FakeOpenAIClient(completions)
+    first_create = patch_openai(client).chat.completions.create
+    second_create = patch_openai(client).chat.completions.create
+
+    assert second_create is first_create
+
+    async with llm_obs.span("manual.parent") as manual_span:
+        result = await client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[{"role": "user", "content": "Hello"}],
+        )
+        manual_span.set_output(result.choices[0].message.content)
+
+    assert result is response
+    assert len(completions.calls) == 1
+    assert len(tracer._buffer) == 2
+    provider_span, parent_span = tracer._buffer
+    assert provider_span.name == "openai.chat.completions.create"
+    assert parent_span.name == "manual.parent"
+    assert provider_span.trace_id == parent_span.trace_id
+    assert provider_span.parent_span_id == parent_span.span_id
+
+
+@pytest.mark.asyncio
 async def test_openai_patch_records_exception():
     tracer = llm_obs.init(api_key="test", endpoint="http://test")
     client = patch_openai(
@@ -102,6 +135,24 @@ async def test_openai_patch_records_exception():
     assert span.input_tokens == 0
     assert span.output_tokens == 0
     assert span.output is None
+
+
+@pytest.mark.asyncio
+async def test_openai_double_patch_is_noop_for_exception():
+    tracer = llm_obs.init(api_key="test", endpoint="http://test")
+    completions = FakeOpenAICompletions(error=RuntimeError("openai down"))
+    client = FakeOpenAIClient(completions)
+    patch_openai(client)
+    patch_openai(client)
+
+    with pytest.raises(RuntimeError, match="openai down"):
+        await client.chat.completions.create(model="gpt-4o-mini", messages=[])
+
+    assert len(completions.calls) == 1
+    assert len(tracer._buffer) == 1
+    span = tracer._buffer[0]
+    assert span.name == "openai.chat.completions.create"
+    assert span.error == "openai down"
 
 
 @pytest.mark.asyncio
@@ -169,6 +220,39 @@ async def test_anthropic_patch_records_success_usage_output_and_parent_span():
 
 
 @pytest.mark.asyncio
+async def test_anthropic_double_patch_is_noop_for_success_and_nested_parent_span():
+    tracer = llm_obs.init(api_key="test", endpoint="http://test")
+    response = SimpleNamespace(
+        content=[SimpleNamespace(text="anthropic response")],
+        usage=SimpleNamespace(input_tokens=15, output_tokens=9),
+    )
+    messages = FakeAnthropicMessages(response=response)
+    client = FakeAnthropicClient(messages)
+    first_create = patch_anthropic(client).messages.create
+    second_create = patch_anthropic(client).messages.create
+
+    assert second_create is first_create
+
+    async with llm_obs.span("manual.parent") as manual_span:
+        result = await client.messages.create(
+            model="claude-sonnet-4-6",
+            system="You are concise.",
+            messages=[{"role": "user", "content": "Hello"}],
+        )
+        manual_span.set_output(result.content[0].text)
+
+    assert result is response
+    assert len(messages.calls) == 1
+    assert len(tracer._buffer) == 2
+    provider_span, parent_span = tracer._buffer
+    assert provider_span.name == "anthropic.messages.create"
+    assert parent_span.name == "manual.parent"
+    assert provider_span.trace_id == parent_span.trace_id
+    assert provider_span.parent_span_id == parent_span.span_id
+    assert provider_span.metadata["system"] == "You are concise."
+
+
+@pytest.mark.asyncio
 async def test_anthropic_patch_records_exception():
     tracer = llm_obs.init(api_key="test", endpoint="http://test")
     client = patch_anthropic(
@@ -185,6 +269,24 @@ async def test_anthropic_patch_records_exception():
     assert span.input_tokens == 0
     assert span.output_tokens == 0
     assert span.output is None
+
+
+@pytest.mark.asyncio
+async def test_anthropic_double_patch_is_noop_for_exception():
+    tracer = llm_obs.init(api_key="test", endpoint="http://test")
+    messages = FakeAnthropicMessages(error=RuntimeError("anthropic down"))
+    client = FakeAnthropicClient(messages)
+    patch_anthropic(client)
+    patch_anthropic(client)
+
+    with pytest.raises(RuntimeError, match="anthropic down"):
+        await client.messages.create(model="claude-sonnet-4-6", messages=[])
+
+    assert len(messages.calls) == 1
+    assert len(tracer._buffer) == 1
+    span = tracer._buffer[0]
+    assert span.name == "anthropic.messages.create"
+    assert span.error == "anthropic down"
 
 
 @pytest.mark.asyncio

@@ -5,6 +5,8 @@ from datetime import datetime, UTC
 from llm_obs.decorators import _current_span_id, _current_trace_id
 from llm_obs.tracer import SpanData
 
+_PATCHED_ATTR = "__llm_obs_anthropic_patched__"
+
 
 def _get_value(obj, name, default=None):
     if obj is None:
@@ -31,6 +33,9 @@ def _extract_output(response) -> str | None:
 
 
 def patch_anthropic(client):
+    if getattr(client.messages.create, _PATCHED_ATTR, False):
+        return client
+
     original = client.messages.create
 
     async def traced(*args, **kwargs):
@@ -87,5 +92,6 @@ def patch_anthropic(client):
             except Exception:
                 pass
 
+    setattr(traced, _PATCHED_ATTR, True)
     client.messages.create = traced
     return client

@@ -5,6 +5,8 @@ from datetime import datetime, UTC
 from llm_obs.decorators import _current_span_id, _current_trace_id
 from llm_obs.tracer import SpanData
 
+_PATCHED_ATTR = "__llm_obs_openai_patched__"
+
 
 def _get_value(obj, name, default=None):
     if obj is None:
@@ -32,6 +34,9 @@ def _extract_output(response) -> str | None:
 
 
 def patch_openai(client):
+    if getattr(client.chat.completions.create, _PATCHED_ATTR, False):
+        return client
+
     original = client.chat.completions.create
 
     async def traced(*args, **kwargs):
@@ -86,5 +91,6 @@ def patch_openai(client):
             except Exception:
                 pass
 
+    setattr(traced, _PATCHED_ATTR, True)
     client.chat.completions.create = traced
     return client
