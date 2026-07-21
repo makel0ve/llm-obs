@@ -54,6 +54,12 @@ safe payload for the background task. Summary-only records, including records
 that only show `batch_id`, `project_id` and `span_count`, cannot be retried
 because the original spans are not stored there.
 
+If batch status is `processed` but live dashboard updates lag, check for
+`PENDING` or `FAILED` `span.inserted` rows in `outbox_events` and verify Redis
+health. Span storage can be committed before live Pub/Sub delivery completes.
+The current delivery boundaries are detailed in
+[delivery-guarantees.md](delivery-guarantees.md).
+
 ## Auth Or Redirect Loop
 
 - Clear stale local storage or log out and log in again.
