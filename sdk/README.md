@@ -261,6 +261,13 @@ if sdk_diagnostics:
     )
 ```
 
+`buffered_spans` is the total number of spans still held by the SDK. It includes
+`active_buffered_spans` waiting for a new flush and `pending_spans` in failed
+batches that will be retried before newer active spans. `pending_batches` shows
+how many failed batches are waiting for retry. `dropped_spans` increasing with
+`last_drop_reason="buffer_overflow"` means the active in-memory buffer filled and
+the oldest active span was discarded before recording a newer span.
+
 These diagnostics are safe delivery metadata only. They do not include prompts,
 outputs, span payloads or API keys.
 

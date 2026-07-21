@@ -146,6 +146,30 @@ await llm_obs.shutdown()
 Use `await llm_obs.shutdown(flush=False)` only when a test intentionally should
 discard buffered spans.
 
+## SDK Diagnostics
+
+Use `llm_obs.get_sdk_diagnostics()` to inspect safe client-side telemetry
+counters without exposing prompts, outputs, span payloads or API keys:
+
+```python
+diagnostics = llm_obs.get_sdk_diagnostics()
+if diagnostics:
+    print(
+        diagnostics.dropped_spans,
+        diagnostics.failed_flushes,
+        diagnostics.buffered_spans,
+        diagnostics.active_buffered_spans,
+        diagnostics.pending_spans,
+        diagnostics.pending_batches,
+    )
+```
+
+`buffered_spans` is the total currently held by the SDK. Active spans are waiting
+for a new flush; pending spans are in failed batches that will retry before newer
+active spans. If `dropped_spans` increases and `last_drop_reason` is
+`buffer_overflow`, the active in-memory buffer filled and the oldest active span
+was discarded locally.
+
 ## Verifying Delivery
 
 Accepted ingest batches return a `batch_id`. Check asynchronous processing with
