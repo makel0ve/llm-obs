@@ -34,11 +34,14 @@ class HttpTransport:
             trust_env=False,
         )
 
-    async def send_batch(self, spans: list[dict]) -> bool:
+    async def send_batch(
+        self, spans: list[dict], *, idempotency_key: str | None = None
+    ) -> bool:
         spans_count = len(spans)
+        payload = {"spans": spans, "idempotency_key": idempotency_key}
         for attempt in range(self.MAX_ATTEMPTS):
             try:
-                resp = await self._client.post("/v1/ingest", json={"spans": spans})
+                resp = await self._client.post("/v1/ingest", json=payload)
                 resp.raise_for_status()
                 self._record_diagnostics(
                     TransportDiagnostics(

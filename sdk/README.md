@@ -211,7 +211,9 @@ await llm_obs.shutdown()
 If ingest returns a retryable server error, the transport retries before giving
 up. If ingest returns `429 Too Many Requests` or the final retry fails, unsent
 spans stay in the in-memory buffer for the lifetime of that tracer instead of
-being marked as successfully flushed.
+being marked as successfully flushed. Each SDK flush batch gets an automatic
+`idempotency_key`; transport retries and later retry attempts for the same failed
+batch reuse that key.
 
 ### Debug delivery diagnostics
 
