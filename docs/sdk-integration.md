@@ -126,6 +126,14 @@ async def main() -> None:
 asyncio.run(main())
 ```
 
+## Streaming Async Patching
+
+Patched OpenAI and Anthropic async clients support `stream=True`. The SDK records
+the provider span after the returned async stream is consumed, so stream latency
+covers generation through the final chunk. If the application stops consuming a
+stream early, close it with `await stream.aclose()` when the provider stream
+supports it.
+
 ## Flush Behavior
 
 The SDK buffers spans and sends them in the background. Long-running services
