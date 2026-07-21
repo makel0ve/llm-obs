@@ -1,6 +1,24 @@
 # CHANGELOG
 
 
+## v0.42.16 (2026-07-21)
+
+### Bug Fixes
+
+- Automate future trace partitions
+  ([`e85a0c4`](https://github.com/makel0ve/llm-obs/commit/e85a0c43b84cab37764f32a1f97e3e7a29dc19ad))
+
+### Chores
+
+- Trigger ci for release sync
+  ([`1750c7b`](https://github.com/makel0ve/llm-obs/commit/1750c7bcfa656f9042824baec903e2701ae68796))
+
+### Documentation
+
+- Add partition pruning audit
+  ([`767501a`](https://github.com/makel0ve/llm-obs/commit/767501a5c8d8463713c5383679ded6435082374c))
+
+
 ## v0.42.15 (2026-07-21)
 
 ### Bug Fixes
