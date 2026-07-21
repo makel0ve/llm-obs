@@ -146,6 +146,8 @@ the project API key:
 Repeated ingest requests with the same `idempotency_key` and identical spans
 return the original `batch_id` without enqueueing another batch. Reusing the
 same idempotency key with a different request body returns `409 Conflict`.
+The Python SDK generates an idempotency key for each flush batch automatically
+and reuses it for retries of that same batch.
 Batch status `processed` counts spans actually inserted into storage; it can be
 lower than `accepted` when duplicate span ids are ignored.
 See [delivery-guarantees.md](delivery-guarantees.md) for the current
