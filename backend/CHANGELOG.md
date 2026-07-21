@@ -1,6 +1,19 @@
 # CHANGELOG
 
 
+## v0.42.19 (2026-07-21)
+
+### Bug Fixes
+
+- Harden sdk async lifecycle
+  ([`d01fc8b`](https://github.com/makel0ve/llm-obs/commit/d01fc8b6bdfcbeb913f727acd0f1861327bc6130))
+
+### Chores
+
+- Trigger ci for release sync
+  ([`96ee192`](https://github.com/makel0ve/llm-obs/commit/96ee19268ee478f187a33e61314e804c32933ab3))
+
+
 ## v0.42.18 (2026-07-21)
 
 ### Bug Fixes
