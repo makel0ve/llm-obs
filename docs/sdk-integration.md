@@ -148,6 +148,8 @@ return the original `batch_id` without enqueueing another batch. Reusing the
 same idempotency key with a different request body returns `409 Conflict`.
 Batch status `processed` counts spans actually inserted into storage; it can be
 lower than `accepted` when duplicate span ids are ignored.
+See [delivery-guarantees.md](delivery-guarantees.md) for the current
+at-most-once, at-least-once and effectively-once boundaries.
 
 ```bash
 curl -H "X-API-Key: $LLM_OBS_API_KEY" \
