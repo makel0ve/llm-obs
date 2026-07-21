@@ -15,9 +15,21 @@ engine = create_async_engine(
     pool_recycle=3600,
     connect_args={"statement_cache_size": 0},
 )
+maintenance_engine = create_async_engine(
+    settings.effective_migration_database_url.get_secret_value(),
+    pool_size=2,
+    max_overflow=0,
+    echo=settings.environment == "development",
+    pool_pre_ping=True,
+    pool_recycle=3600,
+    connect_args={"statement_cache_size": 0},
+)
 
 session_factory = async_sessionmaker(
     engine, class_=AsyncSession, expire_on_commit=False
+)
+maintenance_session_factory = async_sessionmaker(
+    maintenance_engine, class_=AsyncSession, expire_on_commit=False
 )
 
 
@@ -30,6 +42,17 @@ async def get_db(project_id: str | None = None) -> AsyncGenerator[AsyncSession, 
                 {"pid": project_id},
             )
 
+        try:
+            yield session
+
+        except Exception:
+            await session.rollback()
+            raise
+
+
+@asynccontextmanager
+async def get_maintenance_db() -> AsyncGenerator[AsyncSession, None]:
+    async with maintenance_session_factory() as session:
         try:
             yield session
 
