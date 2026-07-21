@@ -1,5 +1,6 @@
 import asyncio
 import atexit
+import uuid
 from collections import deque
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -41,6 +42,12 @@ class SDKDiagnostics:
     last_flush_reason: str | None = None
 
 
+@dataclass
+class FlushBatch:
+    spans: list[SpanData]
+    idempotency_key: str
+
+
 class LLMTracer:
     def __init__(
         self,
@@ -53,7 +60,7 @@ class LLMTracer:
         self._api_key = api_key
         self._endpoint = endpoint
         self._buffer: deque[SpanData] = deque(maxlen=buffer_size)
-        self._pending_batches: deque[list[SpanData]] = deque()
+        self._pending_batches: deque[FlushBatch] = deque()
         self._pending_spans = 0
         self._flush_interval = flush_interval
         self._flush_task: asyncio.Task | None = None
@@ -160,32 +167,38 @@ class LLMTracer:
             await self._flush()
 
     async def _flush(self) -> bool:
-        spans = self._pop_next_flush_batch()
-        if not spans:
+        batch = self._pop_next_flush_batch()
+        if batch is None:
             return True
 
-        sent = await self._transport.send_batch([self._span_to_dict(s) for s in spans])
+        sent = await self._transport.send_batch(
+            [self._span_to_dict(s) for s in batch.spans],
+            idempotency_key=batch.idempotency_key,
+        )
         if not sent:
             self._failed_flushes += 1
-            self._push_failed_batch(spans)
+            self._push_failed_batch(batch)
             return False
 
         return True
 
-    def _pop_next_flush_batch(self) -> list[SpanData]:
+    def _pop_next_flush_batch(self) -> FlushBatch | None:
         if self._pending_batches:
-            spans = self._pending_batches.popleft()
-            self._pending_spans -= len(spans)
-            return spans
+            batch = self._pending_batches.popleft()
+            self._pending_spans -= len(batch.spans)
+            return batch
 
         active_spans: list[SpanData] = []
         while self._buffer:
             active_spans.append(self._buffer.popleft())
-        return active_spans
+        if not active_spans:
+            return None
 
-    def _push_failed_batch(self, spans: list[SpanData]) -> None:
-        self._pending_batches.appendleft(spans)
-        self._pending_spans += len(spans)
+        return FlushBatch(spans=active_spans, idempotency_key=str(uuid.uuid4()))
+
+    def _push_failed_batch(self, batch: FlushBatch) -> None:
+        self._pending_batches.appendleft(batch)
+        self._pending_spans += len(batch.spans)
 
     def _has_buffered_spans(self) -> bool:
         return bool(self._buffer) or self._pending_spans > 0

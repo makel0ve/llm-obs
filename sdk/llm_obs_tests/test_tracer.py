@@ -7,7 +7,7 @@ import respx
 import pytest_asyncio
 
 import llm_obs
-from llm_obs.tracer import LLMTracer, SpanData
+from llm_obs.tracer import FlushBatch, LLMTracer, SpanData
 from llm_obs.transport import HttpTransport
 
 
@@ -319,7 +319,7 @@ async def test_failed_flush_keeps_buffered_spans():
         assert sent is False
         assert len(tracer._buffer) == 0
         assert len(tracer._pending_batches) == 1
-        assert tracer._pending_batches[0][0].name == "test"
+        assert tracer._pending_batches[0].spans[0].name == "test"
         assert tracer.sdk_diagnostics.buffered_spans == 1
         diagnostics = llm_obs.get_diagnostics()
         assert diagnostics is not None
@@ -358,12 +358,16 @@ def test_sync_flush_on_exit_flushes_pending_before_active(monkeypatch):
     tracer = LLMTracer(api_key="test", endpoint="http://server")
     sent_batches: list[list[str]] = []
 
-    async def send_batch(spans: list[dict]) -> bool:
+    async def send_batch(
+        spans: list[dict], *, idempotency_key: str | None = None
+    ) -> bool:
         sent_batches.append([span["name"] for span in spans])
         return True
 
     monkeypatch.setattr(tracer._transport, "send_batch", send_batch)
-    tracer._pending_batches.append([make_span("old")])
+    tracer._pending_batches.append(
+        FlushBatch(spans=[make_span("old")], idempotency_key="old-key")
+    )
     tracer._pending_spans = 1
     tracer.record(make_span("new"))
 
@@ -388,7 +392,9 @@ async def test_transport_retries_5xx_then_succeeds(monkeypatch):
             ]
         )
 
-        sent = await transport.send_batch([{"span_id": "s1"}])
+        sent = await transport.send_batch(
+            [{"span_id": "s1"}], idempotency_key="batch-key"
+        )
 
     await transport.aclose()
 
@@ -399,6 +405,9 @@ async def test_transport_retries_5xx_then_succeeds(monkeypatch):
     assert transport.last_diagnostics.reason == "sent"
     assert transport.last_diagnostics.attempts == 3
     assert transport.last_diagnostics.spans_count == 1
+    assert [
+        json.loads(call.request.content)["idempotency_key"] for call in route.calls
+    ] == ["batch-key", "batch-key", "batch-key"]
 
 
 @pytest.mark.asyncio
@@ -416,7 +425,9 @@ async def test_transport_records_final_http_failure_after_retries(monkeypatch):
             ]
         )
 
-        sent = await transport.send_batch([{"span_id": "s1"}])
+        sent = await transport.send_batch(
+            [{"span_id": "s1"}], idempotency_key="timeout-key"
+        )
 
     await transport.aclose()
 
@@ -439,7 +450,9 @@ async def test_transport_records_final_timeout_after_retries(monkeypatch):
             side_effect=httpx.ReadTimeout("server accepted request but timed out")
         )
 
-        sent = await transport.send_batch([{"span_id": "s1"}])
+        sent = await transport.send_batch(
+            [{"span_id": "s1"}], idempotency_key="timeout-key"
+        )
 
     await transport.aclose()
 
@@ -451,6 +464,9 @@ async def test_transport_records_final_timeout_after_retries(monkeypatch):
     assert transport.last_diagnostics.error_type == "ReadTimeout"
     assert transport.last_diagnostics.attempts == 3
     assert transport.last_diagnostics.spans_count == 1
+    assert [
+        json.loads(call.request.content)["idempotency_key"] for call in route.calls
+    ] == ["timeout-key", "timeout-key", "timeout-key"]
 
 
 @pytest.mark.asyncio
@@ -485,9 +501,15 @@ async def test_failed_long_flush_preserves_new_spans_and_retries_failed_batch_fi
     started = asyncio.Event()
     release = asyncio.Event()
     sent_batches: list[list[str]] = []
+    sent_idempotency_keys: list[str | None] = []
+    generated_keys = iter(["old-key", "new-key"])
+    monkeypatch.setattr("llm_obs.tracer.uuid.uuid4", lambda: next(generated_keys))
 
-    async def fail_first_batch_after_release(spans: list[dict]) -> bool:
+    async def fail_first_batch_after_release(
+        spans: list[dict], *, idempotency_key: str | None = None
+    ) -> bool:
         sent_batches.append([span["name"] for span in spans])
+        sent_idempotency_keys.append(idempotency_key)
         if len(sent_batches) == 1:
             started.set()
             await release.wait()
@@ -514,7 +536,7 @@ async def test_failed_long_flush_preserves_new_spans_and_retries_failed_batch_fi
     sent = await flush_task
 
     assert sent is False
-    assert [span.name for span in tracer._pending_batches[0]] == [
+    assert [span.name for span in tracer._pending_batches[0].spans] == [
         "old_1",
         "old_2",
         "old_3",
@@ -536,6 +558,32 @@ async def test_failed_long_flush_preserves_new_spans_and_retries_failed_batch_fi
         ["old_1", "old_2", "old_3"],
         ["new_1", "new_2", "new_3"],
     ]
+    assert sent_idempotency_keys == ["old-key", "old-key", "new-key"]
+
+
+@pytest.mark.asyncio
+async def test_tracer_generates_new_idempotency_key_per_active_batch(monkeypatch):
+    tracer = LLMTracer(api_key="test", endpoint="http://server")
+    generated_keys = iter(["first-key", "second-key"])
+    sent_idempotency_keys: list[str | None] = []
+
+    monkeypatch.setattr("llm_obs.tracer.uuid.uuid4", lambda: next(generated_keys))
+
+    async def send_batch(
+        _spans: list[dict], *, idempotency_key: str | None = None
+    ) -> bool:
+        sent_idempotency_keys.append(idempotency_key)
+        return True
+
+    monkeypatch.setattr(tracer._transport, "send_batch", send_batch)
+
+    tracer.record(make_span("first"))
+    assert await tracer._flush() is True
+
+    tracer.record(make_span("second"))
+    assert await tracer._flush() is True
+
+    assert sent_idempotency_keys == ["first-key", "second-key"]
 
 
 @pytest.mark.asyncio

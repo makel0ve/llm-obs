@@ -46,10 +46,12 @@ through OTLP `partialSuccess.rejectedSpans`.
 
 ## Failure Scenarios
 
-Client timeout before a response does not prove that ingest failed. Retry with
-the same `idempotency_key` when the client supplied one. If the original request
-committed, the retry returns the original `batch_id`. If the original request is
-still pending, the retry returns `409` for in-progress processing.
+Client timeout before a response does not prove that ingest failed. The Python
+SDK automatically sends one `idempotency_key` per flush batch and reuses it for
+retries of that same batch. Raw ingest clients should retry with the same
+`idempotency_key` when they supplied one. If the original request committed, the
+retry returns the original `batch_id`. If the original request is still pending,
+the retry returns `409` for in-progress processing.
 
 Duplicate requests without an `idempotency_key` can enqueue duplicate worker
 tasks. Duplicate span IDs are not inserted twice, but the batch ids and status
