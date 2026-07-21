@@ -37,6 +37,9 @@ class SDKDiagnostics:
     failed_flushes: int
     final_delivery_failures: int
     buffered_spans: int
+    active_buffered_spans: int
+    pending_spans: int
+    pending_batches: int
     buffer_size: int | None
     last_drop_reason: str | None = None
     last_flush_reason: str | None = None
@@ -206,6 +209,12 @@ class LLMTracer:
     def _buffered_spans_count(self) -> int:
         return len(self._buffer) + self._pending_spans
 
+    def _active_buffered_spans_count(self) -> int:
+        return len(self._buffer)
+
+    def _pending_batches_count(self) -> int:
+        return len(self._pending_batches)
+
     @property
     def last_flush_diagnostics(self) -> TransportDiagnostics | None:
         return self._transport.last_diagnostics
@@ -217,6 +226,9 @@ class LLMTracer:
             failed_flushes=self._failed_flushes,
             final_delivery_failures=self._final_delivery_failures,
             buffered_spans=self._buffered_spans_count(),
+            active_buffered_spans=self._active_buffered_spans_count(),
+            pending_spans=self._pending_spans,
+            pending_batches=self._pending_batches_count(),
             buffer_size=self._buffer.maxlen,
             last_drop_reason=self._last_drop_reason,
             last_flush_reason=self._flush_reason,
