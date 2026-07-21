@@ -1,6 +1,29 @@
 # CHANGELOG
 
 
+## v0.42.15 (2026-07-21)
+
+### Bug Fixes
+
+- Delete retention spans by composite key
+  ([`e3ef684`](https://github.com/makel0ve/llm-obs/commit/e3ef684af5939935791d97600f08058d15095a65))
+
+### Chores
+
+- Trigger ci for release sync
+  ([`3772ee9`](https://github.com/makel0ve/llm-obs/commit/3772ee97d888a5eaebcf01d9f642147836166036))
+
+### Documentation
+
+- Document telemetry delivery guarantees
+  ([`560e9da`](https://github.com/makel0ve/llm-obs/commit/560e9dadb6cd999904fd16e122893a023269d171))
+
+### Testing
+
+- Cover retention composite key regression
+  ([`4536f5b`](https://github.com/makel0ve/llm-obs/commit/4536f5bb153494f0d37c194b333090c83a14f3ca))
+
+
 ## v0.42.14 (2026-07-20)
 
 ### Bug Fixes
