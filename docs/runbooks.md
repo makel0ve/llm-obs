@@ -348,6 +348,12 @@ rate-limit counters, batch status and live pub/sub. `redis-queue` handles
 Taskiq queues, task results and the DLQ with AOF persistence and `noeviction`,
 so accepted ingest work is not subject to cache eviction.
 
+Telemetry delivery is intentionally split between committed storage and
+post-commit side effects. Raw spans and trace rows are committed in PostgreSQL
+before live Pub/Sub, trace aggregate enqueueing and alert evaluation complete.
+Use [delivery-guarantees.md](delivery-guarantees.md) when deciding whether an
+incident is data loss, delayed live delivery or stale derived trace data.
+
 Production container healthchecks cover HTTP-facing services directly:
 Postgres, MinIO, PgBouncer, backend readiness and frontend nginx. Worker and
 scheduler containers are supervised by `restart: unless-stopped`; their
@@ -382,6 +388,11 @@ Check Prometheus metrics:
 ```bash
 curl -f http://localhost:8000/metrics | grep llmobs_ingest
 ```
+
+If live dashboard updates lag while batch status is processed, inspect the
+`outbox_events` table for `PENDING` or `FAILED` `span.inserted` rows and check
+Redis health. These rows represent retryable live-stream delivery, not missing
+stored telemetry.
 
 For public deployments, verify the reverse proxy does not expose operator-only
 endpoints to unauthenticated external users:

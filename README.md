@@ -243,6 +243,9 @@ return the original `batch_id` without enqueueing another batch. Reusing the
 same idempotency key with a different request body returns `409 Conflict`.
 Batch status `processed` counts spans actually inserted into storage; it can be
 lower than `accepted` when duplicate span ids are ignored.
+For the precise delivery contract, including client timeouts, worker retries,
+idempotency and outbox backlog behavior, see
+[docs/delivery-guarantees.md](docs/delivery-guarantees.md).
 
 ```bash
 curl -H "X-API-Key: YOUR_PROJECT_API_KEY" \

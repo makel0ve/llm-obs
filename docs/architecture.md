@@ -18,7 +18,7 @@ FastAPI ingest API
     | durable Redis queue
     v
 Taskiq worker
-    |-- PostgreSQL: traces, spans, aggregates, pricing, alerts, users
+    |-- PostgreSQL: traces, spans, outbox, aggregates, pricing, alerts, users
     |-- MinIO/S3: large stored payload objects
     |-- Redis: cache, rate-limit counters, batch status and pub/sub
     |-- Redis queue: Taskiq queues, task results and DLQ
@@ -46,20 +46,24 @@ span rows, then removes trace rows that no longer have spans.
 5. OTLP ingest accepts native 16/32 character hex span and trace IDs by mapping
    them deterministically to internal UUIDs, while malformed spans are reported
    through OTLP `partialSuccess.rejectedSpans`.
-6. Workers process spans asynchronously, update trace aggregates and evaluate
-   alert rules.
-7. Large payloads are stored in MinIO/S3 only when project payload settings
+6. Workers process spans asynchronously, write spans and trace rows in one DB
+   transaction, and create outbox events for live span delivery.
+7. Workers update trace aggregates and evaluate alert rules after the span
+   transaction commits.
+8. Large payloads are stored in MinIO/S3 only when project payload settings
    allow it.
-8. The dashboard reads metrics, traces and analytics from the query API.
+9. The dashboard reads metrics, traces and analytics from the query API.
 
 Accepted ingest requests return a `batch_id`. Processing can still fail later,
 so operational checks should include the batch status API, failed-task API and
-Prometheus metrics.
+Prometheus metrics. Current end-to-end delivery semantics are documented in
+[delivery-guarantees.md](delivery-guarantees.md).
 
 ## Storage Boundaries
 
 PostgreSQL stores organizations, users, projects, API key hashes, pricing,
-traces, spans, alert rules, alert events, audit events and failed-task metadata.
+traces, spans, outbox events, alert rules, alert events, audit events and
+failed-task metadata.
 Runtime services should connect with the dedicated application database role,
 while Alembic migrations use the owner/admin migration role. This keeps trace
 RLS as a database-level defense-in-depth boundary instead of relying on a
@@ -82,6 +86,13 @@ coordination Redis for rate limits, short-lived caches, batch status and the
 live span stream. `REDIS_QUEUE_URL` is the durable Taskiq queue/result Redis for
 accepted ingest work, scheduled jobs and the DLQ; Compose configures it with AOF
 persistence and `noeviction`.
+
+Span live-stream delivery uses PostgreSQL transactional outbox rows. The worker
+writes `span.inserted` outbox events in the same transaction as span/trace
+storage; `deliver_span_outbox_events` publishes them to Redis and retries
+pending events on a schedule. Trace aggregate and alert evaluation enqueueing
+are still post-commit side effects and can lag or fail independently of raw span
+storage.
 
 ## Authentication And Roles
 
