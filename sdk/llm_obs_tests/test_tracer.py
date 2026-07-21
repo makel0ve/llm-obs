@@ -223,6 +223,9 @@ async def test_buffer_overflow_drops_oldest():
     assert diagnostics.dropped_spans == 7
     assert diagnostics.last_drop_reason == "buffer_overflow"
     assert diagnostics.buffered_spans == 3
+    assert diagnostics.active_buffered_spans == 3
+    assert diagnostics.pending_spans == 0
+    assert diagnostics.pending_batches == 0
     assert diagnostics.buffer_size == 3
     diagnostics_text = repr(diagnostics.__dict__)
     assert "input_messages" not in diagnostics_text
@@ -369,6 +372,9 @@ async def test_shutdown_flush_failure_keeps_safe_diagnostics(monkeypatch):
     assert sdk_diagnostics.failed_flushes == 1
     assert sdk_diagnostics.final_delivery_failures == 1
     assert sdk_diagnostics.buffered_spans == 1
+    assert sdk_diagnostics.active_buffered_spans == 0
+    assert sdk_diagnostics.pending_spans == 1
+    assert sdk_diagnostics.pending_batches == 1
     assert sdk_diagnostics.last_flush_reason == "http_error"
 
 
@@ -389,6 +395,9 @@ async def test_failed_flush_keeps_buffered_spans():
         assert len(tracer._pending_batches) == 1
         assert tracer._pending_batches[0].spans[0].name == "test"
         assert tracer.sdk_diagnostics.buffered_spans == 1
+        assert tracer.sdk_diagnostics.active_buffered_spans == 0
+        assert tracer.sdk_diagnostics.pending_spans == 1
+        assert tracer.sdk_diagnostics.pending_batches == 1
         diagnostics = llm_obs.get_diagnostics()
         assert diagnostics is not None
         assert diagnostics.ok is False
@@ -401,6 +410,28 @@ async def test_failed_flush_keeps_buffered_spans():
         assert "X-API-Key" not in diagnostics_text
         assert "gpt-4o" not in diagnostics_text
         assert "input_messages" not in diagnostics_text
+
+
+@pytest.mark.asyncio
+async def test_get_sdk_diagnostics_reports_drop_and_buffer_metrics():
+    tracer = llm_obs.init(api_key="test", endpoint="http://test", buffer_size=2)
+
+    tracer.record(make_span("first"))
+    tracer.record(make_span("second"))
+    tracer.record(make_span("third"))
+
+    diagnostics = llm_obs.get_sdk_diagnostics()
+
+    assert diagnostics is not None
+    assert diagnostics.dropped_spans == 1
+    assert diagnostics.last_drop_reason == "buffer_overflow"
+    assert diagnostics.buffered_spans == 2
+    assert diagnostics.active_buffered_spans == 2
+    assert diagnostics.pending_spans == 0
+    assert diagnostics.pending_batches == 0
+    assert diagnostics.failed_flushes == 0
+    assert diagnostics.final_delivery_failures == 0
+    assert diagnostics.buffer_size == 2
 
 
 def test_sync_flush_on_exit_flushes_buffer(monkeypatch):
@@ -613,14 +644,23 @@ async def test_failed_long_flush_preserves_new_spans_and_retries_failed_batch_fi
     assert tracer.sdk_diagnostics.failed_flushes == 1
     assert tracer.sdk_diagnostics.dropped_spans == 0
     assert tracer.sdk_diagnostics.buffered_spans == 6
+    assert tracer.sdk_diagnostics.active_buffered_spans == 3
+    assert tracer.sdk_diagnostics.pending_spans == 3
+    assert tracer.sdk_diagnostics.pending_batches == 1
 
     assert await tracer._flush() is True
     assert [span.name for span in tracer._buffer] == ["new_1", "new_2", "new_3"]
+    assert tracer.sdk_diagnostics.active_buffered_spans == 3
+    assert tracer.sdk_diagnostics.pending_spans == 0
+    assert tracer.sdk_diagnostics.pending_batches == 0
 
     assert await tracer._flush() is True
     assert len(tracer._buffer) == 0
     assert len(tracer._pending_batches) == 0
     assert tracer.sdk_diagnostics.buffered_spans == 0
+    assert tracer.sdk_diagnostics.active_buffered_spans == 0
+    assert tracer.sdk_diagnostics.pending_spans == 0
+    assert tracer.sdk_diagnostics.pending_batches == 0
     assert sent_batches == [
         ["old_1", "old_2", "old_3"],
         ["old_1", "old_2", "old_3"],
