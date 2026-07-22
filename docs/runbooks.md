@@ -363,8 +363,11 @@ curl -f http://localhost:8000/worker-health
 ```
 
 `/health` only proves the backend process can serve HTTP. `/ready` verifies
-Postgres and Redis. `/worker-health` verifies that the scheduler enqueued the
-heartbeat task and a worker wrote it to Redis.
+Postgres and Redis as critical dependencies and reports S3 payload storage as a
+non-critical dependency. If S3 is `degraded`, metadata ingest can still succeed
+and affected spans record `payload_status=storage_failed`.
+`/worker-health` verifies that the scheduler enqueued the heartbeat task and a
+worker wrote it to Redis.
 
 The Compose files separate Redis responsibilities. `redis` handles cache,
 rate-limit counters, batch status and live pub/sub. `redis-queue` handles

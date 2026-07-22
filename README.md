@@ -291,12 +291,14 @@ Check backend dependencies with `/ready`. Worker and scheduler liveness is
 visible through `/worker-health`: the scheduler enqueues a lightweight
 heartbeat task every minute, and the worker updates a Redis timestamp when it
 executes that task. The endpoint returns `503` when the heartbeat is missing or
-older than the configured threshold.
+older than the configured threshold. `/ready` reports S3 payload storage as a
+non-critical dependency: if it is degraded, metadata ingest can still complete
+and affected spans record `payload_status=storage_failed`.
 
 ```bash
 curl http://localhost:8000/ready
 curl http://localhost:8000/worker-health
-curl http://localhost:8000/metrics | grep llmobs_ingest
+curl http://localhost:8000/metrics | grep -E 'llmobs_ingest|llmobs_payload_storage'
 ```
 
 For public self-hosted deployments, terminate TLS in a reverse proxy in front of

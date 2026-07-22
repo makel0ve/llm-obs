@@ -37,6 +37,11 @@ span_processing_s = Histogram(
 failed_tasks = Counter(
     "llmobs_failed_tasks_total", "Permanently failed tasks", ["task_name"]
 )
+payload_storage_failures = Counter(
+    "llmobs_payload_storage_failures_total",
+    "Payload object storage failures",
+    ["stage"],
+)
 
 
 def setup_metrics(app: FastAPI) -> None:

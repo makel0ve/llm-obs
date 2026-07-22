@@ -8,6 +8,7 @@ from sqlalchemy import text
 from app.core.config import settings
 from app.core.db import get_db
 from app.core.redis import get_redis
+from app.services.storage import check_payload_bucket
 from app.workers.health import WORKER_HEARTBEAT_KEY
 
 router = APIRouter(tags=["health"])
@@ -34,6 +35,13 @@ async def readiness() -> dict[str, Any]:
         checks["postgres"] = "error"
         ok = False
         log.error("readiness_postgres_failed", error=str(e))
+
+    try:
+        checks["s3"] = await check_payload_bucket()
+
+    except Exception as e:
+        checks["s3"] = "degraded"
+        log.error("readiness_s3_failed", error=str(e))
 
     try:
         redis = await get_redis()
