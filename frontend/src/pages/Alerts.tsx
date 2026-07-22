@@ -415,7 +415,7 @@ export function Alerts({ projectId, role }: { projectId: string; role: UserRole 
             </button>
             {validationError && <AlertMessage tone="error">{validationError}</AlertMessage>}
             {createStatus === 'success' && <AlertMessage tone="success">Alert rule created.</AlertMessage>}
-            {createStatus === 'error' && <AlertMessage tone="error">Could not create alert rule.</AlertMessage>}
+            {createStatus === 'error' && <AlertMessage tone="error">Could not create alert rule. Slack webhooks must use hooks.slack.com or hooks.slack-gov.com.</AlertMessage>}
           </div>
           </form>
         </section>

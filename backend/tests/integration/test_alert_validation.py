@@ -38,6 +38,8 @@ def _valid_rule(**overrides: object) -> dict[str, object]:
         "https://[::1]/services/demo",
         "https://alerts.local/services/demo",
         "https://hooks.slack.com:8443/services/demo",
+        "https://example.com/services/demo",
+        "https://hooks.evil-slack.com/services/demo",
     ],
 )
 def test_alert_rule_rejects_unsafe_slack_webhook_targets(webhook: str) -> None:
@@ -56,6 +58,17 @@ def test_alert_rule_accepts_https_public_slack_webhook() -> None:
     )
 
     assert rule.notify_slack_webhook == "https://hooks.slack.com/services/demo"
+
+
+def test_alert_rule_accepts_govslack_webhook_domain() -> None:
+    rule = AlertRuleCreate.model_validate(
+        _valid_rule(
+            notify_email=None,
+            notify_slack_webhook="https://hooks.slack-gov.com/services/demo",
+        )
+    )
+
+    assert rule.notify_slack_webhook == "https://hooks.slack-gov.com/services/demo"
 
 
 @pytest.mark.parametrize(
@@ -101,3 +114,8 @@ def test_alert_rule_update_normalizes_empty_targets() -> None:
 def test_alert_rule_update_rejects_unsafe_webhook() -> None:
     with pytest.raises(ValidationError):
         AlertRuleUpdate(notify_slack_webhook="https://169.254.169.254/hook")
+
+
+def test_alert_rule_update_rejects_non_slack_webhook_domain() -> None:
+    with pytest.raises(ValidationError):
+        AlertRuleUpdate(notify_slack_webhook="https://example.com/hook")
