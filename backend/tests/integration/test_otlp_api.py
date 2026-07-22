@@ -105,6 +105,7 @@ def test_otlp_converter_parses_representative_protobuf_fixture() -> None:
     assert span["model"] == "gpt-4o-mini"
     assert span["input_tokens"] == 17
     assert span["output_tokens"] == 23
+    assert span["error"] == "provider timeout"
     assert span["metadata"]["gen_ai.provider.name"] == "openai"
     assert span["metadata"]["gen_ai.request.model"] == "gpt-4o-mini"
     assert span["metadata"]["gen_ai.usage.input_tokens"] == 17
@@ -142,6 +143,7 @@ def test_otlp_converter_parses_standard_json_camelcase_fixture() -> None:
     assert span["model"] == "gpt-4o-mini"
     assert span["input_tokens"] == 17
     assert span["output_tokens"] == 23
+    assert span["error"] == "provider timeout"
     assert span["metadata"]["gen_ai.provider.name"] == "openai"
     assert span["metadata"]["gen_ai.request.model"] == "gpt-4o-mini"
     assert span["metadata"]["gen_ai.usage.input_tokens"] == 17
@@ -245,10 +247,11 @@ async def test_receive_otlp_accepts_valid_spans_without_partial_success(
             return spans
 
     monkeypatch.setattr(otlp_api, "OTLPConverter", FakeConverter)
+    result_response = Response()
 
     result = await receive_otlp(
         request=cast(Any, FakeRequest(b"{}")),
-        response=Response(),
+        response=result_response,
         project={"id": str(uuid4())},
         service=cast(Any, service),
         rate_limiter=cast(Any, FakeRateLimiter()),
@@ -273,47 +276,38 @@ async def test_receive_otlp_accepts_valid_spans_and_reports_rejected(
             return spans
 
     monkeypatch.setattr(otlp_api, "OTLPConverter", FakeConverter)
+    result_response = Response()
 
     result = await receive_otlp(
         request=cast(Any, FakeRequest(b"{}")),
-        response=Response(),
+        response=result_response,
         project={"id": str(uuid4())},
         service=cast(Any, service),
         rate_limiter=cast(Any, FakeRateLimiter()),
     )
 
     assert len(service.accepted) == 1
+    assert result_response.status_code == 200
     assert result["partialSuccess"]["rejectedSpans"] == 1
     assert "valid UUID or OTLP hex ID" in result["partialSuccess"]["errorMessage"]
 
 
 @pytest.mark.asyncio
-async def test_receive_otlp_reports_parse_failure(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+async def test_receive_otlp_returns_bad_request_for_malformed_payload() -> None:
     service = FakeIngestService()
-
-    class FakeConverter:
-        def parse(self, body: bytes, content_type: str) -> None:
-            return None
-
-    monkeypatch.setattr(otlp_api, "OTLPConverter", FakeConverter)
+    result_response = Response()
 
     result = await receive_otlp(
         request=cast(Any, FakeRequest(b"{")),
-        response=Response(),
+        response=result_response,
         project={"id": str(uuid4())},
         service=cast(Any, service),
         rate_limiter=cast(Any, FakeRateLimiter()),
     )
 
     assert service.accepted == []
-    assert result == {
-        "partialSuccess": {
-            "rejectedSpans": 1,
-            "errorMessage": "Unable to parse OTLP trace export",
-        }
-    }
+    assert result_response.status_code == 400
+    assert result == {"error": "Unable to parse OTLP trace export"}
 
 
 def uuid5_for(value: str) -> UUID:

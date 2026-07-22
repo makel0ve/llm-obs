@@ -4,6 +4,7 @@ from typing import Any
 
 import structlog
 from opentelemetry.proto.collector.trace.v1 import trace_service_pb2
+from opentelemetry.proto.trace.v1 import trace_pb2
 
 log = structlog.get_logger()
 
@@ -86,6 +87,7 @@ class OTLPConverter:
                                 attrs,
                                 GENAI_OUTPUT_TOKEN_ATTRIBUTES,
                             ),
+                            "error": self._get_status_error(span),
                             "latency_ms": self._get_latency(span),
                             "started_at": self._get_time(span),
                             "metadata": attrs,
@@ -120,6 +122,18 @@ class OTLPConverter:
         ns = int(self._get_field(span, "start_time_unix_nano") or 0)
 
         return datetime.fromtimestamp(ns / 1e9, tz=UTC).isoformat()
+
+    def _get_status_error(self, span: Any) -> str | None:
+        status = self._get_field(span, "status")
+        if status is None:
+            return None
+
+        code = self._parse_int(self._get_field(status, "code"), default=0)
+        if code != trace_pb2.Status.STATUS_CODE_ERROR:
+            return None
+
+        message = self._get_str(status, "message").strip()
+        return message or "OTLP span status ERROR"
 
     def _get_attrs(self, span: Any) -> dict[str, Any]:
         attrs = getattr(span, "attributes", None) or span.get("attributes", [])
