@@ -35,7 +35,7 @@ const scopeOptions: Array<{ value: ApiKeyScope; label: string }> = [
 ]
 
 const payloadModeOptions: Array<{ value: PayloadStorageMode; label: string; help: string }> = [
-  { value: 'all', label: 'Store all large payloads', help: 'Keep stored objects for spans that exceed the inline threshold.' },
+  { value: 'all', label: 'Store all payloads', help: 'Keep object-storage payloads for every span within the max payload bytes limit.' },
   { value: 'errors', label: 'Store only error payloads', help: 'Keep payload objects only for failed spans.' },
   { value: 'none', label: 'Do not store payloads', help: 'Drop payload objects before S3 storage.' },
 ]

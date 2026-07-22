@@ -19,7 +19,7 @@ FastAPI ingest API
     v
 Taskiq worker
     |-- PostgreSQL: traces, spans, outbox, aggregates, pricing, alerts, users
-    |-- MinIO/S3: large stored payload objects
+    |-- MinIO/S3: stored payload objects
     |-- Redis: cache, rate-limit counters, batch status and pub/sub
     |-- Redis queue: Taskiq queues, task results and DLQ
     `-- Mailpit/SMTP or Slack webhook: alert delivery
@@ -53,8 +53,7 @@ have spans.
    transaction, and create outbox events for live span delivery.
 7. Workers update trace aggregates and evaluate alert rules after the span
    transaction commits.
-8. Large payloads are stored in MinIO/S3 only when project payload settings
-   allow it.
+8. Payloads are stored in MinIO/S3 only when project payload settings allow it.
 9. The dashboard reads metrics, traces and analytics from the query API.
 
 Accepted ingest requests return a `batch_id`. Processing can still fail later,
@@ -78,11 +77,11 @@ mutation fails and rolls back instead of silently committing an unaudited admin
 change. Legacy `log_audit` calls without an active transaction remain
 best-effort and suppress audit storage failures.
 
-MinIO/S3 stores large LLM input/output payload objects when enabled. Project
-settings control payload mode, maximum payload size and comma-separated field
-names to redact before object storage. PostgreSQL span rows store only payload
-object keys plus non-sensitive storage status metadata such as omitted,
-oversized or storage-failed.
+MinIO/S3 stores LLM input/output payload objects when enabled. Project settings
+control payload mode, maximum payload size and comma-separated field names to
+redact before object storage. PostgreSQL span rows store only payload object
+keys plus non-sensitive storage status metadata such as omitted, oversized or
+storage-failed.
 
 Redis storage is split by durability requirement. `REDIS_URL` is the cache and
 coordination Redis for rate limits, short-lived caches, batch status and the
