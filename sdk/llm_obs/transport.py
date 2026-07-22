@@ -5,6 +5,8 @@ from dataclasses import dataclass
 import httpx
 import structlog
 
+from llm_obs.version import user_agent
+
 
 log = structlog.get_logger()
 
@@ -29,7 +31,7 @@ class HttpTransport:
         self.last_diagnostics: TransportDiagnostics | None = None
         self._client = httpx.AsyncClient(
             base_url=endpoint,
-            headers={"X-API-Key": api_key, "User-Agent": "llm-obs-sdk/1.0"},
+            headers={"X-API-Key": api_key, "User-Agent": user_agent()},
             timeout=httpx.Timeout(connect=5.0, read=10.0, write=10.0, pool=5.0),
             trust_env=False,
         )
