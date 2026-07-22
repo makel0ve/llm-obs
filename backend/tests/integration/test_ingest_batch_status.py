@@ -67,6 +67,14 @@ class FailingPublishRedis(FakeRedis):
         raise RuntimeError("redis publish unavailable")
 
 
+class FakeHistogram:
+    def __init__(self):
+        self.observed = []
+
+    def observe(self, value):
+        self.observed.append(value)
+
+
 class FakeRateLimiter:
     async def check(self, project_id: str, response):
         response.headers["X-RateLimit-Limit"] = "1000"
@@ -288,6 +296,42 @@ async def test_ingest_creates_accepted_batch_status(monkeypatch, fake_redis):
         == status_payload
     )
     assert _simple_counter_value(ingest_batches_accepted) == accepted_before + 1
+
+
+def test_observe_inserted_span_lag_records_source_and_worker_lag(monkeypatch):
+    accepted_metric = FakeHistogram()
+    processed_metric = FakeHistogram()
+    accepted_at = datetime(2026, 7, 22, 12, 0, 5, tzinfo=UTC)
+    processed_at = datetime(2026, 7, 22, 12, 0, 8, tzinfo=UTC)
+    span_started_at = datetime(2026, 7, 22, 12, 0, 0, tzinfo=UTC)
+
+    monkeypatch.setattr(
+        process_span_module, "ingest_span_source_to_accepted_s", accepted_metric
+    )
+    monkeypatch.setattr(
+        process_span_module, "ingest_span_source_to_processed_s", processed_metric
+    )
+
+    process_span_module.observe_inserted_span_lag(
+        spans=[{"started_at": span_started_at}],
+        accepted_at=accepted_at,
+        processed_at=processed_at,
+    )
+
+    assert accepted_metric.observed == [5.0]
+    assert processed_metric.observed == [8.0]
+
+
+def test_observe_duration_clamps_negative_clock_skew() -> None:
+    metric = FakeHistogram()
+
+    process_span_module.observe_duration(
+        metric,
+        datetime(2026, 7, 22, 12, 0, 10, tzinfo=UTC),
+        datetime(2026, 7, 22, 12, 0, 0, tzinfo=UTC),
+    )
+
+    assert metric.observed == [0.0]
 
 
 @pytest.mark.asyncio

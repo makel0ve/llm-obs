@@ -420,7 +420,23 @@ Check Prometheus metrics:
 
 ```bash
 curl -f http://localhost:8000/metrics | grep llmobs_ingest
+curl -f http://localhost:8000/metrics | grep llmobs_taskiq_queue
 ```
+
+Interpret ingest lag metrics as separate clocks:
+
+- `llmobs_ingest_batch_accepted_to_processing_seconds`: queue and worker pickup
+  delay after the API accepted a batch.
+- `llmobs_ingest_batch_accepted_to_finished_seconds`: end-to-end async ingest
+  delay from accepted status to final worker status.
+- `llmobs_ingest_span_source_to_accepted_seconds`: source timestamp age when
+  the API accepted the batch; this can be affected by client clock skew.
+- `llmobs_ingest_span_source_to_processed_seconds`: source timestamp age when
+  the worker finished processing inserted spans.
+- `llmobs_taskiq_queue_depth{queue="taskiq"}`: pending Redis queue list length.
+- `llmobs_taskiq_queue_oldest_job_age_seconds{queue="taskiq"}`: best-effort age
+  of the oldest queued job. It reports `0` when the queue is empty or the
+  queued Taskiq payload format has no timestamp-like field to parse.
 
 If live dashboard updates lag while batch status is processed, inspect the
 `outbox_events` table for `PENDING` or `FAILED` `span.inserted` rows and check
