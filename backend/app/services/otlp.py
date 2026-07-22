@@ -8,6 +8,15 @@ from opentelemetry.proto.collector.trace.v1 import trace_service_pb2
 log = structlog.get_logger()
 
 
+JSON_FIELD_ALIASES = {
+    "trace_id": "traceId",
+    "span_id": "spanId",
+    "parent_span_id": "parentSpanId",
+    "start_time_unix_nano": "startTimeUnixNano",
+    "end_time_unix_nano": "endTimeUnixNano",
+}
+
+
 class OTLPConverter:
     def parse(self, body: bytes, content_type: str) -> list[dict[str, Any]] | None:
         try:
@@ -60,13 +69,15 @@ class OTLPConverter:
         return spans
 
     def _get_id(self, span: Any, field: str) -> str:
-        v = getattr(span, field, None) or span.get(field, b"")
+        v = self._get_field(span, field)
+        if v in (None, b"", ""):
+            return ""
 
         return v.hex() if isinstance(v, bytes) else str(v)
 
     def _get_str(self, span: Any, field: str) -> str:
-        value = getattr(span, field, None) or span.get(field, "")
-        return str(value)
+        value = self._get_field(span, field)
+        return "" if value is None else str(value)
 
     def _get_latency(self, span: Any) -> float:
         if hasattr(span, "end_time_unix_nano"):
@@ -74,15 +85,13 @@ class OTLPConverter:
                 (span.end_time_unix_nano - span.start_time_unix_nano) / 1_000_000
             )
 
-        end = span.get("endTimeUnixNano", 0)
-        start = span.get("startTimeUnixNano", 0)
+        end = self._get_field(span, "end_time_unix_nano") or 0
+        start = self._get_field(span, "start_time_unix_nano") or 0
 
         return float((int(end) - int(start)) / 1_000_000)
 
     def _get_time(self, span: Any) -> str:
-        ns = getattr(span, "start_time_unix_nano", None) or int(
-            span.get("startTimeUnixNano", 0)
-        )
+        ns = int(self._get_field(span, "start_time_unix_nano") or 0)
 
         return datetime.fromtimestamp(ns / 1e9, tz=UTC).isoformat()
 
@@ -95,3 +104,13 @@ class OTLPConverter:
             }
 
         return {a.key: a.value.string_value for a in attrs}
+
+    def _get_field(self, value: Any, field: str) -> Any:
+        if hasattr(value, field):
+            return getattr(value, field)
+
+        if isinstance(value, dict):
+            json_field = JSON_FIELD_ALIASES.get(field, field)
+            return value.get(json_field, value.get(field))
+
+        return None
