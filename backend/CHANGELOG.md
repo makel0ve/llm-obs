@@ -1,6 +1,19 @@
 # CHANGELOG
 
 
+## v0.50.0 (2026-07-22)
+
+### Chores
+
+- Trigger ci for release sync
+  ([`160af71`](https://github.com/makel0ve/llm-obs/commit/160af7152733d983fc48fe3e8ca3e555b6cd6892))
+
+### Features
+
+- Add failure storage and outbox metrics
+  ([`659caa9`](https://github.com/makel0ve/llm-obs/commit/659caa99b8540a238438b057dc7be0608e875a93))
+
+
 ## v0.49.0 (2026-07-22)
 
 ### Chores
