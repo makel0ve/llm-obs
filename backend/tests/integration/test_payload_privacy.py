@@ -1,3 +1,4 @@
+import gzip
 import json
 from contextlib import asynccontextmanager
 from uuid import uuid4
@@ -13,7 +14,7 @@ from app.services.storage import (
     should_store_payload,
 )
 from app.workers import process_span as process_span_module
-from app.workers.process_span import process_span_batch
+from app.workers.process_span import process_span_batch, sanitize_span_metadata
 
 
 class FakeRedis:
@@ -114,6 +115,27 @@ def test_redact_payload_replaces_nested_sensitive_keys():
     assert redacted["messages"][0]["nested"]["Authorization"] == "[redacted]"
     assert redacted["messages"][0]["nested"]["safe"] == "visible"
     assert redacted["output"]["password"] == "[redacted]"
+
+
+def test_sanitize_span_metadata_redacts_nested_values_and_drops_payload_like_keys():
+    metadata = {
+        "source": "anthropic",
+        "system": "private system prompt",
+        "nested": {
+            "Authorization": "Bearer secret-token",
+            "safe": "visible",
+        },
+    }
+
+    sanitized = sanitize_span_metadata(
+        metadata, parse_redact_keys("authorization,api_key")
+    )
+
+    assert "system" not in sanitized
+    assert sanitized["nested"]["Authorization"] == "[redacted]"
+    assert sanitized["nested"]["safe"] == "visible"
+    assert "private system prompt" not in json.dumps(sanitized)
+    assert "secret-token" not in json.dumps(sanitized)
 
 
 @pytest.mark.parametrize(
@@ -262,3 +284,131 @@ async def test_worker_records_payload_drop_reason_for_error_only_policy(monkeypa
     assert inserted_spans[0]["payload_s3_key"] is None
     assert inserted_spans[0]["payload_status"] == "omitted"
     assert inserted_spans[0]["payload_drop_reason"] == "errors_only_non_error"
+
+
+@pytest.mark.asyncio
+async def test_worker_storage_mode_none_keeps_anthropic_payload_out_of_db_s3_and_status(
+    monkeypatch,
+):
+    project_id = str(uuid4())
+    batch_id = str(uuid4())
+    private_system_prompt = "private anthropic system prompt"
+    private_user_input = "private user input"
+    private_output = "private model output"
+    nested_secret = "nested metadata token"
+    span = make_span_payload() | {
+        "provider": "anthropic",
+        "model": "claude-3-5-sonnet",
+        "input_messages": [{"role": "user", "content": private_user_input}],
+        "output": private_output,
+        "metadata": {
+            "system": private_system_prompt,
+            "nested": {"authorization": nested_secret, "safe": "visible"},
+        },
+    }
+    fake_redis = FakeRedis()
+    inserted_spans = []
+    await BatchStatusService(redis=fake_redis).create_accepted(
+        project_id=project_id, batch_id=batch_id, accepted=1
+    )
+
+    @asynccontextmanager
+    async def fake_get_db(project_id=None):
+        yield FakeDb(
+            {
+                "payload_storage_mode": "none",
+                "payload_max_bytes": 262144,
+                "payload_redact_keys": "authorization,api_key",
+            }
+        )
+
+    async def fake_cost(self, **kwargs):
+        return "0.00000000"
+
+    async def fake_store_payload(self, **kwargs):
+        raise AssertionError("payload_storage_mode=none must not write to S3")
+
+    async def fake_bulk_insert_spans(spans: list[dict], db):
+        inserted_spans.extend(spans)
+        return [(span["id"], span["started_at"]) for span in spans]
+
+    async def fake_get_redis():
+        return fake_redis
+
+    monkeypatch.setattr(process_span_module, "get_redis", fake_get_redis)
+    monkeypatch.setattr(process_span_module, "get_db", fake_get_db)
+    monkeypatch.setattr(process_span_module.CostService, "calculate", fake_cost)
+    monkeypatch.setattr(
+        process_span_module.StorageService, "store_payload", fake_store_payload
+    )
+    monkeypatch.setattr(
+        process_span_module, "bulk_insert_spans", fake_bulk_insert_spans
+    )
+    monkeypatch.setattr(process_span_module.update_trace_aggregates, "kiq", _noop_kiq)
+    monkeypatch.setattr(process_span_module.check_batch_anomalies, "kiq", _noop_kiq)
+
+    await process_span_batch.original_func(
+        batch_id=batch_id, project_id=project_id, spans=[span]
+    )
+
+    assert len(inserted_spans) == 1
+    inserted = inserted_spans[0]
+    assert inserted["payload_s3_key"] is None
+    assert inserted["payload_status"] == "omitted"
+    assert inserted["payload_drop_reason"] == "storage_mode_none"
+    assert json.loads(inserted["metadata"]) == {
+        "nested": {"authorization": "[redacted]", "safe": "visible"}
+    }
+
+    db_fields_json = json.dumps(inserted, default=str)
+    status_json = json.dumps(fake_redis.values, default=str)
+    for raw_value in (
+        private_system_prompt,
+        private_user_input,
+        private_output,
+        nested_secret,
+    ):
+        assert raw_value not in db_fields_json
+        assert raw_value not in status_json
+
+
+@pytest.mark.asyncio
+async def test_store_payload_redacts_nested_payload_before_s3_write(monkeypatch):
+    stored_objects = []
+
+    class FakeS3Client:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return None
+
+        async def put_object(self, **kwargs):
+            stored_objects.append(kwargs)
+
+    class FakeSession:
+        def client(self, *args, **kwargs):
+            return FakeS3Client()
+
+    monkeypatch.setattr("app.services.storage.aioboto3.Session", lambda: FakeSession())
+
+    result = await StorageService().store_payload(
+        project_id=str(uuid4()),
+        span_id=str(uuid4()),
+        messages=[
+            {
+                "role": "user",
+                "content": "x" * 5000,
+                "nested": {"authorization": "Bearer secret"},
+            }
+        ],
+        output="private output",
+        max_bytes=262144,
+        redact_keys={"authorization"},
+    )
+
+    assert result.status == "stored_redacted"
+    assert len(stored_objects) == 1
+    body = gzip.decompress(stored_objects[0]["Body"]).decode()
+    assert "Bearer secret" not in body
+    assert '"authorization": "[redacted]"' in body
