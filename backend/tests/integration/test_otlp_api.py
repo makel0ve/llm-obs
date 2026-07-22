@@ -101,10 +101,18 @@ def test_otlp_converter_parses_representative_protobuf_fixture() -> None:
     assert span["latency_ms"] == pytest.approx(
         (END_TIME_UNIX_NANO - START_TIME_UNIX_NANO) / 1_000_000
     )
+    assert span["provider"] == "openai"
+    assert span["model"] == "gpt-4o-mini"
+    assert span["input_tokens"] == 17
+    assert span["output_tokens"] == 23
     assert span["metadata"]["gen_ai.provider.name"] == "openai"
     assert span["metadata"]["gen_ai.request.model"] == "gpt-4o-mini"
-    assert span["metadata"]["gen_ai.usage.input_tokens"] == ""
-    assert span["metadata"]["gen_ai.usage.output_tokens"] == ""
+    assert span["metadata"]["gen_ai.usage.input_tokens"] == 17
+    assert span["metadata"]["gen_ai.usage.output_tokens"] == 23
+    assert span["metadata"]["llmobs.float_score"] == 0.75
+    assert span["metadata"]["llmobs.cache_hit"] is False
+    assert span["metadata"]["llmobs.labels"] == ["chat", "ci"]
+    assert span["metadata"]["llmobs.options"] == {"route": "/chat"}
 
     validated = SpanSchema(**span)
     assert validated.trace_id == str(uuid5_for(TRACE_ID_HEX))
@@ -130,8 +138,18 @@ def test_otlp_converter_parses_standard_json_camelcase_fixture() -> None:
     assert span["latency_ms"] == pytest.approx(
         (END_TIME_UNIX_NANO - START_TIME_UNIX_NANO) / 1_000_000
     )
+    assert span["provider"] == "openai"
+    assert span["model"] == "gpt-4o-mini"
+    assert span["input_tokens"] == 17
+    assert span["output_tokens"] == 23
     assert span["metadata"]["gen_ai.provider.name"] == "openai"
     assert span["metadata"]["gen_ai.request.model"] == "gpt-4o-mini"
+    assert span["metadata"]["gen_ai.usage.input_tokens"] == 17
+    assert span["metadata"]["gen_ai.usage.output_tokens"] == 23
+    assert span["metadata"]["llmobs.float_score"] == 0.75
+    assert span["metadata"]["llmobs.cache_hit"] is False
+    assert span["metadata"]["llmobs.labels"] == ["chat", "ci"]
+    assert span["metadata"]["llmobs.options"] == {"route": "/chat"}
 
     validated = SpanSchema(**span)
     assert validated.trace_id == str(uuid5_for(TRACE_ID_HEX))
@@ -156,6 +174,28 @@ def test_otlp_converter_preserves_snake_case_json_compatibility() -> None:
     assert spans[0]["trace_id"] == TRACE_ID_HEX
     assert spans[0]["span_id"] == SPAN_ID_HEX
     assert spans[0]["parent_span_id"] == PARENT_SPAN_ID_HEX
+
+
+def test_otlp_converter_uses_defaults_for_unknown_semantic_conventions() -> None:
+    fixture = representative_otlp_json_trace()
+    json_span = fixture["resourceSpans"][0]["scopeSpans"][0]["spans"][0]
+    json_span["attributes"] = [
+        {"key": "custom.provider", "value": {"stringValue": "other"}},
+        {"key": "custom.model", "value": {"stringValue": "other-model"}},
+        {"key": "custom.input_tokens", "value": {"intValue": "9"}},
+    ]
+
+    spans = OTLPConverter().parse(
+        json.dumps(fixture).encode(),
+        "application/json",
+    )
+
+    assert spans is not None
+    assert spans[0]["provider"] == "custom"
+    assert spans[0]["model"] == "unknown"
+    assert spans[0]["input_tokens"] == 0
+    assert spans[0]["output_tokens"] == 0
+    assert spans[0]["metadata"]["custom.input_tokens"] == 9
 
 
 def test_representative_otlp_fixtures_cover_mixed_any_value_types() -> None:
