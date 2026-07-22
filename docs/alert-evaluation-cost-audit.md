@@ -177,6 +177,16 @@ semantics depend on the spans that were just processed.
 
 Incremental time buckets remain planned for Block 08.3.
 
+## Block 08.3 Follow-Up
+
+Block 08.3 added minute-level `span_metric_buckets` that are updated in the
+same database transaction as inserted spans. The bucket table stores span
+count, error count, total cost and latency sum per project/minute. Scheduled
+error-rate and cost alert rules now read these buckets instead of scanning raw
+spans. P95 latency alerts remain on the exact raw-span percentile query because
+simple aggregate buckets cannot preserve exact percentile semantics; a later
+histogram or sketch design can replace that fallback.
+
 ## Regression Coverage
 
 `backend/tests/integration/test_alert_rule_semantics.py` now covers:
@@ -185,3 +195,6 @@ Incremental time buckets remain planned for Block 08.3.
 - one aggregate SQL query per active windowed rule in the scheduled evaluator;
 - scheduled cooldown precheck skips aggregation SQL when a rule is already on
   cooldown.
+- incremental bucket upsert groups inserted spans by project/minute;
+- error-rate and cost alerts query `span_metric_buckets`, while P95 latency
+  keeps the exact raw-span query.
