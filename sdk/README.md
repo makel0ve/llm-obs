@@ -17,6 +17,13 @@ cd sdk
 pip install -e .
 ```
 
+## Versioning
+
+The Python SDK uses an independent component version from `sdk/pyproject.toml`.
+It is not tied to the backend package version. Outbound ingest requests include
+`User-Agent: llm-obs-sdk/<installed package version>` from package metadata, or
+`llm-obs-sdk/0.0.0+unknown` if metadata is unavailable in a source checkout.
+
 ## Environment
 
 The SDK auto-initializes from environment variables when a traced function or

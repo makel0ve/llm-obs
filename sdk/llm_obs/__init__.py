@@ -4,6 +4,7 @@ import threading
 
 from llm_obs.tracer import LLMTracer, SDKDiagnostics
 from llm_obs.transport import TransportDiagnostics
+from llm_obs.version import __version__
 
 
 _tracer_lock = threading.Lock()
@@ -131,6 +132,7 @@ __all__ = [
     "ManualSpan",
     "SDKDiagnostics",
     "TransportDiagnostics",
+    "__version__",
     "get_diagnostics",
     "get_sdk_diagnostics",
     "get_tracer",
