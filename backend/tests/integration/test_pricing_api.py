@@ -170,6 +170,7 @@ async def test_create_pricing_closes_previous_record_and_invalidates_cache(
 ):
     valid_from = datetime.now(UTC)
     fake_redis.scan_keys = [
+        "pricing:openai:gpt-4o:active",
         "pricing:openai:gpt-4o:2026-06-01T00:00:00+00:00",
         "pricing:openai:gpt-4o:2026-08-01T00:00:00+00:00",
     ]
@@ -193,6 +194,7 @@ async def test_create_pricing_closes_previous_record_and_invalidates_cache(
     }
     assert fake_redis.deleted == [
         "pricing:openai:gpt-4o",
+        "pricing:openai:gpt-4o:active",
         "pricing:openai:gpt-4o:2026-06-01T00:00:00+00:00",
         "pricing:openai:gpt-4o:2026-08-01T00:00:00+00:00",
     ]
@@ -211,6 +213,7 @@ async def test_update_pricing_changes_valid_from_and_invalidates_cache(
     fake_db, fake_redis
 ):
     valid_from = datetime.now(UTC)
+    fake_redis.scan_keys = ["pricing:openai:gpt-4o:active"]
 
     result = await update_pricing(
         1,
@@ -221,12 +224,16 @@ async def test_update_pricing_changes_valid_from_and_invalidates_cache(
     assert result["valid_from"] == valid_from
     assert fake_db.params[-1]["valid_from"] == valid_from
     assert fake_db.committed is True
-    assert fake_redis.deleted == ["pricing:openai:gpt-4o"]
+    assert fake_redis.deleted == [
+        "pricing:openai:gpt-4o",
+        "pricing:openai:gpt-4o:active",
+    ]
 
 
 @pytest.mark.asyncio
 async def test_end_pricing_sets_valid_to_and_invalidates_cache(fake_db, fake_redis):
     valid_to = datetime.now(UTC)
+    fake_redis.scan_keys = ["pricing:openai:gpt-4o:active"]
 
     result = await end_pricing(
         1,
@@ -236,4 +243,7 @@ async def test_end_pricing_sets_valid_to_and_invalidates_cache(fake_db, fake_red
 
     assert result["valid_to"] == valid_to
     assert fake_db.committed is True
-    assert fake_redis.deleted == ["pricing:openai:gpt-4o"]
+    assert fake_redis.deleted == [
+        "pricing:openai:gpt-4o",
+        "pricing:openai:gpt-4o:active",
+    ]
