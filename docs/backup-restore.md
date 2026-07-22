@@ -15,12 +15,18 @@ LLM Obs has two durable data stores:
 - MinIO/S3 bucket from `S3_BUCKET`
 
 PostgreSQL stores organizations, users, projects, API key hashes, traces, spans,
-pricing, alerts, retention settings and S3 object keys. MinIO/S3 stores larger
-payload objects referenced by those keys.
+pricing, alerts, retention settings and S3 object keys. MinIO/S3 stores payload
+objects referenced by those keys when project payload policy allows storage.
 
 Back up Postgres and MinIO/S3 from the same maintenance window. Restoring only
 one side can leave trace rows pointing at missing payload objects, or leave
 orphaned payload objects that the application no longer references.
+
+Treat the PostgreSQL dump and object-store mirror as one restore point. Use the
+same UTC timestamp in both artifact names, keep them in the same inventory
+record, and do not mix a database dump from one timestamp with a MinIO/S3 mirror
+from another timestamp unless you are intentionally accepting missing or
+orphaned payload objects.
 
 ## Prepare a Backup Directory
 
@@ -56,7 +62,9 @@ docker compose --env-file infra/.env -f infra/docker-compose.prod.yml exec -T po
   > "backups/postgres_${backup_ts}.manifest"
 ```
 
-Restart paused services after the database and object-store backups are done:
+Do not restart write-capable services yet. Take the matching MinIO/S3 backup
+with the same `backup_ts`, then restart paused services after both artifacts
+are complete:
 
 ```bash
 docker compose --env-file infra/.env -f infra/docker-compose.prod.yml start backend worker scheduler
@@ -105,7 +113,7 @@ set +a
 Mirror the configured bucket to a timestamped local directory:
 
 ```bash
-backup_ts=$(date -u +%Y%m%dT%H%M%SZ)
+# Reuse the same backup_ts from the PostgreSQL backup command.
 bucket="${S3_BUCKET:-llm-obs-payloads}"
 
 docker run --rm --network infra_default \
@@ -118,6 +126,13 @@ For S3-compatible cloud storage, use the provider's native backup/versioning
 tooling instead of the local MinIO helper container. The important requirement
 is the same: preserve all objects referenced by `payload_s3_key` values in
 PostgreSQL.
+
+Keep the MinIO/S3 backup timestamp paired with the PostgreSQL dump timestamp:
+
+```text
+postgres_YYYYMMDDTHHMMSSZ.dump
+minio_YYYYMMDDTHHMMSSZ/<bucket>/
+```
 
 ## MinIO Restore
 
@@ -198,9 +213,15 @@ are stored as hashes; raw API keys cannot be recovered from a database backup.
 If users lost raw keys, rotate them after restore.
 
 Postgres backup without matching object-store backup can produce missing
-payloads in Trace Detail. Object-store backup without matching Postgres backup
-can produce orphaned objects. Keep backup timestamps together and label them as
-a pair.
+payloads in Trace Detail because `spans.payload_s3_key` points at objects that
+are not present in MinIO/S3. The span metadata and aggregate data still load,
+but `include_payload=true` cannot return the stored prompt/output object.
+
+Object-store backup without matching Postgres backup can produce orphaned
+objects. These objects are not visible from the dashboard because no restored
+span row references them, and retention cleanup only deletes objects it sees
+through project-scoped `payload_s3_key` rows. Keep backup timestamps together
+and label them as a pair.
 
 ## Smoke Checks After Restore
 
@@ -223,6 +244,43 @@ Check migrations:
 docker compose --env-file infra/.env -f infra/docker-compose.prod.yml exec backend alembic current
 ```
 
+Check payload references in PostgreSQL:
+
+```bash
+docker compose --env-file infra/.env -f infra/docker-compose.prod.yml exec -T postgres \
+  sh -lc 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "
+    SELECT payload_status, COUNT(*)
+    FROM spans
+    GROUP BY payload_status
+    ORDER BY payload_status NULLS LAST;
+  "'
+
+docker compose --env-file infra/.env -f infra/docker-compose.prod.yml exec -T postgres \
+  sh -lc 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "
+    SELECT payload_s3_key
+    FROM spans
+    WHERE payload_s3_key IS NOT NULL
+    ORDER BY started_at DESC
+    LIMIT 5;
+  "'
+```
+
+For at least one returned key, verify that the object exists in MinIO/S3:
+
+```bash
+set -a
+. infra/.env
+. backend/.env.prod
+set +a
+
+bucket="${S3_BUCKET:-llm-obs-payloads}"
+payload_key="payloads/PROJECT_ID/aa/SPAN_ID.json.gz"
+
+docker run --rm --network infra_default \
+  -e MC_HOST_llmobs="http://${MINIO_ROOT_USER}:${MINIO_ROOT_PASSWORD}@minio:9000" \
+  minio/mc stat "llmobs/${bucket}/${payload_key}"
+```
+
 Open the dashboard and verify:
 
 - Login works.
@@ -231,6 +289,9 @@ Open the dashboard and verify:
 - Trace Detail opens for a restored trace.
 - Payload loading works for traces that had stored payloads.
 - Project Settings shows the expected project id and retention.
+- Project Settings shows the expected payload storage mode, max payload bytes
+  and redaction keys. These settings determine which future payloads are
+  written to MinIO/S3.
 
 Send a new smoke span after restore:
 
