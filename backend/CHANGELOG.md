@@ -1,6 +1,29 @@
 # CHANGELOG
 
 
+## v0.44.7 (2026-07-22)
+
+### Bug Fixes
+
+- Support otlp json camelcase fields
+  ([`9b14daa`](https://github.com/makel0ve/llm-obs/commit/9b14daa50d1aba16624d156e7c046bf5e037c2e6))
+
+### Chores
+
+- Trigger ci for release sync
+  ([`a158993`](https://github.com/makel0ve/llm-obs/commit/a158993ee5be6e8039dcddfb9959a7b8eb0233de))
+
+### Documentation
+
+- Clarify payload backup restore consistency
+  ([`f2ad8b9`](https://github.com/makel0ve/llm-obs/commit/f2ad8b94dd84873f2078c9c1eef003d699b6a789))
+
+### Testing
+
+- Add otlp compatibility fixtures
+  ([`8317591`](https://github.com/makel0ve/llm-obs/commit/8317591c6c9c4ff9ecd10d057fbd852ae5caea48))
+
+
 ## v0.44.6 (2026-07-22)
 
 ### Bug Fixes
