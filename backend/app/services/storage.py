@@ -6,13 +6,16 @@ from typing import Any, Literal, cast
 
 import aioboto3
 import structlog
+from botocore.exceptions import ClientError
 
 from app.core.config import settings
+from app.core.metrics import payload_storage_failures
 
 log = structlog.get_logger()
 DEFAULT_PAYLOAD_MAX_BYTES = 256 * 1024
 DEFAULT_REDACT_KEYS = "api_key,password,secret,token,authorization"
 REDACTED_VALUE = "[redacted]"
+MISSING_BUCKET_CODES = frozenset({"404", "NoSuchBucket", "NotFound"})
 
 PayloadStorageStatus = Literal[
     "stored",
@@ -28,6 +31,66 @@ class PayloadStorageResult:
     s3_key: str | None
     status: PayloadStorageStatus
     drop_reason: str | None = None
+
+
+def is_missing_bucket_error(exc: Exception) -> bool:
+    if not isinstance(exc, ClientError):
+        return False
+
+    response = exc.response
+    error_code = str(response.get("Error", {}).get("Code", ""))
+    http_status = response.get("ResponseMetadata", {}).get("HTTPStatusCode")
+    return error_code in MISSING_BUCKET_CODES or http_status == 404
+
+
+async def check_payload_bucket() -> str:
+    session = aioboto3.Session()
+    async with session.client(
+        "s3",
+        endpoint_url=settings.s3_endpoint_url,
+        aws_access_key_id=settings.aws_access_key_id.get_secret_value(),
+        aws_secret_access_key=settings.aws_secret_access_key.get_secret_value(),
+    ) as s3:
+        try:
+            await s3.head_bucket(Bucket=settings.s3_bucket)
+            return "ok"
+
+        except Exception as exc:
+            if is_missing_bucket_error(exc):
+                return "missing"
+
+            payload_storage_failures.labels(stage="readiness").inc()
+            log.warning("s3_readiness_degraded", error=str(exc))
+            return "degraded"
+
+
+async def ensure_payload_bucket() -> str:
+    session = aioboto3.Session()
+    async with session.client(
+        "s3",
+        endpoint_url=settings.s3_endpoint_url,
+        aws_access_key_id=settings.aws_access_key_id.get_secret_value(),
+        aws_secret_access_key=settings.aws_secret_access_key.get_secret_value(),
+    ) as s3:
+        try:
+            await s3.head_bucket(Bucket=settings.s3_bucket)
+            return "ok"
+
+        except Exception as exc:
+            if not is_missing_bucket_error(exc):
+                payload_storage_failures.labels(stage="startup").inc()
+                log.warning("s3_startup_degraded", error=str(exc))
+                return "degraded"
+
+        try:
+            await s3.create_bucket(Bucket=settings.s3_bucket)
+            log.info("s3_bucket_created", bucket=settings.s3_bucket)
+            return "created"
+
+        except Exception as exc:
+            payload_storage_failures.labels(stage="startup").inc()
+            log.warning("s3_bucket_create_failed", error=str(exc))
+            return "degraded"
 
 
 def parse_redact_keys(value: str | None) -> set[str]:
@@ -118,6 +181,7 @@ class StorageService:
             )
 
         except Exception as e:
+            payload_storage_failures.labels(stage="store").inc()
             log.error("s3_store_failed", span_id=span_id, error=str(e))
             return PayloadStorageResult(
                 s3_key=None, status="storage_failed", drop_reason="s3_error"
