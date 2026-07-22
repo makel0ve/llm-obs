@@ -78,14 +78,18 @@ async def test_readiness_returns_sanitized_dependency_status(
     async def fake_get_redis() -> FakeRedis:
         return redis
 
+    async def fake_check_payload_bucket() -> str:
+        return "ok"
+
     monkeypatch.setattr(health_api, "get_db", fake_get_db)
     monkeypatch.setattr(health_api, "get_redis", fake_get_redis)
+    monkeypatch.setattr(health_api, "check_payload_bucket", fake_check_payload_bucket)
 
     response = await health_api.readiness()
 
     assert response == {
         "status": "ready",
-        "checks": {"postgres": "ok", "redis": "ok"},
+        "checks": {"postgres": "ok", "s3": "ok", "redis": "ok"},
     }
 
 
@@ -102,17 +106,49 @@ async def test_readiness_redacts_dependency_exception_text(
     async def fake_get_redis() -> FakeRedis:
         return redis
 
+    async def fake_check_payload_bucket() -> str:
+        return "ok"
+
     monkeypatch.setattr(health_api, "get_db", fake_get_db)
     monkeypatch.setattr(health_api, "get_redis", fake_get_redis)
+    monkeypatch.setattr(health_api, "check_payload_bucket", fake_check_payload_bucket)
 
     with pytest.raises(HTTPException) as exc:
         await health_api.readiness()
 
     assert exc.value.status_code == 503
     detail = cast(dict[str, str], exc.value.detail)
-    assert detail == {"postgres": "error", "redis": "ok"}
+    assert detail == {"postgres": "error", "s3": "ok", "redis": "ok"}
     assert "secret" not in str(detail)
     assert "db.internal" not in str(detail)
+
+
+@pytest.mark.asyncio
+async def test_readiness_keeps_api_ready_when_s3_is_degraded(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    redis = FakeRedis()
+
+    @asynccontextmanager
+    async def fake_get_db() -> AsyncIterator[FakeDb]:
+        yield FakeDb()
+
+    async def fake_get_redis() -> FakeRedis:
+        return redis
+
+    async def fake_check_payload_bucket() -> str:
+        return "degraded"
+
+    monkeypatch.setattr(health_api, "get_db", fake_get_db)
+    monkeypatch.setattr(health_api, "get_redis", fake_get_redis)
+    monkeypatch.setattr(health_api, "check_payload_bucket", fake_check_payload_bucket)
+
+    response = await health_api.readiness()
+
+    assert response == {
+        "status": "ready",
+        "checks": {"postgres": "ok", "s3": "degraded", "redis": "ok"},
+    }
 
 
 @pytest.mark.asyncio

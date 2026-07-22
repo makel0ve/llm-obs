@@ -1,7 +1,6 @@
 from collections.abc import Callable
 from contextlib import asynccontextmanager
 
-import aioboto3
 import structlog
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -27,25 +26,14 @@ from app.core.config import settings
 from app.core.metrics import setup_metrics
 from app.core.redis import get_redis
 from app.services.pubsub import pubsub_manager
+from app.services.storage import ensure_payload_bucket
 
 log = structlog.get_logger()
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    session = aioboto3.Session()
-    async with session.client(
-        "s3",
-        endpoint_url=settings.s3_endpoint_url,
-        aws_access_key_id=settings.aws_access_key_id.get_secret_value(),
-        aws_secret_access_key=settings.aws_secret_access_key.get_secret_value(),
-    ) as s3:
-        try:
-            await s3.head_bucket(Bucket=settings.s3_bucket)
-
-        except Exception:
-            await s3.create_bucket(Bucket=settings.s3_bucket)
-            log.info("s3_bucket_created", bucket=settings.s3_bucket)
+    app.state.payload_bucket_status = await ensure_payload_bucket()
 
     redis = await get_redis()
     await pubsub_manager.start(redis)

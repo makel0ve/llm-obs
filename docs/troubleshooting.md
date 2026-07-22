@@ -83,6 +83,10 @@ Use `/ready` to check dependencies:
 curl http://localhost:8000/ready
 ```
 
+`/ready` treats PostgreSQL and Redis as critical. S3/MinIO payload storage is
+reported as `ok`, `missing` or `degraded`; a degraded S3 check does not block
+metadata ingest, but new payload writes record `payload_status=storage_failed`.
+
 ## API Key Problems
 
 - Legacy project keys and managed API keys are shown only once.
@@ -127,5 +131,5 @@ docker compose -f infra/docker-compose.yml ps
 docker compose -f infra/docker-compose.yml logs --tail=100 backend
 docker compose -f infra/docker-compose.yml logs --tail=100 worker
 curl http://localhost:8000/ready
-curl http://localhost:8000/metrics | grep llmobs_ingest
+curl http://localhost:8000/metrics | grep -E 'llmobs_ingest|llmobs_payload_storage'
 ```
