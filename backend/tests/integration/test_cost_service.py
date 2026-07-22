@@ -61,7 +61,14 @@ class FakeDb:
             return FakeResult(None)
 
         row = max(matches, key=lambda item: item["valid_from"])
-        return FakeResult({"inp": row["input"], "out": row["output"]})
+        return FakeResult(
+            {
+                "inp": row["input"],
+                "out": row["output"],
+                "valid_from": row["valid_from"],
+                "valid_to": row["valid_to"],
+            }
+        )
 
 
 class FakeRedis:
@@ -100,7 +107,7 @@ def patch_app_engine() -> None:
 
 
 @pytest.mark.asyncio
-async def test_pricing_cache_includes_historical_lookup_time(
+async def test_pricing_cache_uses_one_catalog_key_across_intervals(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     db = FakeDb()
@@ -135,8 +142,14 @@ async def test_pricing_cache_includes_historical_lookup_time(
     assert old_cost == Decimal("0.00300000")
     assert new_cost == Decimal("0.03000000")
     assert len(db.params) == 2
-    assert len(redis.values) == 2
-    assert all(key.startswith("pricing:openai:gpt-4o:") for key in redis.values)
+    assert set(redis.values) == {"pricing:openai:gpt-4o:active"}
+    cached = json.loads(redis.values["pricing:openai:gpt-4o:active"])
+    assert cached == {
+        "input": "0.010",
+        "output": "0.020",
+        "valid_from": "2026-07-01T00:00:00+00:00",
+        "valid_to": None,
+    }
 
 
 @pytest.mark.asyncio
@@ -191,8 +204,8 @@ async def test_pricing_lookup_uses_half_open_historical_boundaries(
     assert at_first_valid_from == Decimal("0.00300000")
     assert inside_first_interval == Decimal("0.00150000")
     assert at_valid_to_boundary == Decimal("0.03000000")
-    assert len(db.params) == 4
-    assert len(redis.values) == 3
+    assert len(db.params) == 3
+    assert set(redis.values) == {"pricing:openai:gpt-4o:active"}
 
 
 @pytest.mark.asyncio
@@ -300,12 +313,11 @@ async def test_overlapping_prices_pick_latest_valid_from(
 
 
 @pytest.mark.asyncio
-async def test_pricing_cache_reuses_same_historical_lookup_time(
+async def test_pricing_cache_reuses_same_historical_interval(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     db = FakeDb()
     redis = FakeRedis()
-    at_time = datetime(2026, 6, 1, tzinfo=UTC)
 
     @asynccontextmanager
     async def fake_get_db():
@@ -318,9 +330,63 @@ async def test_pricing_cache_reuses_same_historical_lookup_time(
     monkeypatch.setattr(cost_module, "get_redis", fake_get_redis)
 
     service = CostService()
-    first = await service._get_pricing("openai", "gpt-4o", at_time)
-    second = await service._get_pricing("openai", "gpt-4o", at_time)
+    first = await service._get_pricing(
+        "openai", "gpt-4o", datetime(2026, 6, 1, tzinfo=UTC)
+    )
+    second = await service._get_pricing(
+        "openai", "gpt-4o", datetime(2026, 6, 15, tzinfo=UTC)
+    )
 
-    assert first == second == {"input": "0.001", "output": "0.002"}
+    assert (
+        first
+        == second
+        == {
+            "input": "0.001",
+            "output": "0.002",
+            "valid_from": "2026-01-01T00:00:00+00:00",
+            "valid_to": "2026-07-01T00:00:00+00:00",
+        }
+    )
     assert len(db.params) == 1
     assert json.loads(next(iter(redis.values.values()))) == first
+
+
+@pytest.mark.asyncio
+async def test_pricing_cache_refreshes_when_cached_interval_misses(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    db = FakeDb()
+    redis = FakeRedis()
+
+    @asynccontextmanager
+    async def fake_get_db():
+        yield db
+
+    async def fake_get_redis() -> FakeRedis:
+        return redis
+
+    monkeypatch.setattr(cost_module, "get_db", fake_get_db)
+    monkeypatch.setattr(cost_module, "get_redis", fake_get_redis)
+
+    service = CostService()
+    old_interval = await service._get_pricing(
+        "openai", "gpt-4o", datetime(2026, 6, 1, tzinfo=UTC)
+    )
+    new_interval = await service._get_pricing(
+        "openai", "gpt-4o", datetime(2026, 8, 1, tzinfo=UTC)
+    )
+
+    assert old_interval == {
+        "input": "0.001",
+        "output": "0.002",
+        "valid_from": "2026-01-01T00:00:00+00:00",
+        "valid_to": "2026-07-01T00:00:00+00:00",
+    }
+    assert new_interval == {
+        "input": "0.010",
+        "output": "0.020",
+        "valid_from": "2026-07-01T00:00:00+00:00",
+        "valid_to": None,
+    }
+    assert len(db.params) == 2
+    assert set(redis.values) == {"pricing:openai:gpt-4o:active"}
