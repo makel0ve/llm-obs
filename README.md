@@ -22,7 +22,7 @@ LLM Obs is a self-hosted platform for monitoring LLM calls. Your data never leav
 - **Alerts** — latency, error-rate and cost rules with email or Slack targets
 - **User management** — admin-created invites, role changes and guarded deletion
 - **Audit log** — governance events for settings, users and API key changes
-- **Payload privacy** — control large payload storage, max object size and redaction keys
+- **Payload privacy** — control payload object storage, max object size and redaction keys
 - **Managed API keys** — scoped ingest/read/read-write keys with one-time reveal and revoke
 - **OpenTelemetry** — OTLP HTTP endpoint for existing instrumentation
 - **Multi-tenant foundation** — organizations, projects, users and project API keys
@@ -99,9 +99,9 @@ curl -X POST http://localhost:8000/v1/projects/YOUR_PROJECT_ID/rotate-key \
 
 The rotation response returns the replacement key once.
 
-Admins can control sensitive payload storage in Project Settings. Large
-input/output payload objects can be stored for all spans, only failed spans, or
-not stored at all. The same section also sets the maximum stored payload size
+Admins can control sensitive payload storage in Project Settings. Input/output
+payload objects can be stored for all spans, only failed spans, or not stored
+at all. The same section also sets the maximum stored payload size
 and comma-separated field names that are redacted before any S3/MinIO write.
 Trace Detail shows span-level payload storage status when payloads are loaded,
 including policy omissions, oversized payloads and object-storage failures,

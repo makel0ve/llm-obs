@@ -4,6 +4,7 @@ from uuid import UUID, uuid4
 import pytest
 from sqlalchemy import text
 
+from app.api.v1 import traces as traces_api
 from app.workers.process_span import ensure_trace_row, update_trace_aggregates
 from tests.factories import create_test_project, create_test_span, make_span_payload
 
@@ -78,6 +79,63 @@ async def test_trace_detail_returns_parent_span_id(client, db_session):
     assert r.status_code == 200
     child = next(span for span in r.json()["spans"] if span["id"] == child_span["id"])
     assert child["parent_span_id"] == parent_span["id"]
+
+
+@pytest.mark.asyncio
+async def test_trace_detail_loads_small_payload_from_object_storage(
+    client, db_session, monkeypatch
+):
+    project = await create_test_project(db_session)
+    spans = await create_test_span(db_session, project_id=project.id, count=1)
+    span = spans[0]
+    s3_key = f"payloads/{project.id}/{span['id'][:2]}/{span['id']}.json.gz"
+
+    await db_session.execute(
+        text("SELECT set_config('app.current_project_id', :project_id, true)"),
+        {"project_id": project.id},
+    )
+    await db_session.execute(
+        text(
+            """
+            UPDATE spans
+            SET payload_s3_key = :s3_key,
+                payload_status = 'stored_redacted',
+                payload_drop_reason = NULL
+            WHERE id = :span_id AND started_at = :started_at
+            """
+        ),
+        {
+            "s3_key": s3_key,
+            "span_id": span["id"],
+            "started_at": span["started_at"],
+        },
+    )
+    await db_session.commit()
+
+    class FakeStorageService:
+        async def get_payload(self, key: str):
+            assert key == s3_key
+            return {
+                "messages": [{"role": "user", "content": "small private prompt"}],
+                "output": "small private output",
+            }
+
+    monkeypatch.setattr(traces_api, "StorageService", FakeStorageService)
+
+    r = await client.get(
+        f"/v1/traces/{span['trace_id']}",
+        params={"include_payload": "true"},
+        headers={"X-API-Key": project.raw_key},
+    )
+
+    assert r.status_code == 200
+    response_span = r.json()["spans"][0]
+    assert response_span["payload_s3_key"] == s3_key
+    assert response_span["payload_status"] == "stored_redacted"
+    assert response_span["payload"] == {
+        "messages": [{"role": "user", "content": "small private prompt"}],
+        "output": "small private output",
+    }
 
 
 @pytest.mark.asyncio

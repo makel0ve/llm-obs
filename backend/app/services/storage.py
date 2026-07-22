@@ -10,7 +10,6 @@ import structlog
 from app.core.config import settings
 
 log = structlog.get_logger()
-S3_THRESHOLD_BYTES = 4 * 1024
 DEFAULT_PAYLOAD_MAX_BYTES = 256 * 1024
 DEFAULT_REDACT_KEYS = "api_key,password,secret,token,authorization"
 REDACTED_VALUE = "[redacted]"
@@ -92,11 +91,6 @@ class StorageService:
             )
             return PayloadStorageResult(
                 s3_key=None, status="too_large", drop_reason="max_bytes_exceeded"
-            )
-
-        if len(payload_bytes) < S3_THRESHOLD_BYTES:
-            return PayloadStorageResult(
-                s3_key=None, status="omitted", drop_reason="below_inline_threshold"
             )
 
         compressed = gzip.compress(payload_bytes, compresslevel=6)

@@ -94,7 +94,7 @@ function payloadStatusMessage(span: TraceSpan) {
       return 'Payload was omitted because this span succeeded and project storage is errors-only.'
     }
     if (span.payload_drop_reason === 'below_inline_threshold') {
-      return 'Payload was below the object-storage threshold and was not stored as a large payload.'
+      return 'Payload was omitted by the legacy small-payload threshold policy.'
     }
     return 'Payload was omitted by project storage policy.'
   }

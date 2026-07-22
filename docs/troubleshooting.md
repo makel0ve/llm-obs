@@ -92,14 +92,15 @@ curl http://localhost:8000/ready
 
 ## Payloads Not Visible In Trace Detail
 
-Trace detail does not load large payload objects until `Load payload` is used.
+Trace detail does not load payload objects until `Load payload` is used.
 Payloads may still be absent when:
 
 - project payload storage mode is `Do not store payloads`
 - mode is `Store only error payloads` and the span succeeded
 - the payload exceeded `Max payload bytes`
-- the span only had inline metadata and no large stored payload object
 - object storage failed before a payload key was recorded
+- the span was created by an older version that omitted small payloads before
+  object storage
 
 New spans include span-level `payload_status` and `payload_drop_reason` fields
 in Trace Detail. Older spans may show an unknown payload status because they

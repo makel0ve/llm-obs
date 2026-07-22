@@ -169,6 +169,47 @@ async def test_store_payload_reports_oversized_without_s3_write():
 
 
 @pytest.mark.asyncio
+async def test_store_payload_writes_small_payload_to_s3(monkeypatch):
+    stored_objects = []
+
+    class FakeS3Client:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return None
+
+        async def put_object(self, **kwargs):
+            stored_objects.append(kwargs)
+
+    class FakeSession:
+        def client(self, *args, **kwargs):
+            return FakeS3Client()
+
+    monkeypatch.setattr("app.services.storage.aioboto3.Session", lambda: FakeSession())
+    project_id = str(uuid4())
+    span_id = str(uuid4())
+
+    result = await StorageService().store_payload(
+        project_id=project_id,
+        span_id=span_id,
+        messages=[{"role": "user", "content": "small private prompt"}],
+        output="small private output",
+        max_bytes=262144,
+        redact_keys={"authorization"},
+    )
+
+    assert result.s3_key == f"payloads/{project_id}/{span_id[:2]}/{span_id}.json.gz"
+    assert result.status == "stored_redacted"
+    assert result.drop_reason is None
+    assert len(stored_objects) == 1
+    assert stored_objects[0]["Key"] == result.s3_key
+    body = gzip.decompress(stored_objects[0]["Body"]).decode()
+    assert "small private prompt" in body
+    assert "small private output" in body
+
+
+@pytest.mark.asyncio
 async def test_worker_applies_error_only_payload_policy(monkeypatch):
     project_id = str(uuid4())
     batch_id = str(uuid4())
@@ -370,6 +411,66 @@ async def test_worker_storage_mode_none_keeps_anthropic_payload_out_of_db_s3_and
     ):
         assert raw_value not in db_fields_json
         assert raw_value not in status_json
+
+
+@pytest.mark.asyncio
+async def test_worker_records_small_payload_object_key_when_storage_is_enabled(
+    monkeypatch,
+):
+    project_id = str(uuid4())
+    batch_id = str(uuid4())
+    span = make_span_payload() | {
+        "input_messages": [{"role": "user", "content": "small prompt"}],
+        "output": "small output",
+    }
+    fake_redis = FakeRedis()
+    inserted_spans = []
+    await BatchStatusService(redis=fake_redis).create_accepted(
+        project_id=project_id, batch_id=batch_id, accepted=1
+    )
+
+    @asynccontextmanager
+    async def fake_get_db(project_id=None):
+        yield FakeDb(
+            {
+                "payload_storage_mode": "all",
+                "payload_max_bytes": 262144,
+                "payload_redact_keys": "authorization,api_key",
+            }
+        )
+
+    async def fake_cost(self, **kwargs):
+        return "0.00000000"
+
+    async def fake_store_payload(self, **kwargs):
+        return PayloadStorageResult(s3_key="payload-key", status="stored_redacted")
+
+    async def fake_bulk_insert_spans(spans: list[dict], db):
+        inserted_spans.extend(spans)
+        return [(span["id"], span["started_at"]) for span in spans]
+
+    async def fake_get_redis():
+        return fake_redis
+
+    monkeypatch.setattr(process_span_module, "get_redis", fake_get_redis)
+    monkeypatch.setattr(process_span_module, "get_db", fake_get_db)
+    monkeypatch.setattr(process_span_module.CostService, "calculate", fake_cost)
+    monkeypatch.setattr(
+        process_span_module.StorageService, "store_payload", fake_store_payload
+    )
+    monkeypatch.setattr(
+        process_span_module, "bulk_insert_spans", fake_bulk_insert_spans
+    )
+    monkeypatch.setattr(process_span_module.update_trace_aggregates, "kiq", _noop_kiq)
+    monkeypatch.setattr(process_span_module.check_batch_anomalies, "kiq", _noop_kiq)
+
+    await process_span_batch.original_func(
+        batch_id=batch_id, project_id=project_id, spans=[span]
+    )
+
+    assert inserted_spans[0]["payload_s3_key"] == "payload-key"
+    assert inserted_spans[0]["payload_status"] == "stored_redacted"
+    assert inserted_spans[0]["payload_drop_reason"] is None
 
 
 @pytest.mark.asyncio
