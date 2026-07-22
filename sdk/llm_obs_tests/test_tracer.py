@@ -1,14 +1,16 @@
 import asyncio
 import json
+from importlib.metadata import PackageNotFoundError
 
-import pytest
 import httpx
-import respx
+import pytest
 import pytest_asyncio
+import respx
 
 import llm_obs
 from llm_obs.tracer import FlushBatch, LLMTracer, SpanData
 from llm_obs.transport import HttpTransport
+import llm_obs.version as version_module
 
 
 @pytest_asyncio.fixture(autouse=True)
@@ -56,6 +58,36 @@ def test_init_without_running_loop_does_not_schedule_background_start(monkeypatc
 
     assert tracer._flush_task is None
     assert scheduled is False
+
+
+def test_sdk_version_is_exposed():
+    assert isinstance(llm_obs.__version__, str)
+    assert llm_obs.__version__
+
+
+def test_user_agent_uses_sdk_package_metadata(monkeypatch):
+    monkeypatch.setattr(version_module, "metadata_version", lambda _name: "9.8.7")
+
+    assert version_module.get_version() == "9.8.7"
+    assert version_module.user_agent() == "llm-obs-sdk/9.8.7"
+
+
+def test_user_agent_has_safe_fallback_when_package_metadata_is_missing(monkeypatch):
+    def missing_package(_name: str) -> str:
+        raise PackageNotFoundError
+
+    monkeypatch.setattr(version_module, "metadata_version", missing_package)
+
+    assert version_module.get_version() == "0.0.0+unknown"
+    assert version_module.user_agent() == "llm-obs-sdk/0.0.0+unknown"
+
+
+def test_transport_sets_versioned_user_agent(monkeypatch):
+    monkeypatch.setattr("llm_obs.transport.user_agent", lambda: "llm-obs-sdk/9.8.7")
+
+    transport = HttpTransport(endpoint="http://server", api_key="test")
+
+    assert transport._client.headers["User-Agent"] == "llm-obs-sdk/9.8.7"
 
 
 @pytest.mark.asyncio

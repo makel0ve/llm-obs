@@ -26,6 +26,12 @@ cd sdk
 pip install -e .
 ```
 
+## Versioning
+
+The backend and Python SDK have independent package versions. The SDK version is
+defined in `sdk/pyproject.toml` and is used for the ingest HTTP User-Agent as
+`llm-obs-sdk/<installed package version>`.
+
 ## Environment
 
 Host process:
