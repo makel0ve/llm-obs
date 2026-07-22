@@ -1,6 +1,24 @@
 # CHANGELOG
 
 
+## v0.44.2 (2026-07-22)
+
+### Bug Fixes
+
+- Cache pricing by active interval
+  ([`adc3f8f`](https://github.com/makel0ve/llm-obs/commit/adc3f8f1dafddc1bb33da360874e460d4fc5d74c))
+
+### Chores
+
+- Trigger ci for release sync
+  ([`d29b8af`](https://github.com/makel0ve/llm-obs/commit/d29b8af0cbd22c120b5740405fe28a765993bd88))
+
+### Testing
+
+- Cover pricing boundary lookups
+  ([`ceac5e5`](https://github.com/makel0ve/llm-obs/commit/ceac5e5416d25b208fcb705f9096c7dc656601c0))
+
+
 ## v0.44.1 (2026-07-22)
 
 ### Bug Fixes
