@@ -1,6 +1,19 @@
 # CHANGELOG
 
 
+## v0.46.0 (2026-07-22)
+
+### Chores
+
+- Trigger ci for release sync
+  ([`872768f`](https://github.com/makel0ve/llm-obs/commit/872768f4ea82a807fb9a6a1e731e788629cee392))
+
+### Features
+
+- Add platform admin pricing boundary
+  ([`d0cd31e`](https://github.com/makel0ve/llm-obs/commit/d0cd31ef31de891a46e98e4534c3c1feedb8c147))
+
+
 ## v0.45.0 (2026-07-22)
 
 ### Chores
