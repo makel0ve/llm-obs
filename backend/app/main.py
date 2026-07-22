@@ -1,4 +1,4 @@
-from collections.abc import Callable
+from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
 
 import structlog
@@ -25,6 +25,7 @@ from app.api.v1 import (
 from app.core.config import settings
 from app.core.metrics import setup_metrics
 from app.core.redis import get_redis
+from app.core.security_headers import SecurityHeadersMiddleware
 from app.services.pubsub import pubsub_manager
 from app.services.storage import ensure_payload_bucket
 
@@ -32,7 +33,7 @@ log = structlog.get_logger()
 
 
 @asynccontextmanager
-async def lifespan(app: FastAPI):
+async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.payload_bucket_status = await ensure_payload_bucket()
 
     redis = await get_redis()
@@ -64,10 +65,14 @@ app.add_middleware(
 )
 
 
-class PayloadSizeLimitMiddleware(BaseHTTPMiddleware):
+class PayloadSizeLimitMiddleware(BaseHTTPMiddleware):  # type: ignore[misc]
     MAX_BYTES = 10 * 1024 * 1024
 
-    async def dispatch(self, request: Request, call_next: Callable) -> Response:
+    async def dispatch(
+        self,
+        request: Request,
+        call_next: Callable[[Request], Awaitable[Response]],
+    ) -> Response:
         cl = request.headers.get("content-length")
 
         if cl and int(cl) > self.MAX_BYTES:
@@ -81,6 +86,7 @@ class PayloadSizeLimitMiddleware(BaseHTTPMiddleware):
 
 
 app.add_middleware(PayloadSizeLimitMiddleware)
+app.add_middleware(SecurityHeadersMiddleware)
 
 for router in [
     ingest.router,
