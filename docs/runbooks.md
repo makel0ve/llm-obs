@@ -459,6 +459,13 @@ project and one-time project API key. Later registration attempts return `403`
 while `PUBLIC_REGISTRATION_ENABLED=false`; create additional users through
 admin invites.
 
+If that admin should manage global pricing defaults, grant the separate
+platform-admin capability with an operator database command:
+
+```sql
+UPDATE users SET is_platform_admin = true WHERE email = 'admin@example.com';
+```
+
 Save the one-time project API key from the response. Send one SDK smoke span:
 
 ```bash

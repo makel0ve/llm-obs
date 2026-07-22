@@ -75,7 +75,7 @@ async def load_current_user_from_token(token: str) -> dict[str, Any]:
         result = await db.execute(
             text(
                 """
-                SELECT id, org_id, role
+                SELECT id, org_id, role, is_platform_admin
                 FROM users
                 WHERE id = :user_id AND is_active = true
                 """
@@ -91,6 +91,7 @@ async def load_current_user_from_token(token: str) -> dict[str, Any]:
         "sub": str(user["id"]),
         "org_id": str(user["org_id"]),
         "role": user["role"],
+        "is_platform_admin": bool(user["is_platform_admin"]),
     }
 
 

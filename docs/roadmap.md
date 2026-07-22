@@ -29,9 +29,10 @@ as a release promise.
   production hardening.
 - Payload privacy settings apply to stored payload objects. They do not replace
   upstream application-side secret handling.
-- Pricing records are currently global and organization-admin managed. The
-  accepted target is a hybrid platform-default plus organization-override model
-  documented in [ADR 0001](adr/0001-pricing-tenancy.md).
+- Pricing records are currently global platform defaults guarded by
+  `users.is_platform_admin`. The accepted target is a hybrid platform-default
+  plus organization-override model documented in
+  [ADR 0001](adr/0001-pricing-tenancy.md).
 
 ## Planned Work
 

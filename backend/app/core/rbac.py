@@ -32,5 +32,13 @@ def require_admin(user: Mapping[str, object]) -> None:
     require_role(user, "admin")
 
 
+def require_platform_admin(user: Mapping[str, object]) -> None:
+    if user.get("is_platform_admin") is not True:
+        raise HTTPException(
+            status_code=403,
+            detail="Platform admin role required",
+        )
+
+
 def require_member(user: Mapping[str, object]) -> None:
     require_role(user, "member")
