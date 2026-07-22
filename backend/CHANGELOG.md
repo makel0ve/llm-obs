@@ -1,6 +1,19 @@
 # CHANGELOG
 
 
+## v0.45.0 (2026-07-22)
+
+### Chores
+
+- Trigger ci for release sync
+  ([`12744f8`](https://github.com/makel0ve/llm-obs/commit/12744f86828edbb689c10802bf5f8b10565a350e))
+
+### Features
+
+- Add registration bootstrap policy
+  ([`3d2db1c`](https://github.com/makel0ve/llm-obs/commit/3d2db1c3abd78ee832c6df72f60141883793b3c7))
+
+
 ## v0.44.9 (2026-07-22)
 
 ### Bug Fixes
