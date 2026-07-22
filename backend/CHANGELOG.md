@@ -1,6 +1,19 @@
 # CHANGELOG
 
 
+## v0.48.0 (2026-07-22)
+
+### Chores
+
+- Trigger ci for release sync
+  ([`745515c`](https://github.com/makel0ve/llm-obs/commit/745515c27f03eb3d51b16c87ce062f0b665db031))
+
+### Features
+
+- Add incremental alert metric buckets
+  ([`5693d62`](https://github.com/makel0ve/llm-obs/commit/5693d621b8a5dd285a34201590c5304bca6ba240))
+
+
 ## v0.47.0 (2026-07-22)
 
 ### Chores
