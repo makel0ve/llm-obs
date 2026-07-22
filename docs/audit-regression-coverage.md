@@ -23,7 +23,7 @@ Block 55 inventory for high-risk regressions covered by the hardening plan.
   identity and duplicate trace-row prevention.
 - Historical pricing:
   `backend/tests/integration/test_cost_service.py` covers historical pricing
-  cache keys and reuse by lookup time.
+  boundaries, interval-aware cache reuse and batch-level lookup reuse.
 - Retention:
   `backend/tests/integration/test_retention.py` covers payload object deletion,
   project-scoped DB cleanup, stale trace cleanup and keeping spans when object
