@@ -5,6 +5,7 @@ class RegisterRequest(BaseModel):
     email: EmailStr
     password: str = Field(min_length=8, max_length=128)
     org_name: str = Field(min_length=2, max_length=100)
+    bootstrap_token: str | None = Field(default=None, min_length=1, max_length=512)
 
 
 class LoginRequest(BaseModel):

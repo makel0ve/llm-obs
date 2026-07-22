@@ -394,6 +394,7 @@ function LoginPage({
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [orgName, setOrgName] = useState('')
+  const [bootstrapToken, setBootstrapToken] = useState('')
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
 
@@ -403,10 +404,12 @@ function LoginPage({
     setError('')
     try {
       if (mode === 'register') {
+        const trimmedBootstrapToken = bootstrapToken.trim()
         const res = await registerUser({
           email,
           password,
           org_name: orgName,
+          ...(trimmedBootstrapToken ? { bootstrap_token: trimmedBootstrapToken } : {}),
         })
         onLogin(res.access_token, res.project_id ?? '', res.role, res.api_key)
       } else {
@@ -420,6 +423,8 @@ function LoginPage({
       setError(
         mode === 'register' && status === 409
           ? 'Email already registered'
+          : mode === 'register' && status === 403
+            ? 'Registration is disabled. Ask an admin for an invite or use the bootstrap token.'
           : mode === 'register'
             ? 'Could not create account'
             : 'Invalid email or password'
@@ -451,11 +456,18 @@ function LoginPage({
         </div>
         <form onSubmit={handleSubmit} className="space-y-3">
           {mode === 'register' && (
-            <input
-              className="w-full border border-gray-300 rounded px-3 py-2 text-sm text-gray-900 bg-white placeholder-gray-400"
-              type="text" placeholder="Organization name"
-              value={orgName} onChange={e => setOrgName(e.target.value)} required minLength={2} maxLength={100}
-            />
+            <>
+              <input
+                className="w-full border border-gray-300 rounded px-3 py-2 text-sm text-gray-900 bg-white placeholder-gray-400"
+                type="text" placeholder="Organization name"
+                value={orgName} onChange={e => setOrgName(e.target.value)} required minLength={2} maxLength={100}
+              />
+              <input
+                className="w-full border border-gray-300 rounded px-3 py-2 text-sm text-gray-900 bg-white placeholder-gray-400"
+                type="password" placeholder="Bootstrap token"
+                value={bootstrapToken} onChange={e => setBootstrapToken(e.target.value)}
+              />
+            </>
           )}
           <input
             className="w-full border border-gray-300 rounded px-3 py-2 text-sm text-gray-900 bg-white placeholder-gray-400"
