@@ -21,6 +21,13 @@ hardening direction, but it requires a migration plan for CORS, CSRF protection,
 logout semantics, SDK/API examples and any external clients that currently use
 bearer JWTs.
 
+Block 07.5 keeps the bearer-token contract and hardens the browser delivery
+path instead of introducing cookies mid-release. The production nginx frontend
+now sends a restrictive CSP and browser security headers. The FastAPI backend
+also sends non-CSP security headers on API responses; CSP is intentionally
+owned by the frontend/reverse-proxy layer so development OpenAPI docs are not
+broken by inline documentation assets.
+
 ## Risk
 
 `localStorage` tokens are readable by injected JavaScript. A successful XSS issue
@@ -38,6 +45,10 @@ the signing key is rotated.
 - Logout removes the browser token from `localStorage`.
 - API clients receive bearer tokens explicitly and do not depend on ambient
   browser cookies.
+- Production frontend responses include CSP, `X-Content-Type-Options`,
+  `X-Frame-Options`, `Referrer-Policy` and `Permissions-Policy` headers.
+- Backend API responses include non-CSP security headers that are safe for JSON
+  API clients and development docs.
 
 ## Required Operating Controls
 
@@ -49,3 +60,6 @@ the signing key is rotated.
 - Rotate `SECRET_KEY` if login JWTs may have been exposed.
 - Treat an HttpOnly SameSite cookie migration as a separate breaking auth change
   with CSRF tests and a bearer-token compatibility plan.
+- If the dashboard and API are split across different production origins, add
+  that exact API origin to the frontend CSP `connect-src` directive; do not use
+  a wildcard.
