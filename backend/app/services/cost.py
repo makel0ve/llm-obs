@@ -1,6 +1,7 @@
 import json
 from datetime import UTC, datetime
 from decimal import Decimal
+from typing import Any
 
 from sqlalchemy import text
 
@@ -10,6 +11,9 @@ from app.core.redis import get_redis
 
 class CostService:
     CACHE_TTL = 3600
+
+    def __init__(self) -> None:
+        self._batch_pricing_intervals: dict[tuple[str, str], list[dict[str, Any]]] = {}
 
     def _cache_key(self, provider: str, model: str) -> str:
         return f"pricing:{provider}:{model}:active"
@@ -23,7 +27,7 @@ class CostService:
         at_time: datetime | None = None,
     ) -> Decimal:
         at_time = at_time or datetime.now(UTC)
-        pricing = await self._get_pricing(provider, model, at_time)
+        pricing = await self._get_batch_pricing(provider, model, at_time)
         if not pricing:
             return Decimal("0")
 
@@ -34,7 +38,7 @@ class CostService:
 
     async def _get_pricing(
         self, provider: str, model: str, at_time: datetime
-    ) -> dict | None:
+    ) -> dict[str, Any] | None:
         cache_key = self._cache_key(provider, model)
         redis = await get_redis()
         cached = await redis.get(cache_key)
@@ -75,7 +79,25 @@ class CostService:
 
         return pricing
 
-    def _cached_interval_covers(self, pricing: dict, at_time: datetime) -> bool:
+    async def _get_batch_pricing(
+        self, provider: str, model: str, at_time: datetime
+    ) -> dict[str, Any] | None:
+        batch_key = (provider, model)
+        for pricing in self._batch_pricing_intervals.get(batch_key, []):
+            if self._cached_interval_covers(pricing, at_time):
+                return pricing
+
+        fetched_pricing = await self._get_pricing(provider, model, at_time)
+        if fetched_pricing:
+            self._batch_pricing_intervals.setdefault(batch_key, []).append(
+                fetched_pricing
+            )
+
+        return fetched_pricing
+
+    def _cached_interval_covers(
+        self, pricing: dict[str, Any], at_time: datetime
+    ) -> bool:
         valid_from_raw = pricing.get("valid_from")
         if not valid_from_raw:
             return False
