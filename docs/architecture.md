@@ -50,6 +50,12 @@ have spans.
    lowerCamelCase protobuf JSON field names such as `resourceSpans`,
    `scopeSpans`, `traceId`, `spanId`, `parentSpanId`,
    `startTimeUnixNano` and `endTimeUnixNano`.
+   OTLP span attributes preserve primitive, array and key-value AnyValue
+   shapes for processing. Recognized GenAI semantic conventions are promoted
+   into first-class span fields: `gen_ai.provider.name`,
+   `gen_ai.request.model` or `gen_ai.response.model`,
+   `gen_ai.usage.input_tokens` and `gen_ai.usage.output_tokens`; unknown
+   conventions fall back to `custom`, `unknown` and zero token counts.
 4. The API authenticates the key, rate-limits the project and enqueues the batch.
 5. OTLP ingest accepts native 16/32 character hex span and trace IDs by mapping
    them deterministically to internal UUIDs, while malformed spans are reported

@@ -16,6 +16,17 @@ JSON_FIELD_ALIASES = {
     "end_time_unix_nano": "endTimeUnixNano",
 }
 
+GENAI_PROVIDER_ATTRIBUTES = ("gen_ai.provider.name", "gen_ai.system")
+GENAI_MODEL_ATTRIBUTES = ("gen_ai.response.model", "gen_ai.request.model")
+GENAI_INPUT_TOKEN_ATTRIBUTES = (
+    "gen_ai.usage.input_tokens",
+    "gen_ai.usage.prompt_tokens",
+)
+GENAI_OUTPUT_TOKEN_ATTRIBUTES = (
+    "gen_ai.usage.output_tokens",
+    "gen_ai.usage.completion_tokens",
+)
+
 
 class OTLPConverter:
     def parse(self, body: bytes, content_type: str) -> list[dict[str, Any]] | None:
@@ -49,6 +60,7 @@ class OTLPConverter:
                 else rs.get("scopeSpans", [])
             ):
                 for span in ss.spans if hasattr(ss, "spans") else ss.get("spans", []):
+                    attrs = self._get_attrs(span)
                     spans.append(
                         {
                             "span_id": self._get_id(span, "span_id"),
@@ -56,13 +68,27 @@ class OTLPConverter:
                             "parent_span_id": self._get_id(span, "parent_span_id")
                             or None,
                             "name": self._get_str(span, "name"),
-                            "provider": "custom",
-                            "model": "unknown",
-                            "input_tokens": 0,
-                            "output_tokens": 0,
+                            "provider": self._get_attr_str(
+                                attrs,
+                                GENAI_PROVIDER_ATTRIBUTES,
+                                default="custom",
+                            ),
+                            "model": self._get_attr_str(
+                                attrs,
+                                GENAI_MODEL_ATTRIBUTES,
+                                default="unknown",
+                            ),
+                            "input_tokens": self._get_attr_int(
+                                attrs,
+                                GENAI_INPUT_TOKEN_ATTRIBUTES,
+                            ),
+                            "output_tokens": self._get_attr_int(
+                                attrs,
+                                GENAI_OUTPUT_TOKEN_ATTRIBUTES,
+                            ),
                             "latency_ms": self._get_latency(span),
                             "started_at": self._get_time(span),
-                            "metadata": self._get_attrs(span),
+                            "metadata": attrs,
                         }
                     )
 
@@ -95,15 +121,15 @@ class OTLPConverter:
 
         return datetime.fromtimestamp(ns / 1e9, tz=UTC).isoformat()
 
-    def _get_attrs(self, span: Any) -> dict[str, str]:
+    def _get_attrs(self, span: Any) -> dict[str, Any]:
         attrs = getattr(span, "attributes", None) or span.get("attributes", [])
         if isinstance(attrs, list):
             return {
-                a.get("key", ""): a.get("value", {}).get("stringValue", "")
+                a.get("key", ""): self._decode_any_value(a.get("value", {}))
                 for a in attrs
             }
 
-        return {a.key: a.value.string_value for a in attrs}
+        return {a.key: self._decode_any_value(a.value) for a in attrs}
 
     def _get_field(self, value: Any, field: str) -> Any:
         if hasattr(value, field):
@@ -114,3 +140,68 @@ class OTLPConverter:
             return value.get(json_field, value.get(field))
 
         return None
+
+    def _decode_any_value(self, value: Any) -> Any:
+        if isinstance(value, dict):
+            if "stringValue" in value:
+                return value["stringValue"]
+            if "boolValue" in value:
+                return value["boolValue"]
+            if "intValue" in value:
+                return self._parse_int(value["intValue"], default=0)
+            if "doubleValue" in value:
+                return float(value["doubleValue"])
+            if "arrayValue" in value:
+                values = value["arrayValue"].get("values", [])
+                return [self._decode_any_value(item) for item in values]
+            if "kvlistValue" in value:
+                values = value["kvlistValue"].get("values", [])
+                return {
+                    item.get("key", ""): self._decode_any_value(item.get("value", {}))
+                    for item in values
+                }
+            if "bytesValue" in value:
+                return str(value["bytesValue"])
+            return None
+
+        active_field = value.WhichOneof("value")
+        if active_field == "array_value":
+            return [self._decode_any_value(item) for item in value.array_value.values]
+        if active_field == "kvlist_value":
+            return {
+                item.key: self._decode_any_value(item.value)
+                for item in value.kvlist_value.values
+            }
+        if active_field == "bytes_value":
+            return value.bytes_value.hex()
+        if active_field is None:
+            return None
+
+        return getattr(value, active_field)
+
+    def _get_attr_str(
+        self,
+        attrs: dict[str, Any],
+        names: tuple[str, ...],
+        *,
+        default: str,
+    ) -> str:
+        for name in names:
+            value = attrs.get(name)
+            if value not in (None, ""):
+                return str(value)
+
+        return default
+
+    def _get_attr_int(self, attrs: dict[str, Any], names: tuple[str, ...]) -> int:
+        for name in names:
+            if name in attrs:
+                return self._parse_int(attrs[name], default=0)
+
+        return 0
+
+    def _parse_int(self, value: Any, *, default: int) -> int:
+        try:
+            return int(value)
+        except (TypeError, ValueError):
+            return default
