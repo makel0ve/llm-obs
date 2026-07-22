@@ -1,6 +1,19 @@
 # CHANGELOG
 
 
+## v0.44.6 (2026-07-22)
+
+### Bug Fixes
+
+- Degrade safely on s3 startup failures
+  ([`0382cba`](https://github.com/makel0ve/llm-obs/commit/0382cba11786b3cb58fa595204c07301e6688d62))
+
+### Chores
+
+- Trigger ci for release sync
+  ([`39d4968`](https://github.com/makel0ve/llm-obs/commit/39d49683d41ababe8ea3e9f6034257fb3dac0b12))
+
+
 ## v0.44.5 (2026-07-22)
 
 ### Bug Fixes
