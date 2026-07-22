@@ -380,7 +380,9 @@ Telemetry delivery is intentionally split between committed storage and
 post-commit side effects. Raw spans and trace rows are committed in PostgreSQL
 before live Pub/Sub, trace aggregate enqueueing and batch anomaly checks
 complete. Windowed latency, error-rate and cost alerts run from the scheduler,
-not from every ingest batch. Use
+not from every ingest batch. Error-rate and cost alerts use committed
+minute-level `span_metric_buckets`; P95 latency alerts still use exact raw-span
+percentile queries. Use
 [delivery-guarantees.md](delivery-guarantees.md) when deciding whether an
 incident is data loss, delayed live delivery, stale derived trace data or a
 delayed scheduled alert check.

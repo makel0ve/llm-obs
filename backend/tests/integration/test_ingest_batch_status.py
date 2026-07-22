@@ -854,6 +854,7 @@ async def test_worker_writes_pubsub_outbox_before_commit_and_processes_batch(
     committed_spans = []
     trace_rows = []
     outbox_events = []
+    bucket_updates = []
     await BatchStatusService(redis=redis).create_accepted(
         project_id=project_id, batch_id=batch_id, accepted=1
     )
@@ -871,12 +872,21 @@ async def test_worker_writes_pubsub_outbox_before_commit_and_processes_batch(
         assert db.commit_count == 0
         outbox_events.append(kwargs)
 
+    async def fake_update_span_metric_buckets(**kwargs):
+        assert db.commit_count == 0
+        bucket_updates.append(kwargs)
+
     monkeypatch.setattr(
         process_span_module, "bulk_insert_spans", fake_bulk_insert_spans
     )
     monkeypatch.setattr(process_span_module, "ensure_trace_row", fake_ensure_trace_row)
     monkeypatch.setattr(
         process_span_module, "enqueue_outbox_event", fake_enqueue_outbox_event
+    )
+    monkeypatch.setattr(
+        process_span_module,
+        "update_span_metric_buckets",
+        fake_update_span_metric_buckets,
     )
     monkeypatch.setattr(process_span_module.update_trace_aggregates, "kiq", _noop_kiq)
     monkeypatch.setattr(process_span_module.check_batch_anomalies, "kiq", _noop_kiq)
@@ -904,6 +914,9 @@ async def test_worker_writes_pubsub_outbox_before_commit_and_processes_batch(
         "latency_ms": span["latency_ms"],
         "status": "ok",
     }
+    assert bucket_updates == [
+        {"db": db, "project_id": project_id, "spans": committed_spans}
+    ]
 
 
 @pytest.mark.asyncio

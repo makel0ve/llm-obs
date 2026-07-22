@@ -80,8 +80,8 @@ Prometheus metrics. Current end-to-end delivery semantics are documented in
 ## Storage Boundaries
 
 PostgreSQL stores organizations, users, projects, API key hashes, pricing,
-traces, spans, outbox events, alert rules, alert events, audit events and
-failed-task metadata.
+traces, spans, span metric buckets, outbox events, alert rules, alert events,
+audit events and failed-task metadata.
 Runtime services should connect with the dedicated application database role,
 while Alembic migrations use the owner/admin migration role. This keeps trace
 RLS as a database-level defense-in-depth boundary instead of relying on a
@@ -111,10 +111,14 @@ persistence and `noeviction`.
 Span live-stream delivery uses PostgreSQL transactional outbox rows. The worker
 writes `span.inserted` outbox events in the same transaction as span/trace
 storage; `deliver_span_outbox_events` publishes them to Redis and retries
-pending events on a schedule. Trace aggregate enqueueing and batch-scoped
-anomaly checks are still post-commit side effects and can lag or fail
-independently of raw span storage. Windowed alert rules are evaluated by the
-scheduler instead of after every ingest batch.
+pending events on a schedule. The same ingest transaction incrementally updates
+minute-level `span_metric_buckets` for span count, error count, total cost and
+latency sum. Trace aggregate enqueueing and batch-scoped anomaly checks are
+still post-commit side effects and can lag or fail independently of raw span
+storage. Windowed error-rate and cost alert rules read the buckets from the
+scheduler instead of scanning raw spans after every ingest batch. P95 latency
+alerts still use exact raw-span percentile calculation until a histogram or
+sketch-based bucket is added.
 
 ## Authentication And Roles
 

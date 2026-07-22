@@ -14,7 +14,9 @@ provides.
    `process_span_batch` on the durable Taskiq Redis queue.
 4. The worker marks the batch `processing`, prepares span rows, stores allowed
    selected payloads in object storage and writes spans, trace rows and span
-   Pub/Sub outbox events in one PostgreSQL transaction.
+   Pub/Sub outbox events in one PostgreSQL transaction. The same transaction
+   increments minute-level span metric buckets for count, error count, cost and
+   latency sum.
 5. After commit, the worker increments ingest metrics, enqueues span outbox
    delivery, enqueues trace aggregate updates and runs batch-scoped anomaly
    alert checks.
@@ -49,8 +51,8 @@ reflect the source telemetry error.
 | Span live Pub/Sub delivery | At-least-once through outbox retry | `span.inserted` outbox rows are committed with span state, then delivered to Redis by `deliver_span_outbox_events`. Consumers should treat live stream messages as duplicate-tolerant hints. |
 | Trace aggregate enqueue after commit | Best-effort post-commit side effect | Aggregate update tasks are still enqueued after the span transaction. A failure here can mark the batch failed even though span rows are committed; rerunning aggregate work can repair derived trace totals. |
 | Batch anomaly checks after commit | Best-effort post-commit side effect | Per-span anomaly rules are checked after span commit and can fail independently of persisted telemetry. |
-| Scheduled windowed alert evaluation | Best-effort scheduled side effect | Latency, error-rate and cost alert rules run from the scheduler instead of after every ingest batch. The scheduled path prechecks notification cooldown before expensive aggregation and `send_alert` still rechecks cooldown before delivery. |
-| Query API reads | Read-after-commit for stored rows; derived values may lag | Raw spans are queryable after commit. Trace totals, ended-at and live dashboard streams can lag until aggregate and outbox workers run. |
+| Scheduled windowed alert evaluation | Best-effort scheduled side effect | Error-rate and cost alert rules read incremental minute buckets from the scheduler instead of scanning raw spans after every ingest batch. P95 latency remains an exact raw-span percentile fallback. The scheduled path prechecks notification cooldown before expensive aggregation and `send_alert` still rechecks cooldown before delivery. |
+| Query API reads | Read-after-commit for stored rows; derived values may lag | Raw spans and metric buckets are queryable after commit. Trace totals, ended-at and live dashboard streams can lag until aggregate and outbox workers run. |
 
 ## Failure Scenarios
 

@@ -32,6 +32,10 @@ from app.services.outbox import (
     OutboxService,
     enqueue_outbox_event,
 )
+from app.services.span_metric_buckets import (
+    query_bucketed_alert_value,
+    update_span_metric_buckets,
+)
 from app.services.storage import (
     DEFAULT_PAYLOAD_MAX_BYTES,
     DEFAULT_REDACT_KEYS,
@@ -314,6 +318,9 @@ async def process_span_batch(
                     },
                 )
 
+            await update_span_metric_buckets(
+                db=db, project_id=project_id, spans=inserted_spans
+            )
             await db.commit()
 
             for span_data in inserted_spans:
@@ -621,36 +628,17 @@ async def evaluate_windowed_alert_rule(
             window_minutes=int(rule["window_minutes"]),
         )
     elif metric == "error_rate":
-        value, sample_count = await _query_alert_value(
+        value, sample_count = await query_bucketed_alert_value(
             db=db,
-            sql="""
-                SELECT
-                    CASE WHEN COUNT(*) = 0 THEN 0
-                        ELSE (
-                            COUNT(*) FILTER (WHERE status = 'error')::float
-                            / COUNT(*)::float
-                        ) * 100
-                    END AS value,
-                    COUNT(*) AS sample_count
-                FROM spans
-                WHERE project_id = :project_id
-                    AND started_at >= NOW() - make_interval(mins => :window_minutes)
-            """,
             project_id=project_id,
+            metric=metric,
             window_minutes=int(rule["window_minutes"]),
         )
     elif metric == "cost_hourly":
-        value, sample_count = await _query_alert_value(
+        value, sample_count = await query_bucketed_alert_value(
             db=db,
-            sql="""
-                SELECT
-                    COALESCE(SUM(cost_usd), 0) AS value,
-                    COUNT(*) AS sample_count
-                FROM spans
-                WHERE project_id = :project_id
-                    AND started_at >= NOW() - make_interval(mins => :window_minutes)
-            """,
             project_id=project_id,
+            metric=metric,
             window_minutes=int(rule["window_minutes"]),
         )
     else:
