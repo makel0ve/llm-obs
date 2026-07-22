@@ -1,6 +1,9 @@
 import pytest
 
-from app.services.notifications import NotificationService
+from app.services.notifications import (
+    NotificationService,
+    validate_webhook_delivery_url,
+)
 
 
 @pytest.fixture(autouse=True, scope="session")
@@ -44,7 +47,7 @@ async def test_failed_alert_delivery_does_not_record_cooldown(
     async def fake_get_redis() -> FakeRedis:
         return redis
 
-    async def fake_slack(rule: dict, message: str) -> bool:
+    async def fake_slack(rule: dict[str, object], message: str) -> bool:
         nonlocal slack_calls
         slack_calls += 1
         return False
@@ -69,7 +72,7 @@ async def test_successful_alert_delivery_records_cooldown(
     async def fake_get_redis() -> FakeRedis:
         return redis
 
-    async def fake_slack(rule: dict, message: str) -> bool:
+    async def fake_slack(rule: dict[str, object], message: str) -> bool:
         return True
 
     monkeypatch.setattr("app.services.notifications.get_redis", fake_get_redis)
@@ -92,7 +95,7 @@ async def test_existing_alert_cooldown_suppresses_delivery(
     async def fake_get_redis() -> FakeRedis:
         return redis
 
-    async def fake_slack(rule: dict, message: str) -> bool:
+    async def fake_slack(rule: dict[str, object], message: str) -> bool:
         nonlocal slack_calls
         slack_calls += 1
         return True
@@ -123,3 +126,97 @@ async def test_slack_rejects_unsafe_webhook_before_http(
     sent = await service._slack(rule, message="demo")
 
     assert sent is False
+
+
+@pytest.mark.asyncio
+async def test_webhook_dns_resolution_rejects_private_address(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def fake_resolve_webhook_host(hostname: str, port: int) -> set[str]:
+        assert hostname == "hooks.slack.test"
+        assert port == 443
+        return {"10.0.0.5"}
+
+    monkeypatch.setattr(
+        "app.services.notifications._resolve_webhook_host",
+        fake_resolve_webhook_host,
+    )
+
+    with pytest.raises(ValueError, match="DNS resolves"):
+        await validate_webhook_delivery_url("https://hooks.slack.test/demo")
+
+
+@pytest.mark.asyncio
+async def test_webhook_dns_resolution_rejects_mixed_public_private_addresses(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def fake_resolve_webhook_host(hostname: str, port: int) -> set[str]:
+        assert hostname == "hooks.slack.test"
+        assert port == 443
+        return {"93.184.216.34", "10.0.0.5"}
+
+    monkeypatch.setattr(
+        "app.services.notifications._resolve_webhook_host",
+        fake_resolve_webhook_host,
+    )
+
+    with pytest.raises(ValueError, match="DNS resolves"):
+        await validate_webhook_delivery_url("https://hooks.slack.test/demo")
+
+
+@pytest.mark.asyncio
+async def test_slack_rejects_redirect_to_private_address(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    service = NotificationService()
+    validated_urls: list[str] = []
+
+    async def fake_validate_webhook_delivery_url(url: str) -> str:
+        validated_urls.append(url)
+        if url == "https://private.example/hook":
+            raise ValueError("Webhook DNS resolves to private or internal addresses")
+        return url
+
+    class FakeResponse:
+        def __init__(self, *, location: str | None = None) -> None:
+            self.headers = {"location": location} if location else {}
+            self.is_redirect = location is not None
+
+        def raise_for_status(self) -> None:
+            return None
+
+    class FakeClient:
+        def __init__(self, *args: object, **kwargs: object) -> None:
+            self.urls: list[str] = []
+
+        async def __aenter__(self) -> "FakeClient":
+            return self
+
+        async def __aexit__(
+            self,
+            exc_type: object,
+            exc: object,
+            tb: object,
+        ) -> None:
+            return None
+
+        async def post(self, url: str, json: object) -> FakeResponse:
+            self.urls.append(url)
+            if len(self.urls) > 1:
+                raise AssertionError("unsafe redirect should not be requested")
+            return FakeResponse(location="https://private.example/hook")
+
+    monkeypatch.setattr(
+        "app.services.notifications.validate_webhook_delivery_url",
+        fake_validate_webhook_delivery_url,
+    )
+    monkeypatch.setattr("app.services.notifications.httpx.AsyncClient", FakeClient)
+
+    sent = await service._slack(_rule(), message="demo")
+
+    assert sent is False
+    assert validated_urls == [
+        "https://hooks.slack.test/demo",
+        "https://hooks.slack.test/demo",
+        "https://private.example/hook",
+    ]

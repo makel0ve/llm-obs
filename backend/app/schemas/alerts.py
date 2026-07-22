@@ -25,6 +25,8 @@ def _validate_https_webhook(value: str | None) -> str | None:
     parsed = urlparse(value)
     if parsed.scheme != "https" or not parsed.hostname:
         raise ValueError("Slack webhook must be an HTTPS URL")
+    if parsed.port not in (None, 443):
+        raise ValueError("Slack webhook must use the default HTTPS port")
 
     hostname = parsed.hostname.lower().strip("[]")
     if hostname == "localhost" or hostname.endswith(".local"):

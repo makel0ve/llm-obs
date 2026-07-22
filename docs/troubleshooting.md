@@ -122,7 +122,10 @@ were created before these fields existed.
 - Confirm the rule is active and belongs to the current project.
 - Check the metric, threshold, window and cooldown.
 - For email, verify SMTP settings and Mailpit or provider logs.
-- For Slack, verify the webhook URL and network access from the backend.
+- For Slack, verify the webhook URL and network access from the backend. Alert
+  webhook delivery allows HTTPS on the default port only, resolves DNS before
+  delivery, blocks private/link-local/loopback/internal addresses and validates
+  redirect targets before sending another request.
 
 ## Useful Commands
 
