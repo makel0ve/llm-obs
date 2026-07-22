@@ -3,11 +3,12 @@ import time
 import uuid
 from collections import Counter
 from datetime import UTC, datetime
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 from typing import Any, TypedDict, cast
 
 import structlog
 from botocore.exceptions import BotoCoreError, ClientError
+from dateutil.parser import ParserError
 from dateutil.parser import parse as parse_dt
 from redis.exceptions import RedisError
 from sqlalchemy import text
@@ -20,9 +21,12 @@ from app.core.metrics import (
     ingest_batch_processing_s,
     ingest_batches_failed,
     ingest_batches_processed,
+    ingest_span_processing_failures,
     ingest_span_source_to_accepted_s,
     ingest_span_source_to_processed_s,
     ingest_spans_dropped,
+    outbox_delivery_attempts,
+    payload_storage_results,
     spans_ingested,
 )
 from app.core.redis import get_redis
@@ -243,6 +247,10 @@ async def process_span_batch(
                     else:
                         payload_result = skipped_payload_result(payload_mode)
 
+                    payload_storage_results.labels(
+                        status=payload_result.status,
+                        reason=payload_result.drop_reason or "none",
+                    ).inc()
                     prepared_spans.append(
                         {
                             "id": uuid.UUID(span_data["span_id"]),
@@ -283,10 +291,13 @@ async def process_span_batch(
                         raise
 
                     failed_count += 1
+                    failure_reason = classify_span_processing_failure(e)
+                    ingest_span_processing_failures.labels(reason=failure_reason).inc()
                     ingest_spans_dropped.labels(reason="processing_error").inc()
                     log.error(
                         "span_processing_failed",
                         span_id=span_data.get("span_id"),
+                        reason=failure_reason,
                         error=str(e),
                     )
                     continue
@@ -416,6 +427,19 @@ def observe_duration(
     metric.observe(max(seconds, 0.0))
 
 
+def classify_span_processing_failure(exc: Exception) -> str:
+    if isinstance(exc, ParserError):
+        return "invalid_timestamp"
+    if isinstance(exc, KeyError):
+        return "missing_required_field"
+    if isinstance(exc, InvalidOperation):
+        return "invalid_numeric_field"
+    if isinstance(exc, TypeError | ValueError):
+        return "invalid_field"
+
+    return "processing_error"
+
+
 async def ensure_trace_row(
     db: Any,
     project_id: uuid.UUID,
@@ -502,9 +526,17 @@ async def deliver_span_outbox_events(
             )
         except Exception as e:
             await outbox.mark_failed(event.id, str(e))
+            outbox_delivery_attempts.labels(
+                event_type=event.event_type,
+                result="failed",
+            ).inc()
             raise
 
         await outbox.mark_delivered(event.id)
+        outbox_delivery_attempts.labels(
+            event_type=event.event_type,
+            result="delivered",
+        ).inc()
 
 
 @broker.task

@@ -420,7 +420,9 @@ Check Prometheus metrics:
 
 ```bash
 curl -f http://localhost:8000/metrics | grep llmobs_ingest
+curl -f http://localhost:8000/metrics | grep llmobs_payload_storage
 curl -f http://localhost:8000/metrics | grep llmobs_taskiq_queue
+curl -f http://localhost:8000/metrics | grep llmobs_outbox
 ```
 
 Interpret ingest lag metrics as separate clocks:
@@ -437,6 +439,17 @@ Interpret ingest lag metrics as separate clocks:
 - `llmobs_taskiq_queue_oldest_job_age_seconds{queue="taskiq"}`: best-effort age
   of the oldest queued job. It reports `0` when the queue is empty or the
   queued Taskiq payload format has no timestamp-like field to parse.
+- `llmobs_ingest_span_processing_failures_total{reason="..."}`: bounded
+  per-span failure reasons behind `partial_failed` batches.
+- `llmobs_payload_storage_results_total{status="...",reason="..."}`: payload
+  storage decisions, including `storage_failed` and expected omissions.
+- `llmobs_payload_storage_failures_total{stage="..."}`: S3 failure points for
+  readiness, startup and store operations.
+- `llmobs_outbox_delivery_attempts_total{event_type="span.inserted",result="..."}`
+  counts live-stream outbox delivery successes and failures.
+- `llmobs_outbox_backlog{event_type="span.inserted",status="PENDING|FAILED"}`
+  is the backend scrape-time count of live-stream outbox rows waiting for
+  delivery. It intentionally has no project labels to avoid cardinality growth.
 
 If live dashboard updates lag while batch status is processed, inspect the
 `outbox_events` table for `PENDING` or `FAILED` `span.inserted` rows and check
