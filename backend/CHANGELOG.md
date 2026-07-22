@@ -1,6 +1,19 @@
 # CHANGELOG
 
 
+## v0.49.0 (2026-07-22)
+
+### Chores
+
+- Trigger ci for release sync
+  ([`133775d`](https://github.com/makel0ve/llm-obs/commit/133775d704fdbe6b48d052a481a9f3cad30cb035))
+
+### Features
+
+- Add ingest lag and queue metrics
+  ([`1bd7eb7`](https://github.com/makel0ve/llm-obs/commit/1bd7eb7eb2e3d26d5e934f99ee5fca8f7f23575a))
+
+
 ## v0.48.0 (2026-07-22)
 
 ### Chores
