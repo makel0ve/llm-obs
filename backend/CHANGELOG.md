@@ -1,6 +1,19 @@
 # CHANGELOG
 
 
+## v0.44.1 (2026-07-22)
+
+### Bug Fixes
+
+- **sdk**: Derive user agent from package version
+  ([`baa54d7`](https://github.com/makel0ve/llm-obs/commit/baa54d7c04ab0c1d9fe23fd894599016fe763dbe))
+
+### Chores
+
+- Trigger ci for release sync
+  ([`feeec6a`](https://github.com/makel0ve/llm-obs/commit/feeec6a9a61d12e3ae4115e2182fa1bd094194d2))
+
+
 ## v0.44.0 (2026-07-21)
 
 ### Chores
