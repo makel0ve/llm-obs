@@ -10,5 +10,6 @@ from app.models.outbox_event import OutboxEvent  # noqa: F401
 from app.models.project import Project  # noqa: F401
 from app.models.project_membership import ProjectMembership  # noqa: F401
 from app.models.span import Span  # noqa: F401
+from app.models.span_metric_bucket import SpanMetricBucket  # noqa: F401
 from app.models.trace import Trace  # noqa: F401
 from app.models.user import User  # noqa: F401

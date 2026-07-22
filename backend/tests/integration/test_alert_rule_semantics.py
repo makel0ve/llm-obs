@@ -1,8 +1,11 @@
+import json
+from datetime import UTC, datetime
 from decimal import Decimal
 from uuid import uuid4
 
 import pytest
 
+from app.services.span_metric_buckets import update_span_metric_buckets
 from app.workers import process_span as process_span_module
 from app.workers.process_span import (
     check_batch_anomalies,
@@ -83,7 +86,7 @@ async def test_latency_p95_rule_uses_windowed_percentile() -> None:
 
 
 @pytest.mark.asyncio
-async def test_error_rate_rule_uses_windowed_error_percentage() -> None:
+async def test_error_rate_rule_uses_bucketed_error_percentage() -> None:
     db = FakeDb({"value": Decimal("12.5"), "sample_count": 40})
 
     triggered, value = await evaluate_windowed_alert_rule(
@@ -94,11 +97,12 @@ async def test_error_rate_rule_uses_windowed_error_percentage() -> None:
 
     assert triggered is True
     assert value == 12.5
-    assert "COUNT(*) FILTER (WHERE status = 'error')" in db.statements[0]
+    assert "FROM span_metric_buckets" in db.statements[0]
+    assert "SUM(error_count)" in db.statements[0]
 
 
 @pytest.mark.asyncio
-async def test_cost_hourly_rule_uses_windowed_cost_sum() -> None:
+async def test_cost_hourly_rule_uses_bucketed_cost_sum() -> None:
     db = FakeDb({"value": Decimal("25.50"), "sample_count": 12})
 
     triggered, value = await evaluate_windowed_alert_rule(
@@ -109,7 +113,8 @@ async def test_cost_hourly_rule_uses_windowed_cost_sum() -> None:
 
     assert triggered is True
     assert value == 25.5
-    assert "SUM(cost_usd)" in db.statements[0]
+    assert "FROM span_metric_buckets" in db.statements[0]
+    assert "SUM(total_cost_usd)" in db.statements[0]
     assert db.params[0]["window_minutes"] == 60
 
 
@@ -139,6 +144,58 @@ async def test_windowed_rule_supports_less_than_condition() -> None:
 
     assert triggered is True
     assert value == 2.0
+
+
+@pytest.mark.asyncio
+async def test_span_metric_bucket_update_groups_inserted_spans_by_minute() -> None:
+    db = FakeDb({"value": 0, "sample_count": 0})
+    project_id = str(uuid4())
+    minute = datetime(2026, 7, 22, 12, 34, 45, tzinfo=UTC)
+
+    await update_span_metric_buckets(
+        db=db,
+        project_id=project_id,
+        spans=[
+            {
+                "started_at": minute,
+                "status": "ok",
+                "cost_usd": Decimal("0.10"),
+                "latency_ms": 100.5,
+            },
+            {
+                "started_at": minute.replace(second=59),
+                "status": "error",
+                "cost_usd": Decimal("0.20"),
+                "latency_ms": 200,
+            },
+            {
+                "started_at": minute.replace(minute=35, second=1),
+                "status": "error",
+                "cost_usd": Decimal("0.05"),
+                "latency_ms": 50,
+            },
+        ],
+    )
+
+    assert "INSERT INTO span_metric_buckets" in db.statements[0]
+    assert "ON CONFLICT (project_id, bucket_start) DO UPDATE" in db.statements[0]
+    payload = json.loads(str(db.params[0]["buckets_json"]))
+    assert payload == [
+        {
+            "bucket_start": "2026-07-22T12:34:00+00:00",
+            "span_count": 2,
+            "error_count": 1,
+            "total_cost_usd": "0.30",
+            "latency_sum_ms": "300.5",
+        },
+        {
+            "bucket_start": "2026-07-22T12:35:00+00:00",
+            "span_count": 1,
+            "error_count": 1,
+            "total_cost_usd": "0.05",
+            "latency_sum_ms": "50",
+        },
+    ]
 
 
 @pytest.mark.asyncio
@@ -252,8 +309,10 @@ async def test_scheduled_alert_check_runs_one_aggregation_per_windowed_rule(
     ]
     assert len(aggregation_statements) == 3
     assert "percentile_cont(0.95)" in aggregation_statements[0]
-    assert "COUNT(*) FILTER (WHERE status = 'error')" in aggregation_statements[1]
-    assert "SUM(cost_usd)" in aggregation_statements[2]
+    assert "FROM span_metric_buckets" in aggregation_statements[1]
+    assert "SUM(error_count)" in aggregation_statements[1]
+    assert "FROM span_metric_buckets" in aggregation_statements[2]
+    assert "SUM(total_cost_usd)" in aggregation_statements[2]
     assert (
         "metric IN ('latency_p95', 'error_rate', 'cost_hourly')"
         in (opened_dbs[0].statements[0])
