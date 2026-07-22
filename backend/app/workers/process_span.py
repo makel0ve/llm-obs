@@ -64,6 +64,24 @@ PAYLOAD_LIKE_METADATA_KEYS = frozenset(
         "system_prompt",
     }
 )
+SENSITIVE_METADATA_KEY_PARTS = frozenset(
+    {
+        "api_key",
+        "authorization",
+        "cookie",
+        "password",
+        "secret",
+        "token",
+    }
+)
+SAFE_SPAN_METADATA_KEYS = frozenset(
+    {
+        "route",
+        "source",
+        "stream",
+        "stream_complete",
+    }
+)
 
 
 class PayloadPrivacySettings(TypedDict):
@@ -90,11 +108,22 @@ def sanitize_span_metadata(
     if not isinstance(redacted, dict):
         return {}
 
-    return {
-        str(key): value
-        for key, value in redacted.items()
-        if str(key).lower() not in PAYLOAD_LIKE_METADATA_KEYS
-    }
+    sanitized: dict[str, Any] = {}
+    for key, value in redacted.items():
+        key_text = str(key)
+        key_lower = key_text.lower()
+        if key_lower in PAYLOAD_LIKE_METADATA_KEYS:
+            continue
+        if any(part in key_lower for part in SENSITIVE_METADATA_KEY_PARTS):
+            continue
+        if key_lower not in SAFE_SPAN_METADATA_KEYS:
+            continue
+        if not isinstance(value, str | int | float | bool) and value is not None:
+            continue
+
+        sanitized[key_text] = value
+
+    return sanitized
 
 
 def select_inserted_spans(

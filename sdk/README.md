@@ -67,6 +67,11 @@ if __name__ == "__main__":
     asyncio.run(main())
 ```
 
+Span metadata is for low-risk technical labels only. The backend persists an
+allowlist such as `source`, `route`, `stream` and `stream_complete`; prompts,
+headers, tokens, customer identifiers and arbitrary metadata are dropped before
+PostgreSQL span storage.
+
 Call `await llm_obs.shutdown()` in short-lived scripts, CLIs and tests so
 buffered spans are flushed before Python exits. The default
 `shutdown(flush=True)` attempts to send the current buffer before closing the
