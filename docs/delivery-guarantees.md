@@ -13,7 +13,7 @@ provides.
 3. The API writes an accepted batch status in Redis and enqueues
    `process_span_batch` on the durable Taskiq Redis queue.
 4. The worker marks the batch `processing`, prepares span rows, stores allowed
-   large payloads in object storage and writes spans, trace rows and span
+   selected payloads in object storage and writes spans, trace rows and span
    Pub/Sub outbox events in one PostgreSQL transaction.
 5. After commit, the worker increments ingest metrics, enqueues span outbox
    delivery, enqueues trace aggregate updates and evaluates alert rules.

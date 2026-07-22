@@ -203,9 +203,7 @@ def _patch_worker_common(monkeypatch, redis, db):
         return "0.00000000"
 
     async def fake_store_payload(self, **kwargs):
-        return PayloadStorageResult(
-            s3_key=None, status="omitted", drop_reason="below_inline_threshold"
-        )
+        return PayloadStorageResult(s3_key="payload-key", status="stored_redacted")
 
     async def fake_get_redis():
         return redis
@@ -535,9 +533,7 @@ async def test_worker_marks_batch_processed(monkeypatch, fake_redis):
         return "0.00000000"
 
     async def fake_store_payload(self, **kwargs):
-        return PayloadStorageResult(
-            s3_key=None, status="omitted", drop_reason="below_inline_threshold"
-        )
+        return PayloadStorageResult(s3_key="payload-key", status="stored_redacted")
 
     async def fake_get_redis():
         return fake_redis
@@ -576,8 +572,9 @@ async def test_worker_marks_batch_processed(monkeypatch, fake_redis):
     )
     assert _counter_value(spans_ingested, "openai", "gpt-4o", "ok") == (span_before + 1)
     assert str(inserted_spans[0]["parent_span_id"]) == span["parent_span_id"]
-    assert inserted_spans[0]["payload_status"] == "omitted"
-    assert inserted_spans[0]["payload_drop_reason"] == "below_inline_threshold"
+    assert inserted_spans[0]["payload_s3_key"] == "payload-key"
+    assert inserted_spans[0]["payload_status"] == "stored_redacted"
+    assert inserted_spans[0]["payload_drop_reason"] is None
 
 
 @pytest.mark.asyncio
