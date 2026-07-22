@@ -123,9 +123,10 @@ were created before these fields existed.
 - Check the metric, threshold, window and cooldown.
 - For email, verify SMTP settings and Mailpit or provider logs.
 - For Slack, verify the webhook URL and network access from the backend. Alert
-  webhook delivery allows HTTPS on the default port only, resolves DNS before
-  delivery, blocks private/link-local/loopback/internal addresses and validates
-  redirect targets before sending another request.
+  webhook delivery allows only `hooks.slack.com` and `hooks.slack-gov.com`
+  HTTPS URLs on the default port, resolves DNS before delivery, blocks
+  private/link-local/loopback/internal addresses and validates redirect targets
+  before sending another request.
 
 ## Useful Commands
 

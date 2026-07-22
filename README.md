@@ -408,7 +408,9 @@ Available metrics: `latency_p95`, `error_rate`, `cost_hourly`, `anomaly`.
 `window_minutes`; `anomaly` uses the SDK/backend anomaly detectors for incoming
 spans.
 
-For Slack notifications add `notify_slack_webhook` with your Slack incoming webhook URL.
+For Slack notifications add `notify_slack_webhook` with your Slack incoming
+webhook URL. Slack targets only accept `https://hooks.slack.com/...` and
+`https://hooks.slack-gov.com/...` URLs.
 Alert rule reads and mutations are scoped to the selected `project_id`.
 
 ---

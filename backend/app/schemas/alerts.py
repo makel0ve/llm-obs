@@ -7,6 +7,7 @@ from pydantic import BaseModel, EmailStr, Field, field_validator, model_validato
 
 AlertMetric = Literal["latency_p95", "error_rate", "cost_hourly", "anomaly"]
 AlertCondition = Literal["gt", "lt", "anomaly"]
+SLACK_WEBHOOK_HOSTS = frozenset({"hooks.slack.com", "hooks.slack-gov.com"})
 
 
 def _normalize_optional_string(value: str | None) -> str | None:
@@ -29,6 +30,9 @@ def _validate_https_webhook(value: str | None) -> str | None:
         raise ValueError("Slack webhook must use the default HTTPS port")
 
     hostname = parsed.hostname.lower().strip("[]")
+    if hostname not in SLACK_WEBHOOK_HOSTS:
+        raise ValueError("Slack webhook must use an official Slack webhook domain")
+
     if hostname == "localhost" or hostname.endswith(".local"):
         raise ValueError("Slack webhook cannot target localhost or local hosts")
 
