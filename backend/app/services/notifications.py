@@ -1,5 +1,10 @@
+import asyncio
+import ipaddress
+import socket
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
+from typing import Any
+from urllib.parse import urljoin, urlparse
 
 import aiosmtplib
 import httpx
@@ -11,9 +16,72 @@ from app.schemas.alerts import _validate_https_webhook
 
 log = structlog.get_logger()
 
+MAX_WEBHOOK_REDIRECTS = 3
+
+
+def _is_internal_ip(address: str) -> bool:
+    ip = ipaddress.ip_address(address)
+    return not ip.is_global
+
+
+async def _resolve_webhook_host(hostname: str, port: int) -> set[str]:
+    try:
+        infos = await asyncio.to_thread(
+            socket.getaddrinfo,
+            hostname,
+            port,
+            0,
+            socket.SOCK_STREAM,
+        )
+    except socket.gaierror as exc:
+        raise ValueError("Webhook host could not be resolved") from exc
+
+    addresses = {str(info[4][0]) for info in infos}
+    if not addresses:
+        raise ValueError("Webhook host could not be resolved")
+
+    return addresses
+
+
+async def validate_webhook_delivery_url(url: str) -> str:
+    webhook = _validate_https_webhook(url)
+    if webhook is None:
+        raise ValueError("Webhook URL is required")
+
+    parsed = urlparse(webhook)
+    if parsed.username or parsed.password:
+        raise ValueError("Webhook URL credentials are not allowed")
+
+    hostname = parsed.hostname
+    if not hostname:
+        raise ValueError("Webhook URL must include a hostname")
+
+    port = parsed.port or 443
+    if port != 443:
+        raise ValueError("Webhook URL must use the default HTTPS port")
+
+    try:
+        if _is_internal_ip(hostname.strip("[]")):
+            raise ValueError("Webhook cannot target private or internal addresses")
+    except ValueError as exc:
+        if "Webhook cannot target" in str(exc):
+            raise
+
+    addresses = await _resolve_webhook_host(hostname, port)
+    internal_addresses = [address for address in addresses if _is_internal_ip(address)]
+    if internal_addresses:
+        raise ValueError("Webhook DNS resolves to private or internal addresses")
+
+    return webhook
+
 
 class NotificationService:
-    async def send_alert(self, rule: dict, value: float, message: str) -> bool:
+    async def send_alert(
+        self,
+        rule: dict[str, Any],
+        value: float,
+        message: str,
+    ) -> bool:
         redis = await get_redis()
         cooldown_key = f"alert_cooldown:{rule['id']}"
 
@@ -33,14 +101,11 @@ class NotificationService:
 
         return sent
 
-    async def _slack(self, rule: dict, message: str) -> bool:
+    async def _slack(self, rule: dict[str, Any], message: str) -> bool:
         try:
-            webhook = _validate_https_webhook(rule["notify_slack_webhook"])
+            webhook = await validate_webhook_delivery_url(rule["notify_slack_webhook"])
         except ValueError as e:
             log.warning("slack_webhook_invalid", error=str(e))
-            return False
-
-        if webhook is None:
             return False
 
         blocks = [
@@ -51,17 +116,44 @@ class NotificationService:
             {"type": "section", "text": {"type": "mrkdwn", "text": message}},
         ]
         try:
-            async with httpx.AsyncClient(timeout=5.0) as client:
-                r = await client.post(webhook, json={"blocks": blocks})
+            current_webhook = webhook
+            async with httpx.AsyncClient(
+                timeout=5.0,
+                follow_redirects=False,
+                trust_env=False,
+            ) as client:
+                for _ in range(MAX_WEBHOOK_REDIRECTS + 1):
+                    current_webhook = await validate_webhook_delivery_url(
+                        current_webhook
+                    )
+                    r = await client.post(current_webhook, json={"blocks": blocks})
+                    if not r.is_redirect:
+                        break
+
+                    location = r.headers.get("location")
+                    if not location:
+                        log.warning("slack_redirect_missing_location")
+                        return False
+
+                    current_webhook = urljoin(current_webhook, location)
+                else:
+                    log.warning("slack_redirect_limit_exceeded")
+                    return False
+
                 r.raise_for_status()
 
             return True
 
-        except Exception as e:
+        except (ValueError, httpx.HTTPError) as e:
             log.warning("slack_failed", error=str(e))
             return False
 
-    async def _email(self, rule: dict, message: str, value: float) -> bool:
+    async def _email(
+        self,
+        rule: dict[str, Any],
+        message: str,
+        value: float,
+    ) -> bool:
         try:
             msg = MIMEMultipart("alternative")
             msg["Subject"] = f"🚨 Alert: {rule['name']}"
