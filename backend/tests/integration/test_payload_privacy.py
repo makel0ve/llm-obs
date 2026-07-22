@@ -117,10 +117,31 @@ def test_redact_payload_replaces_nested_sensitive_keys():
     assert redacted["output"]["password"] == "[redacted]"
 
 
-def test_sanitize_span_metadata_redacts_nested_values_and_drops_payload_like_keys():
+def test_sanitize_span_metadata_keeps_only_safe_scalar_fields():
+    metadata = {
+        "source": "anthropic",
+        "route": "chat",
+        "stream": True,
+        "stream_complete": False,
+        "nested": {"safe": "visible"},
+    }
+
+    sanitized = sanitize_span_metadata(metadata, parse_redact_keys("authorization"))
+
+    assert sanitized == {
+        "source": "anthropic",
+        "route": "chat",
+        "stream": True,
+        "stream_complete": False,
+    }
+
+
+def test_sanitize_span_metadata_drops_payload_like_and_sensitive_keys():
     metadata = {
         "source": "anthropic",
         "system": "private system prompt",
+        "prompt": "private prompt",
+        "authorization_header": "Bearer secret-token",
         "nested": {
             "Authorization": "Bearer secret-token",
             "safe": "visible",
@@ -131,11 +152,23 @@ def test_sanitize_span_metadata_redacts_nested_values_and_drops_payload_like_key
         metadata, parse_redact_keys("authorization,api_key")
     )
 
-    assert "system" not in sanitized
-    assert sanitized["nested"]["Authorization"] == "[redacted]"
-    assert sanitized["nested"]["safe"] == "visible"
+    assert sanitized == {"source": "anthropic"}
     assert "private system prompt" not in json.dumps(sanitized)
+    assert "private prompt" not in json.dumps(sanitized)
     assert "secret-token" not in json.dumps(sanitized)
+
+
+def test_sanitize_span_metadata_drops_unknown_arbitrary_fields():
+    metadata = {
+        "source": "sdk",
+        "customer_email": "user@example.com",
+        "conversation_id": "conv-123",
+        "debug": {"headers": {"authorization": "Bearer secret"}},
+    }
+
+    sanitized = sanitize_span_metadata(metadata, parse_redact_keys("authorization"))
+
+    assert sanitized == {"source": "sdk"}
 
 
 @pytest.mark.parametrize(
@@ -397,9 +430,7 @@ async def test_worker_storage_mode_none_keeps_anthropic_payload_out_of_db_s3_and
     assert inserted["payload_s3_key"] is None
     assert inserted["payload_status"] == "omitted"
     assert inserted["payload_drop_reason"] == "storage_mode_none"
-    assert json.loads(inserted["metadata"]) == {
-        "nested": {"authorization": "[redacted]", "safe": "visible"}
-    }
+    assert json.loads(inserted["metadata"]) == {}
 
     db_fields_json = json.dumps(inserted, default=str)
     status_json = json.dumps(fake_redis.values, default=str)
@@ -422,6 +453,13 @@ async def test_worker_records_small_payload_object_key_when_storage_is_enabled(
     span = make_span_payload() | {
         "input_messages": [{"role": "user", "content": "small prompt"}],
         "output": "small output",
+        "metadata": {
+            "source": "sdk",
+            "route": "chat",
+            "stream": False,
+            "authorization": "Bearer secret",
+            "conversation_id": "private-conversation",
+        },
     }
     fake_redis = FakeRedis()
     inserted_spans = []
@@ -471,6 +509,11 @@ async def test_worker_records_small_payload_object_key_when_storage_is_enabled(
     assert inserted_spans[0]["payload_s3_key"] == "payload-key"
     assert inserted_spans[0]["payload_status"] == "stored_redacted"
     assert inserted_spans[0]["payload_drop_reason"] is None
+    assert json.loads(inserted_spans[0]["metadata"]) == {
+        "source": "sdk",
+        "route": "chat",
+        "stream": False,
+    }
 
 
 @pytest.mark.asyncio

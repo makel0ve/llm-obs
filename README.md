@@ -105,7 +105,9 @@ at all. The same section also sets the maximum stored payload size
 and comma-separated field names that are redacted before any S3/MinIO write.
 Trace Detail shows span-level payload storage status when payloads are loaded,
 including policy omissions, oversized payloads and object-storage failures,
-without storing prompt or output content in status fields.
+without storing prompt or output content in status fields. PostgreSQL span
+metadata is restricted to low-risk technical fields; keep prompts, headers,
+customer identifiers and other sensitive context out of span metadata.
 
 For operational procedures after the first launch, see
 [docs/runbooks.md](docs/runbooks.md). It covers local development, production

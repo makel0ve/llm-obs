@@ -87,6 +87,11 @@ async def main() -> None:
 asyncio.run(main())
 ```
 
+Use span metadata only for low-risk technical labels. The backend keeps an
+allowlist such as `source`, `route`, `stream` and `stream_complete`; prompts,
+headers, tokens, customer identifiers and arbitrary metadata are dropped before
+PostgreSQL span storage.
+
 ## OpenAI Async Patching
 
 ```python
