@@ -25,7 +25,11 @@ provides.
 
 OTLP HTTP ingest at `POST /v1/traces` accepts native OTLP trace/span IDs and
 maps them into the same storage model. Its malformed-span behavior is reported
-through OTLP `partialSuccess.rejectedSpans`.
+through OTLP `partialSuccess.rejectedSpans` when at least one span is accepted.
+Fully malformed OTLP payloads that cannot be decoded are rejected with HTTP 400
+and are not enqueued. OTLP span `status.code=ERROR` is converted into the
+internal span `error` field, so persisted span status and error-rate metrics
+reflect the source telemetry error.
 
 ## Guarantees By Segment
 
