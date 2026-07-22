@@ -4,7 +4,11 @@ from uuid import uuid4
 import pytest
 
 from app.workers import process_span as process_span_module
-from app.workers.process_span import check_batch_anomalies, evaluate_windowed_alert_rule
+from app.workers.process_span import (
+    check_batch_anomalies,
+    evaluate_scheduled_alert_rules,
+    evaluate_windowed_alert_rule,
+)
 
 
 @pytest.fixture(autouse=True, scope="session")
@@ -49,9 +53,11 @@ def _rule(
     condition: str = "gt",
     threshold: Decimal | None = Decimal("10"),
     window_minutes: int = 15,
+    project_id: str = "project-1",
 ) -> dict[str, object]:
     return {
         "id": str(uuid4()),
+        "project_id": project_id,
         "name": f"{metric} rule",
         "metric": metric,
         "condition": condition,
@@ -136,7 +142,7 @@ async def test_windowed_rule_supports_less_than_condition() -> None:
 
 
 @pytest.mark.asyncio
-async def test_batch_alert_check_runs_one_aggregation_per_windowed_rule(
+async def test_batch_alert_check_ignores_windowed_rules_in_hot_path(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     project_id = "project-1"
@@ -147,12 +153,6 @@ async def test_batch_alert_check_runs_one_aggregation_per_windowed_rule(
     ]
     rules_db = FakeContextDb({"value": 0, "sample_count": 0})
     rules_db.row = {}
-
-    aggregation_dbs = [
-        FakeContextDb({"value": 100.0, "sample_count": 10}),
-        FakeContextDb({"value": Decimal("1.5"), "sample_count": 10}),
-        FakeContextDb({"value": Decimal("2.50"), "sample_count": 10}),
-    ]
     opened_dbs: list[FakeContextDb] = []
 
     class RulesResult:
@@ -177,13 +177,75 @@ async def test_batch_alert_check_runs_one_aggregation_per_windowed_rule(
             return rules_db
 
         assert project_id == "project-1"
+        raise AssertionError("batch hot path must not run windowed alert SQL")
+
+    monkeypatch.setattr(process_span_module, "get_db", fake_get_db)
+
+    await check_batch_anomalies.original_func(project_id=project_id, spans=[])
+
+    assert len(opened_dbs) == 1
+    assert "metric = 'anomaly'" in opened_dbs[0].statements[0]
+
+
+@pytest.mark.asyncio
+async def test_scheduled_alert_check_runs_one_aggregation_per_windowed_rule(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    rules = [
+        _rule(metric="latency_p95", threshold=Decimal("999"), project_id="project-1"),
+        _rule(metric="error_rate", threshold=Decimal("999"), project_id="project-1"),
+        _rule(metric="cost_hourly", threshold=Decimal("999"), project_id="project-2"),
+    ]
+    rules_db = FakeContextDb({"value": 0, "sample_count": 0})
+    aggregation_dbs = [
+        FakeContextDb({"value": 100.0, "sample_count": 10}),
+        FakeContextDb({"value": Decimal("1.5"), "sample_count": 10}),
+        FakeContextDb({"value": Decimal("2.50"), "sample_count": 10}),
+    ]
+    opened_dbs: list[FakeContextDb] = []
+    cooldown_checks: list[str] = []
+
+    class RulesResult:
+        def mappings(self) -> "RulesResult":
+            return self
+
+        def all(self) -> list[dict[str, object]]:
+            return rules
+
+    async def execute_rules_query(
+        statement: object, params: dict[str, object]
+    ) -> RulesResult:
+        rules_db.statements.append(str(statement))
+        rules_db.params.append(params)
+        return RulesResult()
+
+    class FakeNotificationService:
+        async def is_on_cooldown(self, rule_id: object) -> bool:
+            cooldown_checks.append(str(rule_id))
+            return False
+
+        async def send_alert(
+            self, rule: dict[str, object], value: float, message: str
+        ) -> bool:
+            return False
+
+    rules_db.execute = execute_rules_query  # type: ignore[assignment,method-assign]
+
+    def fake_get_db(project_id: str | None = None) -> FakeContextDb:
+        if project_id is None:
+            opened_dbs.append(rules_db)
+            return rules_db
+
         db = aggregation_dbs.pop(0)
         opened_dbs.append(db)
         return db
 
     monkeypatch.setattr(process_span_module, "get_db", fake_get_db)
+    monkeypatch.setattr(
+        process_span_module, "NotificationService", FakeNotificationService
+    )
 
-    await check_batch_anomalies.original_func(project_id=project_id, spans=[])
+    await evaluate_scheduled_alert_rules.original_func()
 
     aggregation_statements = [
         statement for db in opened_dbs[1:] for statement in db.statements
@@ -192,15 +254,21 @@ async def test_batch_alert_check_runs_one_aggregation_per_windowed_rule(
     assert "percentile_cont(0.95)" in aggregation_statements[0]
     assert "COUNT(*) FILTER (WHERE status = 'error')" in aggregation_statements[1]
     assert "SUM(cost_usd)" in aggregation_statements[2]
-    assert all(
-        params == {"project_id": project_id, "window_minutes": 15}
-        for db in opened_dbs[1:]
-        for params in db.params
+    assert (
+        "metric IN ('latency_p95', 'error_rate', 'cost_hourly')"
+        in (opened_dbs[0].statements[0])
     )
+    assert len(cooldown_checks) == 3
+    aggregation_params = [params for db in opened_dbs[1:] for params in db.params]
+    assert aggregation_params == [
+        {"project_id": "project-1", "window_minutes": 15},
+        {"project_id": "project-1", "window_minutes": 15},
+        {"project_id": "project-2", "window_minutes": 15},
+    ]
 
 
 @pytest.mark.asyncio
-async def test_windowed_alert_cooldown_is_after_aggregation_sql(
+async def test_scheduled_alert_cooldown_precheck_skips_aggregation_sql(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     events: list[str] = []
@@ -232,10 +300,14 @@ async def test_windowed_alert_cooldown_is_after_aggregation_sql(
         return FakeResult(value_db.row)
 
     class FakeNotificationService:
+        async def is_on_cooldown(self, rule_id: object) -> bool:
+            events.append("cooldown_precheck")
+            return True
+
         async def send_alert(
             self, rule: dict[str, object], value: float, message: str
         ) -> bool:
-            events.append("notification_cooldown_path")
+            events.append("send_alert")
             return False
 
     rules_db.execute = execute_rules_query  # type: ignore[assignment,method-assign]
@@ -249,6 +321,7 @@ async def test_windowed_alert_cooldown_is_after_aggregation_sql(
         process_span_module, "NotificationService", FakeNotificationService
     )
 
-    await check_batch_anomalies.original_func(project_id="project-1", spans=[])
+    await evaluate_scheduled_alert_rules.original_func()
 
-    assert events == ["rules_sql", "aggregation_sql", "notification_cooldown_path"]
+    assert events == ["rules_sql", "cooldown_precheck"]
+    assert value_db.statements == []
