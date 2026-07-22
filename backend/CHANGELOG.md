@@ -1,6 +1,19 @@
 # CHANGELOG
 
 
+## v0.46.3 (2026-07-22)
+
+### Bug Fixes
+
+- Harden browser auth delivery headers
+  ([`970b3b1`](https://github.com/makel0ve/llm-obs/commit/970b3b1c8047bedcf5599a810d8885e065852347))
+
+### Chores
+
+- Trigger ci for release sync
+  ([`eb950eb`](https://github.com/makel0ve/llm-obs/commit/eb950eb8073c3e6e365bf73631c1cb64f06a1e86))
+
+
 ## v0.46.2 (2026-07-22)
 
 ### Bug Fixes
