@@ -1,6 +1,27 @@
 # CHANGELOG
 
 
+## v0.47.0 (2026-07-22)
+
+### Chores
+
+- Trigger ci for release sync
+  ([`08b2b1c`](https://github.com/makel0ve/llm-obs/commit/08b2b1cee61fa6d3801796c54528274bd6070194))
+
+- Update secrets baseline
+  ([`175822c`](https://github.com/makel0ve/llm-obs/commit/175822ce7606550bbe9c8569402a520180210959))
+
+### Features
+
+- Schedule windowed alert evaluation
+  ([`8cec513`](https://github.com/makel0ve/llm-obs/commit/8cec51374ed9fab294ff557344be97cec9d5adb8))
+
+### Testing
+
+- Audit alert evaluation cost
+  ([`0280dd7`](https://github.com/makel0ve/llm-obs/commit/0280dd7f195adb747092908a9dadfdd1408add29))
+
+
 ## v0.46.3 (2026-07-22)
 
 ### Bug Fixes
