@@ -1,6 +1,19 @@
 # CHANGELOG
 
 
+## v0.44.9 (2026-07-22)
+
+### Bug Fixes
+
+- Handle otlp status and parse failures
+  ([`93df574`](https://github.com/makel0ve/llm-obs/commit/93df57435a07ece88a833b6e6b3432d1ab25ce21))
+
+### Chores
+
+- Trigger ci for release sync
+  ([`0f9f588`](https://github.com/makel0ve/llm-obs/commit/0f9f5880b1426578b8bd09b514c2c825eb1de5ff))
+
+
 ## v0.44.8 (2026-07-22)
 
 ### Bug Fixes
