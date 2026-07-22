@@ -1,6 +1,8 @@
 import asyncio
 import json
 from contextlib import asynccontextmanager
+from datetime import UTC, datetime
+from decimal import Decimal
 from uuid import uuid4
 
 import pytest
@@ -16,6 +18,7 @@ from app.core.metrics import (
     spans_ingested,
 )
 from app.schemas.ingest import IngestRequest
+from app.services import cost as cost_module
 from app.services.ingest import (
     BatchStatusService,
     IdempotencyConflictError,
@@ -134,6 +137,45 @@ class FakeDb:
     async def commit(self):
         self.commit_count += 1
         return None
+
+
+class FakePricingResult:
+    def __init__(self, row=None):
+        self.row = row
+
+    def mappings(self):
+        return self
+
+    def one_or_none(self):
+        return self.row
+
+
+class FakePricingDb:
+    def __init__(self):
+        self.params = []
+
+    async def execute(self, statement, params=None):
+        params = params or {}
+        self.params.append(params)
+        at_time = params["t"]
+        if at_time < datetime(2026, 7, 1, tzinfo=UTC):
+            return FakePricingResult(
+                {
+                    "inp": Decimal("0.001"),
+                    "out": Decimal("0.002"),
+                    "valid_from": datetime(2026, 1, 1, tzinfo=UTC),
+                    "valid_to": datetime(2026, 7, 1, tzinfo=UTC),
+                }
+            )
+
+        return FakePricingResult(
+            {
+                "inp": Decimal("0.010"),
+                "out": Decimal("0.020"),
+                "valid_from": datetime(2026, 7, 1, tzinfo=UTC),
+                "valid_to": None,
+            }
+        )
 
 
 def _project(project_id: str) -> dict:
@@ -536,6 +578,86 @@ async def test_worker_marks_batch_processed(monkeypatch, fake_redis):
     assert str(inserted_spans[0]["parent_span_id"]) == span["parent_span_id"]
     assert inserted_spans[0]["payload_status"] == "omitted"
     assert inserted_spans[0]["payload_drop_reason"] == "below_inline_threshold"
+
+
+@pytest.mark.asyncio
+async def test_worker_reuses_pricing_lookup_for_spans_in_same_interval(
+    monkeypatch, fake_redis
+):
+    project_id = str(uuid4())
+    batch_id = str(uuid4())
+    pricing_db = FakePricingDb()
+    inserted_spans = []
+    old_span = make_span_payload() | {
+        "started_at": datetime(2026, 6, 1, tzinfo=UTC).isoformat(),
+        "input_tokens": 1000,
+        "output_tokens": 1000,
+    }
+    same_interval_span = make_span_payload() | {
+        "started_at": datetime(2026, 6, 15, tzinfo=UTC).isoformat(),
+        "input_tokens": 500,
+        "output_tokens": 500,
+    }
+    new_interval_span = make_span_payload() | {
+        "started_at": datetime(2026, 8, 1, tzinfo=UTC).isoformat(),
+        "input_tokens": 1000,
+        "output_tokens": 1000,
+    }
+    await BatchStatusService(redis=fake_redis).create_accepted(
+        project_id=project_id, batch_id=batch_id, accepted=3
+    )
+
+    @asynccontextmanager
+    async def fake_worker_get_db(project_id=None):
+        yield FakeDb()
+
+    @asynccontextmanager
+    async def fake_pricing_get_db():
+        yield pricing_db
+
+    async def fake_get_redis():
+        return fake_redis
+
+    async def fake_store_payload(self, **kwargs):
+        return PayloadStorageResult(
+            s3_key=None, status="omitted", drop_reason="below_inline_threshold"
+        )
+
+    async def fake_bulk_insert_spans(spans: list[dict], db):
+        inserted_spans.extend(spans)
+        return [(span["id"], span["started_at"]) for span in spans]
+
+    async def fake_enqueue_outbox_event(**kwargs):
+        return None
+
+    monkeypatch.setattr(process_span_module, "get_redis", fake_get_redis)
+    monkeypatch.setattr(process_span_module, "get_db", fake_worker_get_db)
+    monkeypatch.setattr(cost_module, "get_redis", fake_get_redis)
+    monkeypatch.setattr(cost_module, "get_db", fake_pricing_get_db)
+    monkeypatch.setattr(
+        process_span_module.StorageService, "store_payload", fake_store_payload
+    )
+    monkeypatch.setattr(
+        process_span_module, "bulk_insert_spans", fake_bulk_insert_spans
+    )
+    monkeypatch.setattr(
+        process_span_module, "enqueue_outbox_event", fake_enqueue_outbox_event
+    )
+    monkeypatch.setattr(process_span_module.update_trace_aggregates, "kiq", _noop_kiq)
+    monkeypatch.setattr(process_span_module.check_batch_anomalies, "kiq", _noop_kiq)
+
+    await process_span_batch.original_func(
+        batch_id=batch_id,
+        project_id=project_id,
+        spans=[old_span, same_interval_span, new_interval_span],
+    )
+
+    assert len(pricing_db.params) == 2
+    assert [span["cost_usd"] for span in inserted_spans] == [
+        Decimal("0.00300000"),
+        Decimal("0.00150000"),
+        Decimal("0.03000000"),
+    ]
 
 
 @pytest.mark.asyncio

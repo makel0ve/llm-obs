@@ -74,8 +74,10 @@ class FakeDb:
 class FakeRedis:
     def __init__(self) -> None:
         self.values: dict[str, str] = {}
+        self.get_calls: list[str] = []
 
     async def get(self, key: str) -> str | None:
+        self.get_calls.append(key)
         return self.values.get(key)
 
     async def setex(self, key: str, ttl: int, value: str) -> None:
@@ -310,6 +312,45 @@ async def test_overlapping_prices_pick_latest_valid_from(
     )
 
     assert cost == Decimal("0.03000000")
+
+
+@pytest.mark.asyncio
+async def test_cost_service_reuses_batch_interval_without_pricing_lookup(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    db = FakeDb()
+    redis = FakeRedis()
+
+    @asynccontextmanager
+    async def fake_get_db():
+        yield db
+
+    async def fake_get_redis() -> FakeRedis:
+        return redis
+
+    monkeypatch.setattr(cost_module, "get_db", fake_get_db)
+    monkeypatch.setattr(cost_module, "get_redis", fake_get_redis)
+
+    service = CostService()
+    first = await service.calculate(
+        provider="openai",
+        model="gpt-4o",
+        input_tokens=1000,
+        output_tokens=1000,
+        at_time=datetime(2026, 6, 1, tzinfo=UTC),
+    )
+    second = await service.calculate(
+        provider="openai",
+        model="gpt-4o",
+        input_tokens=500,
+        output_tokens=500,
+        at_time=datetime(2026, 6, 15, tzinfo=UTC),
+    )
+
+    assert first == Decimal("0.00300000")
+    assert second == Decimal("0.00150000")
+    assert len(db.params) == 1
+    assert redis.get_calls == ["pricing:openai:gpt-4o:active"]
 
 
 @pytest.mark.asyncio
