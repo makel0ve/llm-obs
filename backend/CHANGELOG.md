@@ -1,6 +1,19 @@
 # CHANGELOG
 
 
+## v0.44.5 (2026-07-22)
+
+### Bug Fixes
+
+- Restrict persisted span metadata
+  ([`35fb00e`](https://github.com/makel0ve/llm-obs/commit/35fb00e13a2213926bd51cbb65d212c30fd3f0d6))
+
+### Chores
+
+- Trigger ci for release sync
+  ([`2e6b839`](https://github.com/makel0ve/llm-obs/commit/2e6b839730d6ebfa65c39a2cd4ea2292adaa242f))
+
+
 ## v0.44.4 (2026-07-22)
 
 ### Bug Fixes
