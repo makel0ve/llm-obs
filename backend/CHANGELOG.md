@@ -1,6 +1,19 @@
 # CHANGELOG
 
 
+## v0.44.3 (2026-07-22)
+
+### Chores
+
+- Trigger ci for release sync
+  ([`96d4748`](https://github.com/makel0ve/llm-obs/commit/96d474811f9ae673cc51c28fd33eabb53a1ccac3))
+
+### Performance Improvements
+
+- Reuse pricing lookups within span batches
+  ([`6b8346a`](https://github.com/makel0ve/llm-obs/commit/6b8346a6fbf2645cb9c0d6eeaaab07eeac7d2461))
+
+
 ## v0.44.2 (2026-07-22)
 
 ### Bug Fixes
