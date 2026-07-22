@@ -115,14 +115,15 @@ storage.
 
 ## Authentication And Roles
 
-Dashboard users authenticate with JWT sessions. Admin-only pages include
-Pricing, Users, Audit Log and Project Settings. Users can be invited with a
-24-hour token and set their own password when accepting the invite.
+Dashboard users authenticate with JWT sessions. Admin-only pages include Users,
+Audit Log and Project Settings. Users can be invited with a 24-hour token and
+set their own password when accepting the invite.
 
-Pricing is currently stored in a global catalog even though the dashboard
-exposes it to organization admins. The accepted target model is a hybrid
-platform-default plus organization-override catalog with a separate
-`platform_admin` boundary; see [ADR 0001](adr/0001-pricing-tenancy.md).
+Pricing is currently stored in a global catalog and `/v1/pricing` requires the
+separate `is_platform_admin` capability on the current database user row.
+Ordinary organization admins cannot mutate global prices. The accepted target
+model is a hybrid platform-default plus organization-override catalog; see
+[ADR 0001](adr/0001-pricing-tenancy.md).
 
 The browser dashboard stores the login JWT in `localStorage` for the next
 release and sends it as `Authorization: Bearer ...`; the accepted risk,

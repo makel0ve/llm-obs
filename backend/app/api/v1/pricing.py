@@ -1,11 +1,12 @@
 from datetime import UTC, datetime
+from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import text
 
 from app.core.auth import get_current_user
 from app.core.db import get_db
-from app.core.rbac import require_admin
+from app.core.rbac import require_platform_admin
 from app.core.redis import get_redis
 from app.schemas.pricing import (
     PricingCreate,
@@ -37,9 +38,9 @@ async def list_pricing(
     provider: str | None = None,
     model: str | None = None,
     include_expired: bool = True,
-    user=Depends(get_current_user),
-):
-    require_admin(user)
+    user: dict[str, Any] = Depends(get_current_user),
+) -> list[Any]:
+    require_platform_admin(user)
 
     provider_filter = normalize_name(provider) if provider else None
     model_filter = model.strip() if model else None
@@ -73,12 +74,15 @@ async def list_pricing(
             },
         )
 
-    return result.mappings().all()
+    return list(result.mappings().all())
 
 
 @router.post("", status_code=201, response_model=PricingRecord)
-async def create_pricing(body: PricingCreate, user=Depends(get_current_user)):
-    require_admin(user)
+async def create_pricing(
+    body: PricingCreate,
+    user: dict[str, Any] = Depends(get_current_user),
+) -> Any:
+    require_platform_admin(user)
 
     provider = normalize_name(body.provider)
     model = body.model.strip()
@@ -130,9 +134,11 @@ async def create_pricing(body: PricingCreate, user=Depends(get_current_user)):
 
 @router.patch("/{pricing_id}", response_model=PricingRecord)
 async def update_pricing(
-    pricing_id: int, body: PricingUpdate, user=Depends(get_current_user)
-):
-    require_admin(user)
+    pricing_id: int,
+    body: PricingUpdate,
+    user: dict[str, Any] = Depends(get_current_user),
+) -> Any:
+    require_platform_admin(user)
 
     updates = {
         key: value for key, value in body.model_dump().items() if value is not None
@@ -165,9 +171,11 @@ async def update_pricing(
 
 @router.post("/{pricing_id}/end", response_model=PricingRecord)
 async def end_pricing(
-    pricing_id: int, body: PricingEndDate, user=Depends(get_current_user)
-):
-    require_admin(user)
+    pricing_id: int,
+    body: PricingEndDate,
+    user: dict[str, Any] = Depends(get_current_user),
+) -> Any:
+    require_platform_admin(user)
 
     valid_to = body.valid_to or datetime.now(UTC)
 

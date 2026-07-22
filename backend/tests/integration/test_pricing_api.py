@@ -124,6 +124,15 @@ def _admin():
     return {"sub": str(uuid4()), "org_id": str(uuid4()), "role": "admin"}
 
 
+def _platform_admin():
+    return {
+        "sub": str(uuid4()),
+        "org_id": str(uuid4()),
+        "role": "admin",
+        "is_platform_admin": True,
+    }
+
+
 def _member():
     return {"sub": str(uuid4()), "org_id": str(uuid4()), "role": "member"}
 
@@ -141,11 +150,21 @@ def _pricing_row(provider="openai", model="gpt-4o"):
 
 
 @pytest.mark.asyncio
-async def test_pricing_requires_admin():
+async def test_pricing_requires_platform_admin():
     with pytest.raises(HTTPException) as exc_info:
         await list_pricing(user=_member())
 
     assert exc_info.value.status_code == 403
+    assert exc_info.value.detail == "Platform admin role required"
+
+
+@pytest.mark.asyncio
+async def test_pricing_rejects_organization_admin_without_platform_admin():
+    with pytest.raises(HTTPException) as exc_info:
+        await list_pricing(user=_admin())
+
+    assert exc_info.value.status_code == 403
+    assert exc_info.value.detail == "Platform admin role required"
 
 
 @pytest.mark.asyncio
@@ -154,7 +173,7 @@ async def test_list_pricing_uses_filters(fake_db):
         provider="OpenAI",
         model="gpt",
         include_expired=False,
-        user=_admin(),
+        user=_platform_admin(),
     )
 
     assert result[0]["provider"] == "openai"
@@ -183,7 +202,7 @@ async def test_create_pricing_closes_previous_record_and_invalidates_cache(
             output_cost_per_1k_tokens=Decimal("0.0100"),
             valid_from=valid_from,
         ),
-        user=_admin(),
+        user=_platform_admin(),
     )
 
     assert result["provider"] == "openai"
@@ -203,7 +222,7 @@ async def test_create_pricing_closes_previous_record_and_invalidates_cache(
 @pytest.mark.asyncio
 async def test_update_pricing_rejects_empty_payload():
     with pytest.raises(HTTPException) as exc_info:
-        await update_pricing(1, PricingUpdate(), user=_admin())
+        await update_pricing(1, PricingUpdate(), user=_platform_admin())
 
     assert exc_info.value.status_code == 400
 
@@ -218,7 +237,7 @@ async def test_update_pricing_changes_valid_from_and_invalidates_cache(
     result = await update_pricing(
         1,
         PricingUpdate(valid_from=valid_from),
-        user=_admin(),
+        user=_platform_admin(),
     )
 
     assert result["valid_from"] == valid_from
@@ -238,7 +257,7 @@ async def test_end_pricing_sets_valid_to_and_invalidates_cache(fake_db, fake_red
     result = await end_pricing(
         1,
         PricingEndDate(valid_to=valid_to),
-        user=_admin(),
+        user=_platform_admin(),
     )
 
     assert result["valid_to"] == valid_to
