@@ -1,6 +1,19 @@
 # CHANGELOG
 
 
+## v0.44.8 (2026-07-22)
+
+### Bug Fixes
+
+- Parse otlp anyvalue genai attributes
+  ([`45f2436`](https://github.com/makel0ve/llm-obs/commit/45f24362fee34930f4791db1cf56898129588307))
+
+### Chores
+
+- Trigger ci for release sync
+  ([`959a6ed`](https://github.com/makel0ve/llm-obs/commit/959a6ed11d535f330e00ad403c6bd6995c5daeac))
+
+
 ## v0.44.7 (2026-07-22)
 
 ### Bug Fixes
