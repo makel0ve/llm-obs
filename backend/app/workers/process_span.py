@@ -38,6 +38,7 @@ from app.services.storage import (
     PayloadStorageResult,
     StorageService,
     parse_redact_keys,
+    redact_payload,
     should_store_payload,
 )
 
@@ -51,6 +52,17 @@ TRANSIENT_SPAN_ERRORS = (
     ClientError,
     TimeoutError,
     ConnectionError,
+)
+PAYLOAD_LIKE_METADATA_KEYS = frozenset(
+    {
+        "messages",
+        "input_messages",
+        "input",
+        "output",
+        "prompt",
+        "system",
+        "system_prompt",
+    }
 )
 
 
@@ -69,6 +81,20 @@ def skipped_payload_result(payload_mode: str) -> PayloadStorageResult:
     return PayloadStorageResult(
         s3_key=None, status="omitted", drop_reason="errors_only_non_error"
     )
+
+
+def sanitize_span_metadata(
+    metadata: dict[str, Any], redact_keys: set[str]
+) -> dict[str, Any]:
+    redacted = redact_payload(metadata, redact_keys)
+    if not isinstance(redacted, dict):
+        return {}
+
+    return {
+        str(key): value
+        for key, value in redacted.items()
+        if str(key).lower() not in PAYLOAD_LIKE_METADATA_KEYS
+    }
 
 
 def select_inserted_spans(
@@ -193,7 +219,12 @@ async def process_span_batch(
                             "payload_s3_key": payload_result.s3_key,
                             "payload_status": payload_result.status,
                             "payload_drop_reason": payload_result.drop_reason,
-                            "metadata": json.dumps(span_data.get("metadata", {})),
+                            "metadata": json.dumps(
+                                sanitize_span_metadata(
+                                    span_data.get("metadata", {}),
+                                    payload_redact_keys,
+                                )
+                            ),
                         }
                     )
 
