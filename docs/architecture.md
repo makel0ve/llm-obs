@@ -45,6 +45,11 @@ have spans.
 1. The Python SDK records spans with decorators or provider patching.
 2. The SDK sends JSON span batches to `POST /v1/ingest` with a project API key.
 3. OTLP HTTP trace export accepts native payloads at `POST /v1/traces`.
+   Both binary protobuf (`application/x-protobuf`) and OTLP/JSON
+   (`application/json`) trace exports are accepted. OTLP/JSON uses standard
+   lowerCamelCase protobuf JSON field names such as `resourceSpans`,
+   `scopeSpans`, `traceId`, `spanId`, `parentSpanId`,
+   `startTimeUnixNano` and `endTimeUnixNano`.
 4. The API authenticates the key, rate-limits the project and enqueues the batch.
 5. OTLP ingest accepts native 16/32 character hex span and trace IDs by mapping
    them deterministically to internal UUIDs, while malformed spans are reported

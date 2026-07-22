@@ -111,7 +111,7 @@ def test_otlp_converter_parses_representative_protobuf_fixture() -> None:
     assert validated.span_id == str(uuid5_for(SPAN_ID_HEX))
 
 
-def test_standard_otlp_json_fixture_exposes_current_camelcase_gap() -> None:
+def test_otlp_converter_parses_standard_json_camelcase_fixture() -> None:
     fixture = representative_otlp_json_trace()
 
     spans = OTLPConverter().parse(
@@ -122,9 +122,40 @@ def test_standard_otlp_json_fixture_exposes_current_camelcase_gap() -> None:
     assert spans is not None
     assert fixture["resourceSpans"][0]["scopeSpans"][0]["spans"][0]["traceId"]
     assert fixture["resourceSpans"][0]["scopeSpans"][0]["spans"][0]["spanId"]
-    assert spans[0]["trace_id"] == ""
-    assert spans[0]["span_id"] == ""
-    assert spans[0]["parent_span_id"] is None
+    span = spans[0]
+    assert span["trace_id"] == TRACE_ID_HEX
+    assert span["span_id"] == SPAN_ID_HEX
+    assert span["parent_span_id"] == PARENT_SPAN_ID_HEX
+    assert span["name"] == "chat gpt-4o-mini"
+    assert span["latency_ms"] == pytest.approx(
+        (END_TIME_UNIX_NANO - START_TIME_UNIX_NANO) / 1_000_000
+    )
+    assert span["metadata"]["gen_ai.provider.name"] == "openai"
+    assert span["metadata"]["gen_ai.request.model"] == "gpt-4o-mini"
+
+    validated = SpanSchema(**span)
+    assert validated.trace_id == str(uuid5_for(TRACE_ID_HEX))
+    assert validated.span_id == str(uuid5_for(SPAN_ID_HEX))
+
+
+def test_otlp_converter_preserves_snake_case_json_compatibility() -> None:
+    fixture = representative_otlp_json_trace()
+    json_span = fixture["resourceSpans"][0]["scopeSpans"][0]["spans"][0]
+    json_span["trace_id"] = json_span.pop("traceId")
+    json_span["span_id"] = json_span.pop("spanId")
+    json_span["parent_span_id"] = json_span.pop("parentSpanId")
+    json_span["start_time_unix_nano"] = json_span.pop("startTimeUnixNano")
+    json_span["end_time_unix_nano"] = json_span.pop("endTimeUnixNano")
+
+    spans = OTLPConverter().parse(
+        json.dumps(fixture).encode(),
+        "application/json",
+    )
+
+    assert spans is not None
+    assert spans[0]["trace_id"] == TRACE_ID_HEX
+    assert spans[0]["span_id"] == SPAN_ID_HEX
+    assert spans[0]["parent_span_id"] == PARENT_SPAN_ID_HEX
 
 
 def test_representative_otlp_fixtures_cover_mixed_any_value_types() -> None:
