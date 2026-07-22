@@ -385,7 +385,8 @@ minute-level `span_metric_buckets`; P95 latency alerts still use exact raw-span
 percentile queries. Use
 [delivery-guarantees.md](delivery-guarantees.md) when deciding whether an
 incident is data loss, delayed live delivery, stale derived trace data or a
-delayed scheduled alert check.
+delayed scheduled alert check. Use [platform-slos.md](platform-slos.md) for
+the initial self-hosted pilot SLOs, SLI signals and alert starting points.
 
 Production container healthchecks cover HTTP-facing services directly:
 Postgres, MinIO, PgBouncer, backend readiness and frontend nginx. Worker and
@@ -455,6 +456,11 @@ If live dashboard updates lag while batch status is processed, inspect the
 `outbox_events` table for `PENDING` or `FAILED` `span.inserted` rows and check
 Redis health. These rows represent retryable live-stream delivery, not missing
 stored telemetry.
+
+The SLO response checklist in [platform-slos.md](platform-slos.md) maps these
+metrics to incident classes such as API acceptance failure, worker lag,
+permanent span drops, payload-only failures, query failures and live-stream
+delay.
 
 For public deployments, verify the reverse proxy does not expose operator-only
 endpoints to unauthenticated external users:

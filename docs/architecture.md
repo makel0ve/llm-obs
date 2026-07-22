@@ -75,7 +75,8 @@ have spans.
 Accepted ingest requests return a `batch_id`. Processing can still fail later,
 so operational checks should include the batch status API, failed-task API and
 Prometheus metrics. Current end-to-end delivery semantics are documented in
-[delivery-guarantees.md](delivery-guarantees.md).
+[delivery-guarantees.md](delivery-guarantees.md), and the initial platform SLO
+targets are documented in [platform-slos.md](platform-slos.md).
 
 ## Storage Boundaries
 
@@ -159,5 +160,7 @@ The dashboard currently uses typed frontend helpers for:
 Use `/health` for backend liveness and `/ready` for dependency readiness.
 Prometheus metrics are exposed at `/metrics`. Worker and scheduler liveness is
 reported by `/worker-health`, which reads the Redis timestamp written by the
-scheduled worker heartbeat task. Runbooks for local development, production
-Compose, migrations, rollback and smoke checks are in [runbooks.md](runbooks.md).
+scheduled worker heartbeat task. Initial ingest, lag, loss and query SLOs are
+defined in [platform-slos.md](platform-slos.md). Runbooks for local development,
+production Compose, migrations, rollback and smoke checks are in
+[runbooks.md](runbooks.md).
