@@ -17,6 +17,9 @@ def test_pipeline_metric_names_are_registered():
     assert "llmobs_ingest_batches_failed_total" in output
     assert "llmobs_ingest_batch_processing_seconds" in output
     assert "llmobs_ingest_spans_dropped_total" in output
+    assert "llmobs_ingest_span_processing_failures_total" in output
+    assert "llmobs_payload_storage_results_total" in output
+    assert "llmobs_outbox_delivery_attempts_total" in output
 
 
 def test_worker_modules_share_metric_registry():

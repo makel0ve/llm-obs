@@ -14,7 +14,10 @@ from app.core.metrics import (
     ingest_batches_accepted,
     ingest_batches_failed,
     ingest_batches_processed,
+    ingest_span_processing_failures,
     ingest_spans_dropped,
+    outbox_delivery_attempts,
+    payload_storage_results,
     spans_ingested,
 )
 from app.schemas.ingest import IngestRequest
@@ -807,6 +810,12 @@ async def test_worker_marks_batch_partial_failed(monkeypatch, fake_redis):
 
     processed_before = _counter_value(ingest_batches_processed, "partial_failed")
     dropped_before = _counter_value(ingest_spans_dropped, "processing_error")
+    span_failure_before = _counter_value(
+        ingest_span_processing_failures, "invalid_timestamp"
+    )
+    storage_failed_before = _counter_value(
+        payload_storage_results, "storage_failed", "s3_error"
+    )
     await process_span_batch.original_func(
         batch_id=batch_id, project_id=project_id, spans=[valid_span, invalid_span]
     )
@@ -823,6 +832,12 @@ async def test_worker_marks_batch_partial_failed(monkeypatch, fake_redis):
     )
     assert _counter_value(ingest_spans_dropped, "processing_error") == (
         dropped_before + 1
+    )
+    assert _counter_value(ingest_span_processing_failures, "invalid_timestamp") == (
+        span_failure_before + 1
+    )
+    assert _counter_value(payload_storage_results, "storage_failed", "s3_error") == (
+        storage_failed_before + 1
     )
 
 
@@ -1000,6 +1015,9 @@ async def test_span_outbox_delivery_marks_failed_then_retry_delivered(monkeypatc
     monkeypatch.setattr(process_span_module, "OutboxService", FakeOutboxService)
     monkeypatch.setattr(process_span_module, "get_redis", fake_get_redis)
 
+    failed_before = _counter_value(
+        outbox_delivery_attempts, OUTBOX_SPAN_INSERTED, "failed"
+    )
     with pytest.raises(RuntimeError, match="redis publish unavailable"):
         await process_span_module.deliver_span_outbox_events.original_func(
             project_id=project_id
@@ -1007,8 +1025,14 @@ async def test_span_outbox_delivery_marks_failed_then_retry_delivered(monkeypatc
 
     assert failed == [(event_id, "redis publish unavailable")]
     assert delivered == []
+    assert _counter_value(outbox_delivery_attempts, OUTBOX_SPAN_INSERTED, "failed") == (
+        failed_before + 1
+    )
 
     redis = FakeRedis()
+    delivered_before = _counter_value(
+        outbox_delivery_attempts, OUTBOX_SPAN_INSERTED, "delivered"
+    )
     await process_span_module.deliver_span_outbox_events.original_func(
         project_id=str(project_id)
     )
@@ -1018,6 +1042,9 @@ async def test_span_outbox_delivery_marks_failed_then_retry_delivered(monkeypatc
     assert channel == f"project:{project_id}:new_span"
     assert json.loads(message) == event.payload
     assert delivered == [event_id]
+    assert _counter_value(
+        outbox_delivery_attempts, OUTBOX_SPAN_INSERTED, "delivered"
+    ) == (delivered_before + 1)
 
 
 @pytest.mark.asyncio

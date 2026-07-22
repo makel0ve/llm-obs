@@ -1,16 +1,23 @@
+import asyncio
+import importlib
 import json
-from collections.abc import Callable
+from collections.abc import Callable, Coroutine
 from datetime import UTC, datetime
+from queue import Empty, Queue
+from threading import Thread
 from typing import Any, Protocol, cast
 
 from fastapi import FastAPI
 from prometheus_client import Counter, Gauge, Histogram
 from prometheus_fastapi_instrumentator import Instrumentator
 from redis import Redis
+from sqlalchemy.engine import make_url
 
 from app.core.config import settings
 
 TASKIQ_QUEUE_NAME = "taskiq"
+OUTBOX_EVENT_TYPE_SPAN_INSERTED = "span.inserted"
+OUTBOX_BACKLOG_STATUSES = ("PENDING", "FAILED")
 _TASKIQ_QUEUE_TIMESTAMP_KEYS = (
     "enqueued_at",
     "queued_at",
@@ -19,6 +26,8 @@ _TASKIQ_QUEUE_TIMESTAMP_KEYS = (
     "timestamp",
 )
 _taskiq_queue_callbacks_registered = False
+_outbox_backlog_callbacks_registered = False
+_ASYNC_METRIC_QUERY_TIMEOUT_SECONDS = 2.0
 
 
 class QueueRedis(Protocol):
@@ -73,6 +82,11 @@ ingest_spans_dropped = Counter(
     "Spans dropped during ingest batch processing",
     ["reason"],
 )
+ingest_span_processing_failures = Counter(
+    "llmobs_ingest_span_processing_failures_total",
+    "Individual spans dropped before persistence by bounded processing failure reason",
+    ["reason"],
+)
 spans_ingested = Counter(
     "llmobs_spans_ingested_total", "LLM spans ingested", ["provider", "model", "status"]
 )
@@ -89,6 +103,16 @@ payload_storage_failures = Counter(
     "Payload object storage failures",
     ["stage"],
 )
+payload_storage_results = Counter(
+    "llmobs_payload_storage_results_total",
+    "Payload storage decisions by bounded status and reason",
+    ["status", "reason"],
+)
+outbox_delivery_attempts = Counter(
+    "llmobs_outbox_delivery_attempts_total",
+    "Outbox delivery attempts by bounded event type and result",
+    ["event_type", "result"],
+)
 taskiq_queue_depth = Gauge(
     "llmobs_taskiq_queue_depth",
     "Pending Taskiq jobs in Redis list queues",
@@ -98,6 +122,11 @@ taskiq_queue_oldest_job_age_s = Gauge(
     "llmobs_taskiq_queue_oldest_job_age_seconds",
     "Best-effort age in seconds of the oldest pending Taskiq job",
     ["queue"],
+)
+outbox_backlog = Gauge(
+    "llmobs_outbox_backlog",
+    "Outbox events waiting for delivery by bounded event type and status",
+    ["event_type", "status"],
 )
 
 
@@ -240,10 +269,96 @@ def register_taskiq_queue_metric_callbacks(
     _taskiq_queue_callbacks_registered = True
 
 
+async def query_outbox_backlog_count(event_type: str, status: str) -> float:
+    connection = await _connect_outbox_metrics_db()
+    try:
+        result = await connection.fetchval(
+            """
+            SELECT COUNT(*)
+            FROM outbox_events
+            WHERE event_type = $1
+                AND status = $2
+            """,
+            event_type,
+            status,
+        )
+    finally:
+        await connection.close()
+
+    return float(result or 0)
+
+
+def _asyncpg_database_url() -> str:
+    url = make_url(settings.database_url.get_secret_value())
+    return str(url.set(drivername="postgresql"))
+
+
+async def _connect_outbox_metrics_db() -> Any:
+    asyncpg = importlib.import_module("asyncpg")
+    return await asyncpg.connect(
+        dsn=_asyncpg_database_url(),
+        timeout=_ASYNC_METRIC_QUERY_TIMEOUT_SECONDS,
+        command_timeout=_ASYNC_METRIC_QUERY_TIMEOUT_SECONDS,
+        statement_cache_size=0,
+    )
+
+
+def outbox_backlog_value(event_type: str, status: str) -> float:
+    return _run_async_metric_query(
+        lambda: query_outbox_backlog_count(event_type=event_type, status=status)
+    )
+
+
+def register_outbox_backlog_metric_callbacks(
+    event_type: str = OUTBOX_EVENT_TYPE_SPAN_INSERTED,
+) -> None:
+    global _outbox_backlog_callbacks_registered
+
+    if _outbox_backlog_callbacks_registered:
+        return
+
+    for status in OUTBOX_BACKLOG_STATUSES:
+        _set_gauge_callback(
+            outbox_backlog.labels(event_type=event_type, status=status),
+            _make_outbox_backlog_callback(event_type=event_type, status=status),
+        )
+
+    _outbox_backlog_callbacks_registered = True
+
+
+def _make_outbox_backlog_callback(event_type: str, status: str) -> Callable[[], float]:
+    return lambda: outbox_backlog_value(event_type, status)
+
+
+def _run_async_metric_query(
+    coro_factory: Callable[[], Coroutine[Any, Any, float]],
+) -> float:
+    results: Queue[float] = Queue(maxsize=1)
+
+    def run_query() -> None:
+        try:
+            value = float(asyncio.run(coro_factory()))
+        except Exception:
+            value = 0.0
+
+        try:
+            results.put_nowait(value)
+        except Exception:
+            return
+
+    Thread(target=run_query, name="llmobs-metric-query", daemon=True).start()
+
+    try:
+        return results.get(timeout=_ASYNC_METRIC_QUERY_TIMEOUT_SECONDS)
+    except Empty:
+        return 0.0
+
+
 def _set_gauge_callback(gauge: Any, callback: Callable[[], float]) -> None:
     gauge.set_function(callback)
 
 
 def setup_metrics(app: FastAPI) -> None:
     register_taskiq_queue_metric_callbacks()
+    register_outbox_backlog_metric_callbacks()
     Instrumentator().instrument(app).expose(app)

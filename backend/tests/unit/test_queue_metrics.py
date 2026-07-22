@@ -1,5 +1,6 @@
 from collections.abc import Callable, Iterator
 from datetime import UTC, datetime
+from typing import Any
 
 import pytest
 
@@ -45,10 +46,35 @@ class FakeGauge:
     def __init__(self) -> None:
         self.children: dict[str, FakeGaugeChild] = {}
 
-    def labels(self, *, queue: str) -> FakeGaugeChild:
+    def labels(self, **labels: str) -> FakeGaugeChild:
         child = FakeGaugeChild()
-        self.children[queue] = child
+        key = "|".join(f"{key}={value}" for key, value in sorted(labels.items()))
+        self.children[key] = child
         return child
+
+
+class FakeAsyncpgConnection:
+    def __init__(self, value: int) -> None:
+        self.value = value
+        self.calls: list[tuple[str, str]] = []
+        self.closed = False
+
+    async def fetchval(self, query: str, event_type: str, status: str) -> int:
+        self.calls.append((event_type, status))
+        return self.value
+
+    async def close(self) -> None:
+        self.closed = True
+
+
+class FakeAsyncpg:
+    def __init__(self, value: int) -> None:
+        self.connection = FakeAsyncpgConnection(value=value)
+        self.kwargs: dict[str, Any] | None = None
+
+    async def connect(self, **kwargs: Any) -> FakeAsyncpgConnection:
+        self.kwargs = kwargs
+        return self.connection
 
 
 def test_taskiq_queue_depth_value_reads_redis_list_length(
@@ -124,11 +150,73 @@ def test_register_taskiq_queue_metric_callbacks_is_idempotent(
     metrics.register_taskiq_queue_metric_callbacks("taskiq")
     metrics.register_taskiq_queue_metric_callbacks("taskiq")
 
-    assert list(depth_gauge.children) == ["taskiq"]
-    assert list(age_gauge.children) == ["taskiq"]
-    depth_callback = depth_gauge.children["taskiq"].callback
-    age_callback = age_gauge.children["taskiq"].callback
+    assert list(depth_gauge.children) == ["queue=taskiq"]
+    assert list(age_gauge.children) == ["queue=taskiq"]
+    depth_callback = depth_gauge.children["queue=taskiq"].callback
+    age_callback = age_gauge.children["queue=taskiq"].callback
     assert depth_callback is not None
     assert age_callback is not None
     assert depth_callback() == 7.0
     assert age_callback() == 9.0
+
+
+@pytest.mark.asyncio
+async def test_query_outbox_backlog_count_reads_bounded_status(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    asyncpg = FakeAsyncpg(value=3)
+
+    monkeypatch.setattr(
+        metrics, "_connect_outbox_metrics_db", lambda: asyncpg.connect(dsn="db")
+    )
+
+    count = await metrics.query_outbox_backlog_count("span.inserted", "FAILED")
+
+    assert count == 3.0
+    assert asyncpg.kwargs is not None
+    assert asyncpg.kwargs["dsn"] == "db"
+    assert asyncpg.connection.calls == [("span.inserted", "FAILED")]
+    assert asyncpg.connection.closed is True
+
+
+def test_outbox_backlog_value_returns_zero_when_query_fails(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def fail_query(event_type: str, status: str) -> float:
+        raise RuntimeError("postgres unavailable")
+
+    monkeypatch.setattr(metrics, "query_outbox_backlog_count", fail_query)
+
+    assert metrics.outbox_backlog_value("span.inserted", "PENDING") == 0.0
+
+
+def test_register_outbox_backlog_metric_callbacks_is_idempotent(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    backlog_gauge = FakeGauge()
+
+    monkeypatch.setattr(metrics, "_outbox_backlog_callbacks_registered", False)
+    monkeypatch.setattr(metrics, "outbox_backlog", backlog_gauge)
+    monkeypatch.setattr(
+        metrics,
+        "outbox_backlog_value",
+        lambda event_type, status: 5.0 if status == "PENDING" else 2.0,
+    )
+
+    metrics.register_outbox_backlog_metric_callbacks("span.inserted")
+    metrics.register_outbox_backlog_metric_callbacks("span.inserted")
+
+    assert list(backlog_gauge.children) == [
+        "event_type=span.inserted|status=PENDING",
+        "event_type=span.inserted|status=FAILED",
+    ]
+    pending_callback = backlog_gauge.children[
+        "event_type=span.inserted|status=PENDING"
+    ].callback
+    failed_callback = backlog_gauge.children[
+        "event_type=span.inserted|status=FAILED"
+    ].callback
+    assert pending_callback is not None
+    assert failed_callback is not None
+    assert pending_callback() == 5.0
+    assert failed_callback() == 2.0
