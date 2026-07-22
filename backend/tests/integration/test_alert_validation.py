@@ -37,6 +37,7 @@ def _valid_rule(**overrides: object) -> dict[str, object]:
         "https://192.168.1.1/services/demo",
         "https://[::1]/services/demo",
         "https://alerts.local/services/demo",
+        "https://hooks.slack.com:8443/services/demo",
     ],
 )
 def test_alert_rule_rejects_unsafe_slack_webhook_targets(webhook: str) -> None:
