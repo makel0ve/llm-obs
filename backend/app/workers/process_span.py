@@ -2,7 +2,7 @@ import json
 import time
 import uuid
 from collections import Counter
-from datetime import datetime
+from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Any, TypedDict, cast
 
@@ -15,9 +15,13 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from app.core.db import get_db
 from app.core.metrics import (
+    ingest_batch_accepted_to_finished_s,
+    ingest_batch_accepted_to_processing_s,
     ingest_batch_processing_s,
     ingest_batches_failed,
     ingest_batches_processed,
+    ingest_span_source_to_accepted_s,
+    ingest_span_source_to_processed_s,
     ingest_spans_dropped,
     spans_ingested,
 )
@@ -189,6 +193,14 @@ async def process_span_batch(
     storage_svc = StorageService()
     redis = await get_redis()
     batch_status = BatchStatusService(redis=redis)
+    accepted_status = await batch_status.get(project_id=project_id, batch_id=batch_id)
+    accepted_at = accepted_status.created_at if accepted_status is not None else None
+    processing_started_at = datetime.now(UTC)
+    observe_duration(
+        ingest_batch_accepted_to_processing_s,
+        accepted_at,
+        processing_started_at,
+    )
     await batch_status.mark_processing(project_id=project_id, batch_id=batch_id)
 
     try:
@@ -349,6 +361,17 @@ async def process_span_batch(
             )
 
         await check_batch_anomalies.kiq(project_id=project_id, spans=spans)
+        processed_at = datetime.now(UTC)
+        observe_inserted_span_lag(
+            spans=inserted_spans,
+            accepted_at=accepted_at,
+            processed_at=processed_at,
+        )
+        observe_duration(
+            ingest_batch_accepted_to_finished_s,
+            accepted_at,
+            processed_at,
+        )
         await batch_status.mark_finished(
             project_id=project_id,
             batch_id=batch_id,
@@ -367,6 +390,30 @@ async def process_span_batch(
         ingest_batches_failed.labels(stage="worker").inc()
         ingest_batch_processing_s.observe(time.perf_counter() - started_at_monotonic)
         raise
+
+
+def observe_inserted_span_lag(
+    spans: list[dict[str, Any]],
+    accepted_at: datetime | None,
+    processed_at: datetime,
+) -> None:
+    for span in spans:
+        started_at = span.get("started_at")
+        if not isinstance(started_at, datetime):
+            continue
+
+        observe_duration(ingest_span_source_to_accepted_s, started_at, accepted_at)
+        observe_duration(ingest_span_source_to_processed_s, started_at, processed_at)
+
+
+def observe_duration(
+    metric: Any, started_at: datetime | None, ended_at: datetime | None
+) -> None:
+    if started_at is None or ended_at is None:
+        return
+
+    seconds = (ended_at - started_at).total_seconds()
+    metric.observe(max(seconds, 0.0))
 
 
 async def ensure_trace_row(
