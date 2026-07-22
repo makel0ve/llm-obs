@@ -1,6 +1,19 @@
 # CHANGELOG
 
 
+## v0.46.1 (2026-07-22)
+
+### Bug Fixes
+
+- Harden alert webhook ssrf checks
+  ([`315fb0c`](https://github.com/makel0ve/llm-obs/commit/315fb0c328b0b1cf672170fd4c728ddade7116e2))
+
+### Chores
+
+- Trigger ci for release sync
+  ([`daeba2d`](https://github.com/makel0ve/llm-obs/commit/daeba2d456be8445d54a7a5dea4cdaaab515221b))
+
+
 ## v0.46.0 (2026-07-22)
 
 ### Chores
