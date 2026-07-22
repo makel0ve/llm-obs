@@ -1,6 +1,19 @@
 # CHANGELOG
 
 
+## v0.46.2 (2026-07-22)
+
+### Bug Fixes
+
+- Restrict slack webhook domains
+  ([`d8cf77d`](https://github.com/makel0ve/llm-obs/commit/d8cf77dc23b9c5798f62cfa406ef7895b8cc32be))
+
+### Chores
+
+- Trigger ci for release sync
+  ([`6d06a34`](https://github.com/makel0ve/llm-obs/commit/6d06a3447bc3aa20dadd84d3d439ac77a473de98))
+
+
 ## v0.46.1 (2026-07-22)
 
 ### Bug Fixes
