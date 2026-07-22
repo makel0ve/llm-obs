@@ -59,7 +59,10 @@ have spans.
 4. The API authenticates the key, rate-limits the project and enqueues the batch.
 5. OTLP ingest accepts native 16/32 character hex span and trace IDs by mapping
    them deterministically to internal UUIDs, while malformed spans are reported
-   through OTLP `partialSuccess.rejectedSpans`.
+   through OTLP `partialSuccess.rejectedSpans`. A fully malformed OTLP payload
+   is rejected with HTTP 400 instead of being acknowledged as accepted.
+   OTLP span `status.code=ERROR` maps to the internal span `error` field, so
+   worker persistence and error-rate metrics treat the span as failed.
 6. Workers process spans asynchronously, write spans and trace rows in one DB
    transaction, and create outbox events for live span delivery.
 7. Workers update trace aggregates and evaluate alert rules after the span

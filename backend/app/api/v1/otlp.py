@@ -1,7 +1,7 @@
 import importlib
 from typing import Any, Protocol, cast
 
-from fastapi import APIRouter, Depends, Request, Response
+from fastapi import APIRouter, Depends, Request, Response, status
 from pydantic import ValidationError
 from redis.asyncio import Redis
 
@@ -40,11 +40,9 @@ async def receive_otlp(
     content_type = request.headers.get("content-type", "")
     spans = OTLPConverter().parse(body, content_type)
     if spans is None:
+        response.status_code = status.HTTP_400_BAD_REQUEST
         return {
-            "partialSuccess": {
-                "rejectedSpans": 1,
-                "errorMessage": "Unable to parse OTLP trace export",
-            }
+            "error": "Unable to parse OTLP trace export",
         }
 
     accepted_spans = []
