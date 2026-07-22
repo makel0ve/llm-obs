@@ -90,6 +90,19 @@ curl -X POST http://localhost:8000/v1/auth/register \
 
 The registration response includes the default project API key.
 
+Production deployments should disable public self-service registration and use
+a one-time first-admin bootstrap token:
+
+```bash
+curl -X POST http://localhost:8000/v1/auth/register \
+  -H "Content-Type: application/json" \
+  -d '{"email": "admin@example.com", "password": "yourpassword", "org_name": "My Org", "bootstrap_token": "YOUR_BOOTSTRAP_ADMIN_TOKEN"}'
+```
+
+Set `PUBLIC_REGISTRATION_ENABLED=false` and `BOOTSTRAP_ADMIN_TOKEN` before the
+first request. After the first user exists, registration stays closed; invite
+additional users from the dashboard Users page.
+
 If the key is lost or exposed, rotate it with the Project API:
 
 ```bash
@@ -322,6 +335,8 @@ localhost CORS origins, empty secrets, default MinIO credentials and unedited
 | Variable | Description | Required |
 |----------|-------------|----------|
 | `SECRET_KEY` | Random 32+ char secret for JWT signing | ✅ |
+| `PUBLIC_REGISTRATION_ENABLED` | Enable public `/v1/auth/register`; set `false` for production bootstrap-only registration | recommended |
+| `BOOTSTRAP_ADMIN_TOKEN` | Random 32+ char first-admin token used only when public registration is disabled and no users exist | recommended |
 | `DATABASE_URL` | Runtime PostgreSQL connection string using the dedicated app role | ✅ |
 | `MIGRATION_DATABASE_URL` | Owner/admin PostgreSQL connection string used by Alembic migrations | recommended |
 | `REDIS_URL` | Redis cache/pubsub/rate-limit connection string | ✅ |

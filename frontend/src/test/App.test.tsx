@@ -305,6 +305,41 @@ describe('App', () => {
     expect(localStorage.getItem('role')).toBe('admin')
   })
 
+  it('sends a bootstrap token when creating the first admin', async () => {
+    const user = userEvent.setup()
+    render(<App />)
+
+    await user.click(screen.getByRole('button', { name: 'Create account' }))
+    await user.type(screen.getByPlaceholderText('Organization name'), 'Bootstrap Org')
+    await user.type(screen.getByPlaceholderText('Bootstrap token'), 'bootstrap-secret')
+    await user.type(screen.getByPlaceholderText('Email'), 'admin@example.com')
+    await user.type(screen.getByPlaceholderText('Password'), 'secret123')
+    await user.click(screen.getAllByRole('button', { name: 'Create account' })[1])
+
+    expect(mockedRegisterUser).toHaveBeenCalledWith({
+      email: 'admin@example.com',
+      password: 'secret123',
+      org_name: 'Bootstrap Org',
+      bootstrap_token: 'bootstrap-secret',
+    })
+  })
+
+  it('shows a closed-registration error when registration is disabled', async () => {
+    mockedRegisterUser.mockRejectedValueOnce({ response: { status: 403 } })
+    const user = userEvent.setup()
+    render(<App />)
+
+    await user.click(screen.getByRole('button', { name: 'Create account' }))
+    await user.type(screen.getByPlaceholderText('Organization name'), 'Demo Org')
+    await user.type(screen.getByPlaceholderText('Email'), 'admin@example.com')
+    await user.type(screen.getByPlaceholderText('Password'), 'secret123')
+    await user.click(screen.getAllByRole('button', { name: 'Create account' })[1])
+
+    expect(
+      await screen.findByText('Registration is disabled. Ask an admin for an invite or use the bootstrap token.'),
+    ).toBeInTheDocument()
+  })
+
   it('shows admin-only navigation only for admins', async () => {
     mockedListAccessibleProjects.mockResolvedValue([])
     localStorage.setItem('token', 'admin-token')

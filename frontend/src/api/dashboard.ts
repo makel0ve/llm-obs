@@ -414,7 +414,12 @@ function projectParams(projectId: string) {
   return new URLSearchParams({ project_id: projectId })
 }
 
-export async function registerUser(body: { email: string; password: string; org_name: string }) {
+export async function registerUser(body: {
+  email: string
+  password: string
+  org_name: string
+  bootstrap_token?: string
+}) {
   const response = await api.post<AuthResponse>('/v1/auth/register', body)
   return response.data
 }

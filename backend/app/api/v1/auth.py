@@ -1,4 +1,5 @@
 import hashlib
+import hmac
 import re
 import secrets
 import uuid
@@ -7,6 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from sqlalchemy import text
 
 from app.core.auth import create_access_token, hash_password, verify_password
+from app.core.config import settings
 from app.core.db import get_db
 from app.core.ratelimit import AuthRateLimiter, get_auth_rate_limiter
 from app.schemas.auth import (
@@ -24,13 +26,21 @@ def auth_rate_limit_identifier(request: Request, action: str) -> str:
     return f"{action}:{host}"
 
 
+def _is_valid_bootstrap_token(token: str | None) -> bool:
+    configured = settings.bootstrap_admin_token
+    if configured is None:
+        return False
+
+    return hmac.compare_digest(token or "", configured.get_secret_value())
+
+
 @router.post("/register", status_code=201, response_model=RegisterResponse)
 async def register(
     body: RegisterRequest,
     request: Request,
     response: Response,
     rate_limiter: AuthRateLimiter = Depends(get_auth_rate_limiter),
-):
+) -> dict[str, str]:
     await rate_limiter.check(
         identifier=auth_rate_limit_identifier(request, "register"),
         action="register",
@@ -39,6 +49,14 @@ async def register(
 
     async with get_db() as db:
         async with db.begin():
+            user_count_result = await db.execute(text("SELECT COUNT(*) FROM users"))
+            user_count = int(user_count_result.scalar_one())
+            if not settings.public_registration_enabled:
+                if user_count > 0:
+                    raise HTTPException(403, "Registration is disabled")
+                if not _is_valid_bootstrap_token(body.bootstrap_token):
+                    raise HTTPException(403, "Invalid bootstrap token")
+
             exists = await db.execute(
                 text("SELECT 1 FROM users WHERE email = :e"), {"e": body.email}
             )
@@ -106,7 +124,7 @@ async def login(
     request: Request,
     response: Response,
     rate_limiter: AuthRateLimiter = Depends(get_auth_rate_limiter),
-):
+) -> dict[str, str | None]:
     await rate_limiter.check(
         identifier=auth_rate_limit_identifier(request, "login"),
         action="login",

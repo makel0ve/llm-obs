@@ -2,11 +2,24 @@ import hashlib
 import uuid
 
 import pytest
+from httpx import AsyncClient
+from pydantic import SecretStr
 from sqlalchemy import text
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.core.config import settings
+
+
+async def clear_bootstrap_state(db_session: AsyncSession) -> None:
+    await db_session.execute(text("TRUNCATE organizations CASCADE"))
+    await db_session.commit()
 
 
 @pytest.mark.asyncio
-async def test_register_returns_default_project_credentials(client, db_session):
+async def test_register_returns_default_project_credentials(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
     email = f"registration-{uuid.uuid4().hex}@example.com"
 
     r = await client.post(
@@ -46,7 +59,61 @@ async def test_register_returns_default_project_credentials(client, db_session):
 
 
 @pytest.mark.asyncio
-async def test_register_rejects_duplicate_email(client, db_session):
+async def test_register_bootstraps_first_admin_when_public_registration_disabled(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    await clear_bootstrap_state(db_session)
+    monkeypatch.setattr(settings, "public_registration_enabled", False)
+    monkeypatch.setattr(
+        settings,
+        "bootstrap_admin_token",
+        SecretStr("test-bootstrap-token"),
+    )
+
+    rejected = await client.post(
+        "/v1/auth/register",
+        json={
+            "email": "bootstrap-rejected@example.com",
+            "password": "correct-horse-battery-staple",
+            "org_name": "Bootstrap Rejected",
+            "bootstrap_token": "wrong-token",
+        },
+    )
+    accepted = await client.post(
+        "/v1/auth/register",
+        json={
+            "email": "bootstrap-admin@example.com",
+            "password": "correct-horse-battery-staple",
+            "org_name": "Bootstrap Org",
+            "bootstrap_token": "test-bootstrap-token",
+        },
+    )
+    closed = await client.post(
+        "/v1/auth/register",
+        json={
+            "email": "bootstrap-second@example.com",
+            "password": "correct-horse-battery-staple",
+            "org_name": "Bootstrap Second",
+            "bootstrap_token": "test-bootstrap-token",
+        },
+    )
+
+    assert rejected.status_code == 403
+    assert rejected.json()["detail"] == "Invalid bootstrap token"
+    assert accepted.status_code == 201
+    assert accepted.json()["role"] == "admin"
+    assert accepted.json()["api_key"].startswith("llmobs_")
+    assert closed.status_code == 403
+    assert closed.json()["detail"] == "Registration is disabled"
+
+
+@pytest.mark.asyncio
+async def test_register_rejects_duplicate_email(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
     email = f"duplicate-{uuid.uuid4().hex}@example.com"
     payload = {
         "email": email,
