@@ -142,4 +142,5 @@ docker compose -f infra/docker-compose.yml logs --tail=100 worker
 curl http://localhost:8000/ready
 curl http://localhost:8000/metrics | grep -E 'llmobs_ingest|llmobs_payload_storage'
 curl http://localhost:8000/metrics | grep llmobs_taskiq_queue
+curl http://localhost:8000/metrics | grep llmobs_outbox
 ```
