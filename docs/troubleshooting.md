@@ -121,6 +121,11 @@ were created before these fields existed.
 
 - Confirm the rule is active and belongs to the current project.
 - Check the metric, threshold, window and cooldown.
+- For latency, error-rate and cost alerts, verify the scheduler is running and
+  `/worker-health` reports a fresh scheduled heartbeat; these windowed rules no
+  longer run after every ingest batch.
+- For anomaly alerts, verify the worker is processing ingest batches for the
+  project.
 - For email, verify SMTP settings and Mailpit or provider logs.
 - For Slack, verify the webhook URL and network access from the backend. Alert
   webhook delivery allows only `hooks.slack.com` and `hooks.slack-gov.com`

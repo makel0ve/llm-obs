@@ -16,11 +16,14 @@ provides.
    selected payloads in object storage and writes spans, trace rows and span
    Pub/Sub outbox events in one PostgreSQL transaction.
 5. After commit, the worker increments ingest metrics, enqueues span outbox
-   delivery, enqueues trace aggregate updates and evaluates alert rules.
+   delivery, enqueues trace aggregate updates and runs batch-scoped anomaly
+   alert checks.
 6. The span outbox consumer publishes `span.inserted` events to the live Redis
    stream and marks outbox rows delivered. Retryable failures stay in
    `outbox_events` for scheduled retry.
-7. Query APIs read traces, spans, metrics and analytics from PostgreSQL for the
+7. Scheduled tasks evaluate windowed alert rules for latency, error rate and
+   cost outside the ingest hot path.
+8. Query APIs read traces, spans, metrics and analytics from PostgreSQL for the
    dashboard.
 
 OTLP HTTP ingest at `POST /v1/traces` accepts native OTLP trace/span IDs and
@@ -45,7 +48,8 @@ reflect the source telemetry error.
 | Transient worker failures before DB commit | At-least-once retry | Transient DB, Redis, storage/client and timeout errors are raised for Taskiq retry and the batch status is marked failed for visibility until a retry succeeds. |
 | Span live Pub/Sub delivery | At-least-once through outbox retry | `span.inserted` outbox rows are committed with span state, then delivered to Redis by `deliver_span_outbox_events`. Consumers should treat live stream messages as duplicate-tolerant hints. |
 | Trace aggregate enqueue after commit | Best-effort post-commit side effect | Aggregate update tasks are still enqueued after the span transaction. A failure here can mark the batch failed even though span rows are committed; rerunning aggregate work can repair derived trace totals. |
-| Alert evaluation after commit | Best-effort post-commit side effect | Alert evaluation runs after span commit and can fail independently of persisted telemetry. Alert delivery has its own cooldown and notification safeguards. |
+| Batch anomaly checks after commit | Best-effort post-commit side effect | Per-span anomaly rules are checked after span commit and can fail independently of persisted telemetry. |
+| Scheduled windowed alert evaluation | Best-effort scheduled side effect | Latency, error-rate and cost alert rules run from the scheduler instead of after every ingest batch. The scheduled path prechecks notification cooldown before expensive aggregation and `send_alert` still rechecks cooldown before delivery. |
 | Query API reads | Read-after-commit for stored rows; derived values may lag | Raw spans are queryable after commit. Trace totals, ended-at and live dashboard streams can lag until aggregate and outbox workers run. |
 
 ## Failure Scenarios

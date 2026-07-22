@@ -513,7 +513,9 @@ async def check_batch_anomalies(project_id: str, spans: list[dict[str, Any]]) ->
             SELECT id, name, metric, condition, threshold,
                 cooldown_minutes, notify_slack_webhook, notify_email
             FROM alert_rules
-            WHERE project_id = :project_id AND is_active = true
+            WHERE project_id = :project_id
+                AND is_active = true
+                AND metric = 'anomaly'
             """
             ),
             {"project_id": project_id},
@@ -524,31 +526,6 @@ async def check_batch_anomalies(project_id: str, spans: list[dict[str, Any]]) ->
         return
 
     for rule in rules:
-        if rule["metric"] in WINDOWED_ALERT_METRICS:
-            async with get_db(project_id=project_id) as db:
-                triggered, value = await evaluate_windowed_alert_rule(
-                    db=db, project_id=project_id, rule=rule
-                )
-
-            if not triggered:
-                continue
-
-            message = (
-                f"Alert '{rule['name']}' triggered for project `{project_id}` "
-                f"metric={rule['metric']} {rule['condition']} {rule['threshold']} "
-                f"value={value} window={rule['window_minutes']}m"
-            )
-            await record_alert_if_sent(
-                notification_svc=notification_svc,
-                rule=rule,
-                value=value,
-                message=message,
-            )
-            continue
-
-        if rule["metric"] != "anomaly":
-            continue
-
         for span in spans:
             anomalies = await anomaly_svc.check(project_id=project_id, span=span)
             if not anomalies:
@@ -566,6 +543,56 @@ async def check_batch_anomalies(project_id: str, spans: list[dict[str, Any]]) ->
                 value=value,
                 message=message,
             )
+
+
+@broker.task(schedule=[{"cron": "* * * * *"}])
+async def evaluate_scheduled_alert_rules() -> None:
+    notification_svc = NotificationService()
+
+    async with get_db() as db:
+        result = await db.execute(
+            text(
+                """
+            SELECT id, project_id, name, metric, condition, threshold,
+                window_minutes, cooldown_minutes, notify_slack_webhook, notify_email
+            FROM alert_rules
+            WHERE is_active = true
+                AND metric IN ('latency_p95', 'error_rate', 'cost_hourly')
+            """
+            ),
+            {},
+        )
+        rules = result.mappings().all()
+
+    for rule in rules:
+        if await notification_svc.is_on_cooldown(rule["id"]):
+            log.debug(
+                "scheduled_alert_suppressed_cooldown",
+                rule_id=str(rule["id"]),
+                project_id=str(rule["project_id"]),
+            )
+            continue
+
+        project_id = str(rule["project_id"])
+        async with get_db(project_id=project_id) as db:
+            triggered, value = await evaluate_windowed_alert_rule(
+                db=db, project_id=project_id, rule=rule
+            )
+
+        if not triggered:
+            continue
+
+        message = (
+            f"Alert '{rule['name']}' triggered for project `{project_id}` "
+            f"metric={rule['metric']} {rule['condition']} {rule['threshold']} "
+            f"value={value} window={rule['window_minutes']}m"
+        )
+        await record_alert_if_sent(
+            notification_svc=notification_svc,
+            rule=rule,
+            value=value,
+            message=message,
+        )
 
 
 async def evaluate_windowed_alert_rule(

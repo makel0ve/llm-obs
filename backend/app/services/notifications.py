@@ -19,6 +19,10 @@ log = structlog.get_logger()
 MAX_WEBHOOK_REDIRECTS = 3
 
 
+def alert_cooldown_key(rule_id: object) -> str:
+    return f"alert_cooldown:{rule_id}"
+
+
 def _is_internal_ip(address: str) -> bool:
     ip = ipaddress.ip_address(address)
     return not ip.is_global
@@ -76,6 +80,10 @@ async def validate_webhook_delivery_url(url: str) -> str:
 
 
 class NotificationService:
+    async def is_on_cooldown(self, rule_id: object) -> bool:
+        redis = await get_redis()
+        return bool(await redis.get(alert_cooldown_key(rule_id)))
+
     async def send_alert(
         self,
         rule: dict[str, Any],
@@ -83,7 +91,7 @@ class NotificationService:
         message: str,
     ) -> bool:
         redis = await get_redis()
-        cooldown_key = f"alert_cooldown:{rule['id']}"
+        cooldown_key = alert_cooldown_key(rule["id"])
 
         if await redis.get(cooldown_key):
             log.debug("alert_suppressed_cooldown", rule_id=str(rule["id"]))

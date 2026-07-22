@@ -378,9 +378,12 @@ so accepted ingest work is not subject to cache eviction.
 
 Telemetry delivery is intentionally split between committed storage and
 post-commit side effects. Raw spans and trace rows are committed in PostgreSQL
-before live Pub/Sub, trace aggregate enqueueing and alert evaluation complete.
-Use [delivery-guarantees.md](delivery-guarantees.md) when deciding whether an
-incident is data loss, delayed live delivery or stale derived trace data.
+before live Pub/Sub, trace aggregate enqueueing and batch anomaly checks
+complete. Windowed latency, error-rate and cost alerts run from the scheduler,
+not from every ingest batch. Use
+[delivery-guarantees.md](delivery-guarantees.md) when deciding whether an
+incident is data loss, delayed live delivery, stale derived trace data or a
+delayed scheduled alert check.
 
 Production container healthchecks cover HTTP-facing services directly:
 Postgres, MinIO, PgBouncer, backend readiness and frontend nginx. Worker and

@@ -2,20 +2,21 @@
 
 Date: 2026-07-22
 
-Scope: Big Block 08.1, current alert evaluation hot path and recommended
+Scope: Big Block 08.1, observed alert evaluation hot path and recommended
 scheduled evaluation design.
 
-## Current Hot Path
+## Block 08.1 Observed Hot Path
 
-`process_span_batch()` persists spans and trace rows, commits the ingest
-transaction, then enqueues three post-commit side effects:
+Before Block 08.2, `process_span_batch()` persisted spans and trace rows,
+committed the ingest transaction, then enqueued three post-commit side effects:
 
 1. `deliver_span_outbox_events.kiq(project_id=...)`
 2. `update_trace_aggregates.kiq(...)` once per trace
 3. `check_batch_anomalies.kiq(project_id=..., spans=spans)` once per processed
    batch
 
-`check_batch_anomalies()` loads every active alert rule for the project:
+At that point, `check_batch_anomalies()` loaded every active alert rule for the
+project:
 
 ```sql
 SELECT id, name, metric, condition, threshold,
@@ -24,8 +25,8 @@ FROM alert_rules
 WHERE project_id = :project_id AND is_active = true
 ```
 
-For every active windowed rule, it opens a project-scoped DB session and runs
-one aggregate query over `spans`. Current windowed metrics are:
+For every active windowed rule, it opened a project-scoped DB session and ran
+one aggregate query over `spans`. Windowed metrics were:
 
 - `latency_p95`
 - `error_rate`
@@ -33,9 +34,9 @@ one aggregate query over `spans`. Current windowed metrics are:
 
 Anomaly rules are evaluated per span through `AnomalyService.check()`.
 
-## Current Complexity
+## Block 08.1 Observed Complexity
 
-For each processed ingest batch:
+Before Block 08.2, each processed ingest batch paid:
 
 - alert rule load: `1` query
 - windowed alert aggregations: `active_windowed_rules` queries
@@ -43,15 +44,15 @@ For each processed ingest batch:
 - notification cooldown checks: only after a rule has already evaluated as
   triggered
 
-That means the current cost is roughly:
+That meant the cost was roughly:
 
 ```text
 batches * (1 rule query + active_windowed_rules aggregate queries)
 + batches * active_anomaly_rules * spans_in_batch
 ```
 
-The expensive part is not tied to the number of new spans that can affect a
-window. A project with many active rules pays the same aggregate-query cost
+The expensive part was not tied to the number of new spans that could affect a
+window. A project with many active rules paid the same aggregate-query cost
 after every batch, even when notification cooldown would suppress delivery.
 
 ## Query Shapes
@@ -115,10 +116,10 @@ Cooldown lives inside `NotificationService.send_alert()`:
 alert_cooldown:<rule_id>
 ```
 
-Because `check_batch_anomalies()` calls `send_alert()` only after the windowed
-aggregate query triggers, cooldown cannot currently skip expensive SQL. A
-scheduled evaluator should check cooldown before running the aggregate when the
-rule only has notification side effects and no separate "record every
+Before Block 08.2, `check_batch_anomalies()` called `send_alert()` only after
+the windowed aggregate query triggered, so cooldown could not skip expensive
+SQL. The scheduled evaluator now checks cooldown before running the aggregate
+when the rule only has notification side effects and no separate "record every
 triggered state" requirement.
 
 ## EXPLAIN Status
@@ -165,11 +166,22 @@ Block 08.3 should then move latency/error/cost evaluation toward incremental
 time buckets so the scheduled evaluator does not repeatedly scan raw spans for
 large windows.
 
+## Block 08.2 Follow-Up
+
+Block 08.2 implemented the first scheduled evaluation step: windowed alert
+rules now run from a periodic Taskiq scheduler task, and the ingest batch hot
+path no longer evaluates latency, error-rate or cost windows after every batch.
+The scheduled path prechecks notification cooldown before running the aggregate
+query. Per-span anomaly checks remain batch-scoped because their current
+semantics depend on the spans that were just processed.
+
+Incremental time buckets remain planned for Block 08.3.
+
 ## Regression Coverage
 
 `backend/tests/integration/test_alert_rule_semantics.py` now covers:
 
-- one aggregate SQL query per active windowed rule in
-  `check_batch_anomalies()`;
-- current cooldown ordering: aggregate SQL runs before notification cooldown
-  code is reached.
+- batch hot path ignores windowed rules and keeps only anomaly selection;
+- one aggregate SQL query per active windowed rule in the scheduled evaluator;
+- scheduled cooldown precheck skips aggregation SQL when a rule is already on
+  cooldown.
