@@ -1,6 +1,29 @@
 # CHANGELOG
 
 
+## v0.44.4 (2026-07-22)
+
+### Bug Fixes
+
+- Store small payloads in object storage
+  ([`bf17729`](https://github.com/makel0ve/llm-obs/commit/bf17729218c4abfabf3031d0c71dbabb711fc9cc))
+
+### Chores
+
+- Trigger ci for release sync
+  ([`b76ec3d`](https://github.com/makel0ve/llm-obs/commit/b76ec3d9552d7083b7d43bdd477309b2eebd2818))
+
+### Documentation
+
+- Decide pricing tenancy model
+  ([`6361bcb`](https://github.com/makel0ve/llm-obs/commit/6361bcbeba6aac101687b51ea502b8af802b7a77))
+
+### Testing
+
+- Enforce payload privacy invariants
+  ([`cb8d4a9`](https://github.com/makel0ve/llm-obs/commit/cb8d4a9ac8a71dec89aec0989dc92cab5f19b18e))
+
+
 ## v0.44.3 (2026-07-22)
 
 ### Chores
