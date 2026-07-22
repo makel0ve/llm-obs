@@ -54,6 +54,8 @@ class Settings(BaseSettings):
     )
     jwt_algorithm: str = "HS256"
     jwt_access_token_expire_minutes: int = 1440
+    public_registration_enabled: bool = True
+    bootstrap_admin_token: SecretStr | None = None
 
     api_rate_limit_per_minute: int = 1000
     auth_rate_limit_per_minute: int = 20
@@ -119,6 +121,12 @@ class Settings(BaseSettings):
             return self
 
         self._validate_production_secret("secret_key", self.secret_key, min_length=32)
+        if self.bootstrap_admin_token:
+            self._validate_production_secret(
+                "bootstrap_admin_token",
+                self.bootstrap_admin_token,
+                min_length=32,
+            )
         self._validate_production_secret("aws_access_key_id", self.aws_access_key_id)
         self._validate_production_secret(
             "aws_secret_access_key",

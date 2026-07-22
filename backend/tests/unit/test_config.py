@@ -1,11 +1,11 @@
 import pytest
-from pydantic import ValidationError
+from pydantic import SecretStr, ValidationError
 
 from app.core.config import Settings
 
 
-def production_settings(**overrides: str) -> Settings:
-    values: dict[str, str] = {
+def production_settings(**overrides: object) -> Settings:
+    values: dict[str, object] = {
         "environment": "production",
         "secret_key": "f" * 64,
         "database_url": "postgresql+asyncpg://app:strong-pass@pgbouncer:6432/llmobs",
@@ -29,9 +29,14 @@ def test_development_defaults_remain_valid() -> None:
 
 
 def test_production_settings_accept_safe_values() -> None:
-    settings = production_settings()
+    settings = production_settings(
+        public_registration_enabled=False,
+        bootstrap_admin_token="b" * 64,
+    )
 
     assert settings.environment == "production"
+    assert settings.public_registration_enabled is False
+    assert isinstance(settings.bootstrap_admin_token, SecretStr)
     assert settings.cors_allowed_origins == ["https://dashboard.example.com"]
     assert settings.effective_redis_queue_url == "redis://redis-queue:6379/0"
     assert (
@@ -75,6 +80,11 @@ def test_redis_queue_url_defaults_to_redis_url(monkeypatch: pytest.MonkeyPatch) 
             "migration_database_url",
             "postgresql+asyncpg://owner:replace-with-owner-db-password@postgres:5432/llmobs",
             "migration_database_url",
+        ),
+        (
+            "bootstrap_admin_token",
+            "replace-with-bootstrap-token",
+            "bootstrap_admin_token",
         ),
     ],
 )

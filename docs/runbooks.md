@@ -196,6 +196,8 @@ pulled from a registry; deploy from a reviewed commit or release tag.
 | `REDIS_QUEUE_URL` | Durable Taskiq queue/result URL | Use `redis://redis-queue:6379/0` in compose. This Redis must use persistent storage and `noeviction`; if omitted, Taskiq falls back to `REDIS_URL`. |
 | `JWT_ALGORITHM` | JWT algorithm | Default `HS256`. |
 | `JWT_ACCESS_TOKEN_EXPIRE_MINUTES` | Login token lifetime | Default `1440`. |
+| `PUBLIC_REGISTRATION_ENABLED` | Public registration switch | Use `false` in production to close `/v1/auth/register` after first-admin bootstrap. |
+| `BOOTSTRAP_ADMIN_TOKEN` | First-admin bootstrap token | Set a random 32+ character value before the first production registration when public registration is disabled. Remove or rotate after bootstrap. |
 | `API_RATE_LIMIT_PER_MINUTE` | API rate limit | Tune per deployment. |
 | `AUTH_RATE_LIMIT_PER_MINUTE` | Login/register rate limit | Default `20` per endpoint/IP. |
 | `AUTH_RATE_LIMIT_WINDOW_SECONDS` | Login/register rate window | Default `60`. |
@@ -443,6 +445,19 @@ curl -X POST http://localhost:8000/v1/auth/register \
   -H "Content-Type: application/json" \
   -d '{"email":"admin@example.com","password":"change-me-now","org_name":"My Org"}'
 ```
+
+For production with public registration disabled, include the bootstrap token:
+
+```bash
+curl -X POST http://localhost:8000/v1/auth/register \
+  -H "Content-Type: application/json" \
+  -d '{"email":"admin@example.com","password":"change-me-now","org_name":"My Org","bootstrap_token":"YOUR_BOOTSTRAP_ADMIN_TOKEN"}'
+```
+
+Expected result: the first request creates the organization admin, default
+project and one-time project API key. Later registration attempts return `403`
+while `PUBLIC_REGISTRATION_ENABLED=false`; create additional users through
+admin invites.
 
 Save the one-time project API key from the response. Send one SDK smoke span:
 
