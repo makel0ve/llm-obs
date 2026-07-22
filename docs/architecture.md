@@ -81,7 +81,10 @@ MinIO/S3 stores LLM input/output payload objects when enabled. Project settings
 control payload mode, maximum payload size and comma-separated field names to
 redact before object storage. PostgreSQL span rows store only payload object
 keys plus non-sensitive storage status metadata such as omitted, oversized or
-storage-failed.
+storage-failed. Span metadata stored in PostgreSQL is limited to an allowlist
+of low-risk technical fields; prompts, provider system instructions,
+authorization-like fields and arbitrary unknown metadata are not stored as
+ordinary span metadata.
 
 Redis storage is split by durability requirement. `REDIS_URL` is the cache and
 coordination Redis for rate limits, short-lived caches, batch status and the
