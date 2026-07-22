@@ -2,7 +2,8 @@
 
 This document describes the current telemetry delivery behavior. It is an
 operator contract, not a promise of stronger semantics than the implementation
-provides.
+provides. Initial self-hosted pilot SLOs for availability, lag and loss are
+defined in [platform-slos.md](platform-slos.md).
 
 ## End-To-End Path
 
@@ -97,3 +98,5 @@ Use this checklist when validating delivery after deploys or incidents:
   `FAILED` `span.inserted` rows and check Redis health.
 - If traces are stored but totals look stale, rerun or inspect trace aggregate
   work before treating raw telemetry as lost.
+- Use [platform-slos.md](platform-slos.md) to map delivery symptoms to the
+  current SLI signals, pilot thresholds and operational response.
