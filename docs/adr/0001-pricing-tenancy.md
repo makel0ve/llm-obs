@@ -12,10 +12,11 @@ deferred to a dedicated migration block.
 `model_pricing` is currently a global table. It has no `org_id`, and uniqueness
 is scoped only by `(provider, model, valid_from)`.
 
-The dashboard exposes Pricing under organization admin settings, and
-`/v1/pricing` currently requires the organization `admin` role. Because the
-underlying catalog is global, any organization admin can create, update or end
-prices used by every organization.
+The dashboard exposes Pricing under organization admin settings, while the
+backend `/v1/pricing` API requires the separate `is_platform_admin` capability
+on the current user row. Because the underlying catalog is global, this
+capability is required to create, update or end prices used by every
+organization.
 
 Cost calculation happens during worker span processing. Workers receive only
 the project id, then call `CostService` with provider, model, token counts and
@@ -59,7 +60,8 @@ customer-specific prices.
 
 Implement in a later schema/API block:
 
-1. Add platform-admin capability separate from `users.role`.
+1. Add platform-admin capability separate from `users.role`. Done for the
+   current global pricing API through `users.is_platform_admin`.
 2. Add nullable `org_id` to `model_pricing`.
 3. Change uniqueness to include ownership:
    `(org_id, provider, model, valid_from)` for org overrides and a distinct
@@ -79,9 +81,9 @@ Implement in a later schema/API block:
 
 ## Current Compatibility
 
-Until the migration is implemented, the current API remains global and guarded
-only by organization `admin`. Operators should treat pricing management as a
-trusted single-organization or trusted-admin feature.
+Until org-scoped overrides are implemented, the current API remains global and
+guarded by `users.is_platform_admin`. Operators should assign this capability
+only to trusted platform operators.
 
 Existing pricing rows should remain valid as global defaults after migration.
 Existing cost data stored on spans must not be recalculated retroactively.

@@ -351,10 +351,12 @@ localhost CORS origins, empty secrets, default MinIO credentials and unedited
 
 ## Model Pricing
 
-After deployment, add pricing for your models so cost tracking works. Admin
-users can manage prices in the dashboard Pricing page. Pricing records are
-historical: adding a new price for the same provider/model closes the previous
-active interval at the new `valid_from` timestamp.
+After deployment, add pricing for your models so cost tracking works. Pricing
+records are global platform defaults and require a user with
+`users.is_platform_admin=true`; ordinary organization admins cannot change the
+global catalog. Pricing records are historical: adding a new price for the same
+provider/model closes the previous active interval at the new `valid_from`
+timestamp.
 Cost calculation cache keys include the span timestamp used for the historical
 lookup, and pricing edits clear cached entries for that provider/model.
 
@@ -373,6 +375,12 @@ curl -X POST http://localhost:8000/v1/pricing \
     "input_cost_per_1k_tokens": 0.00015,
     "output_cost_per_1k_tokens": 0.0006
   }'
+```
+
+Assign the first platform admin with an operator SQL step after bootstrap:
+
+```sql
+UPDATE users SET is_platform_admin = true WHERE email = 'admin@example.com';
 ```
 
 ---
