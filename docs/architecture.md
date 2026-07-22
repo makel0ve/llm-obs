@@ -65,10 +65,12 @@ have spans.
    worker persistence and error-rate metrics treat the span as failed.
 6. Workers process spans asynchronously, write spans and trace rows in one DB
    transaction, and create outbox events for live span delivery.
-7. Workers update trace aggregates and evaluate alert rules after the span
-   transaction commits.
-8. Payloads are stored in MinIO/S3 only when project payload settings allow it.
-9. The dashboard reads metrics, traces and analytics from the query API.
+7. Workers update trace aggregates after the span transaction commits and run
+   per-span anomaly checks for the processed batch.
+8. The scheduler evaluates windowed alert rules for latency, error rate and
+   cost on a periodic cadence.
+9. Payloads are stored in MinIO/S3 only when project payload settings allow it.
+10. The dashboard reads metrics, traces and analytics from the query API.
 
 Accepted ingest requests return a `batch_id`. Processing can still fail later,
 so operational checks should include the batch status API, failed-task API and
@@ -109,9 +111,10 @@ persistence and `noeviction`.
 Span live-stream delivery uses PostgreSQL transactional outbox rows. The worker
 writes `span.inserted` outbox events in the same transaction as span/trace
 storage; `deliver_span_outbox_events` publishes them to Redis and retries
-pending events on a schedule. Trace aggregate and alert evaluation enqueueing
-are still post-commit side effects and can lag or fail independently of raw span
-storage.
+pending events on a schedule. Trace aggregate enqueueing and batch-scoped
+anomaly checks are still post-commit side effects and can lag or fail
+independently of raw span storage. Windowed alert rules are evaluated by the
+scheduler instead of after every ingest batch.
 
 ## Authentication And Roles
 
