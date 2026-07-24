@@ -319,7 +319,9 @@ Compose. Route the dashboard host to frontend port `3000`, route API and health
 paths to backend port `8000`, and set `CORS_ALLOWED_ORIGINS` to the public
 dashboard origin. Production Compose binds these host ports to `127.0.0.1` by
 default; expose `/ready`, `/worker-health` and `/metrics` only to trusted
-operators or monitoring systems.
+operators or monitoring systems. Keep the reverse proxy request body limit in
+sync with `MAX_REQUEST_BODY_BYTES`; the bundled frontend nginx config uses
+`client_max_body_size 10m`.
 
 ---
 
@@ -341,6 +343,7 @@ localhost CORS origins, empty secrets, default MinIO credentials and unedited
 | `MIGRATION_DATABASE_URL` | Owner/admin PostgreSQL connection string used by Alembic migrations | recommended |
 | `REDIS_URL` | Redis cache/pubsub/rate-limit connection string | ✅ |
 | `REDIS_QUEUE_URL` | Durable Redis connection string for Taskiq queues and task results | ✅ |
+| `MAX_REQUEST_BODY_BYTES` | Backend request body limit; default 10 MiB | recommended |
 | `AWS_ACCESS_KEY_ID` | MinIO or S3 access key | ✅ |
 | `AWS_SECRET_ACCESS_KEY` | MinIO or S3 secret key | ✅ |
 | `SMTP_HOST` | SMTP server for email alerts | optional |

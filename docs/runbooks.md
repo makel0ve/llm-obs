@@ -201,6 +201,7 @@ pulled from a registry; deploy from a reviewed commit or release tag.
 | `API_RATE_LIMIT_PER_MINUTE` | API rate limit | Tune per deployment. |
 | `AUTH_RATE_LIMIT_PER_MINUTE` | Login/register rate limit | Default `20` per endpoint/IP. |
 | `AUTH_RATE_LIMIT_WINDOW_SECONDS` | Login/register rate window | Default `60`. |
+| `MAX_REQUEST_BODY_BYTES` | Backend HTTP request body limit | Default `10485760` bytes. Keep reverse proxy limits at the same 10 MiB boundary or lower. |
 | `CORS_ALLOWED_ORIGINS` | Dashboard origins | Set the public dashboard origin, comma-separated if multiple. |
 | `S3_BUCKET` | Payload bucket | Default `llm-obs-payloads`. |
 | `S3_ENDPOINT_URL` | S3-compatible endpoint | Use `http://minio:9000` for compose MinIO. |
@@ -477,6 +478,12 @@ Those external checks should return `403`, `404` or another proxy-level denial
 unless the caller is on a trusted operator or monitoring path. The backend still
 binds these endpoints on localhost for Compose healthchecks and local
 monitoring.
+
+Backend request bodies are limited by `MAX_REQUEST_BODY_BYTES` and rejected with
+HTTP `413` even when the client streams a request without `Content-Length`. The
+bundled frontend nginx reverse proxy sets `client_max_body_size 10m`; keep any
+external proxy at that limit or lower so oversized ingest/OTLP requests fail
+before they consume backend memory.
 
 Create or verify a login through the dashboard at <http://localhost:3000>.
 
