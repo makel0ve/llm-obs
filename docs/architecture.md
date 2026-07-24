@@ -57,6 +57,10 @@ have spans.
    `gen_ai.usage.input_tokens` and `gen_ai.usage.output_tokens`; unknown
    conventions fall back to `custom`, `unknown` and zero token counts.
 4. The API authenticates the key, rate-limits the project and enqueues the batch.
+   Request bodies above `MAX_REQUEST_BODY_BYTES` are rejected with HTTP 413
+   while streaming the body, so chunked requests without `Content-Length` do not
+   bypass the backend limit. The bundled nginx reverse proxy uses the same
+   10 MiB boundary with `client_max_body_size 10m`.
 5. OTLP ingest accepts native 16/32 character hex span and trace IDs by mapping
    them deterministically to internal UUIDs, while malformed spans are reported
    through OTLP `partialSuccess.rejectedSpans`. A fully malformed OTLP payload

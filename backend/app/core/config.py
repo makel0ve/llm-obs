@@ -60,6 +60,7 @@ class Settings(BaseSettings):
     api_rate_limit_per_minute: int = 1000
     auth_rate_limit_per_minute: int = 20
     auth_rate_limit_window_seconds: int = 60
+    max_request_body_bytes: int = 10 * 1024 * 1024
     cors_allowed_origins: str | list[str] = "http://localhost:3000"
 
     s3_bucket: str = "llm-obs-payloads"

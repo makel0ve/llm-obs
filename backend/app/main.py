@@ -1,12 +1,11 @@
-from collections.abc import AsyncIterator, Awaitable, Callable
+import json
+from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
 import structlog
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from starlette.middleware.base import BaseHTTPMiddleware
-from starlette.requests import Request
-from starlette.responses import Response
+from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from app.api.v1 import (
     alerts,
@@ -65,24 +64,86 @@ app.add_middleware(
 )
 
 
-class PayloadSizeLimitMiddleware(BaseHTTPMiddleware):  # type: ignore[misc]
-    MAX_BYTES = 10 * 1024 * 1024
+class PayloadTooLargeError(Exception):
+    pass
 
-    async def dispatch(
+
+class PayloadSizeLimitMiddleware:
+    def __init__(
         self,
-        request: Request,
-        call_next: Callable[[Request], Awaitable[Response]],
-    ) -> Response:
-        cl = request.headers.get("content-length")
+        app: ASGIApp,
+        *,
+        max_bytes: int = settings.max_request_body_bytes,
+    ) -> None:
+        self.app = app
+        self.max_bytes = max_bytes
 
-        if cl and int(cl) > self.MAX_BYTES:
-            return Response(
-                content='{"error": "payload_too_large", "max_bytes": 10485760}',
-                status_code=413,
-                media_type="application/json",
-            )
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
 
-        return await call_next(request)
+        content_length = self._content_length(scope)
+        if content_length is not None and content_length > self.max_bytes:
+            await self._send_too_large(send)
+            return
+
+        received_bytes = 0
+        response_started = False
+
+        async def limited_receive() -> Message:
+            nonlocal received_bytes
+
+            message = await receive()
+            if message["type"] == "http.request":
+                body = message.get("body", b"")
+                received_bytes += len(body)
+                if received_bytes > self.max_bytes:
+                    raise PayloadTooLargeError
+
+            return message
+
+        async def tracking_send(message: Message) -> None:
+            nonlocal response_started
+
+            if message["type"] == "http.response.start":
+                response_started = True
+            await send(message)
+
+        try:
+            await self.app(scope, limited_receive, tracking_send)
+        except PayloadTooLargeError:
+            if response_started:
+                raise
+            await self._send_too_large(send)
+
+    @staticmethod
+    def _content_length(scope: Scope) -> int | None:
+        for name, value in scope.get("headers", []):
+            if name == b"content-length":
+                try:
+                    return int(value)
+                except ValueError:
+                    return None
+        return None
+
+    async def _send_too_large(self, send: Send) -> None:
+        body = json.dumps(
+            {"error": "payload_too_large", "max_bytes": self.max_bytes},
+            separators=(",", ":"),
+        ).encode("utf-8")
+        headers: list[tuple[bytes, bytes]] = [
+            (b"content-type", b"application/json"),
+            (b"content-length", str(len(body)).encode("ascii")),
+        ]
+        await send(
+            {
+                "type": "http.response.start",
+                "status": 413,
+                "headers": headers,
+            }
+        )
+        await send({"type": "http.response.body", "body": body})
 
 
 app.add_middleware(PayloadSizeLimitMiddleware)

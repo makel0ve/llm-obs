@@ -89,6 +89,15 @@ Redis are critical. S3/MinIO payload storage is non-critical and reports `ok`,
 `missing` or `degraded`; a degraded S3 check does not block metadata ingest,
 but new payload writes record `payload_status=storage_failed`.
 
+## Payload Too Large
+
+Ingest and OTLP requests larger than `MAX_REQUEST_BODY_BYTES` return HTTP `413`
+with `{"error":"payload_too_large","max_bytes":10485760}`. The backend enforces
+the limit while streaming the body, so clients cannot bypass it by omitting
+`Content-Length`. If nginx or another reverse proxy is in front of the backend,
+keep its body limit in sync; the bundled nginx config uses
+`client_max_body_size 10m`.
+
 ## API Key Problems
 
 - Legacy project keys and managed API keys are shown only once.

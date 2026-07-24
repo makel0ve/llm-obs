@@ -68,6 +68,11 @@ Duplicate requests without an `idempotency_key` can enqueue duplicate worker
 tasks. Duplicate span IDs are not inserted twice, but the batch ids and status
 records are separate.
 
+Requests larger than `MAX_REQUEST_BODY_BYTES` are rejected before ingest
+acceptance with HTTP `413`. The backend enforces this while reading streamed
+bodies as well as through `Content-Length`, so oversized chunked requests do not
+become accepted batches.
+
 Worker retry can reprocess the same batch. Span rows use conflict handling, so
 already stored spans are skipped and batch `processed` counts only newly
 inserted rows. This protects storage from duplicate rows, but post-commit
