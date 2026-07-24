@@ -1,6 +1,27 @@
 # CHANGELOG
 
 
+## v0.50.1 (2026-07-24)
+
+### Bug Fixes
+
+- Configure sdk ruff import sorting
+  ([`9aa6df4`](https://github.com/makel0ve/llm-obs/commit/9aa6df4a7edd1697c9ef4103fb90c372b8d460e7))
+
+- Satisfy sdk ruff checks
+  ([`531e634`](https://github.com/makel0ve/llm-obs/commit/531e63400066af77079392cbce5a201dcb88c7f7))
+
+### Chores
+
+- Trigger ci for release sync
+  ([`5366ede`](https://github.com/makel0ve/llm-obs/commit/5366ede7ea9cc231cfdddcc7e503736528e6fcda))
+
+### Documentation
+
+- Define platform slos
+  ([`7cd80de`](https://github.com/makel0ve/llm-obs/commit/7cd80de38a1844f3e06e3ae9e151751d1f8b9468))
+
+
 ## v0.50.0 (2026-07-22)
 
 ### Chores
