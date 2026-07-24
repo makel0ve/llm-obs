@@ -16,6 +16,12 @@ from app.workers.process_span import process_span_batch
 router = APIRouter(prefix="/v1/failed-tasks", tags=["failed-tasks"])
 
 
+def _is_process_span_batch_task(task_name: str) -> bool:
+    return task_name == "process_span_batch" or task_name.endswith(
+        ":process_span_batch"
+    )
+
+
 def _serialize_failed_task(row) -> dict:
     task = dict(row)
     if task.get("project_id") is not None:
@@ -120,7 +126,7 @@ async def retry_failed_task(task_id: int, user=Depends(get_current_user)):
             raise HTTPException(404, "Failed task not found")
         if task["resolved"]:
             raise HTTPException(409, "Failed task is already resolved")
-        if task["task_name"] != "process_span_batch":
+        if not _is_process_span_batch_task(str(task["task_name"])):
             raise HTTPException(409, "Failed task type cannot be retried")
 
         try:

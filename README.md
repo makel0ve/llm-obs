@@ -286,6 +286,12 @@ Failed-task records store task metadata, batch/project identifiers, span counts,
 error text and attempt count. They do not store full span payloads, prompts,
 outputs or provider credentials.
 
+Retry is available only for failed-task records that still contain a complete
+safe `process_span_batch` payload. Standard DLQ records are sanitized summaries
+and usually show only `batch_id`, `project_id` and `span_count`; inspect and
+resolve those after deciding whether the original client should resend
+telemetry.
+
 ---
 
 ## Pipeline Metrics
