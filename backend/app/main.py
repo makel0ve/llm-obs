@@ -22,8 +22,9 @@ from app.api.v1 import (
     users,
 )
 from app.core.config import settings
+from app.core.db import close_db_engines
 from app.core.metrics import setup_metrics
-from app.core.redis import get_redis
+from app.core.redis import close_redis, get_redis
 from app.core.security_headers import SecurityHeadersMiddleware
 from app.services.pubsub import pubsub_manager
 from app.services.storage import ensure_payload_bucket
@@ -42,7 +43,15 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         yield
 
     finally:
-        await pubsub_manager.stop()
+        for name, close in [
+            ("pubsub", pubsub_manager.stop),
+            ("redis", close_redis),
+            ("database", close_db_engines),
+        ]:
+            try:
+                await close()
+            except Exception as exc:
+                log.error("lifespan_shutdown_step_failed", step=name, error=str(exc))
 
 
 app = FastAPI(

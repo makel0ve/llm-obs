@@ -113,6 +113,12 @@ live span stream. `REDIS_QUEUE_URL` is the durable Taskiq queue/result Redis for
 accepted ingest work, scheduled jobs and the DLQ; Compose configures it with AOF
 persistence and `noeviction`.
 
+API shutdown stops live Pub/Sub and closes Redis and SQLAlchemy pools. Compose
+gives the backend and worker containers 45 seconds to stop; Taskiq workers wait
+up to 30 seconds for in-flight tasks before broker shutdown completes. Queued
+work remains in durable `redis-queue`; permanently failed tasks continue through
+the retry/DLQ path.
+
 Span live-stream delivery uses PostgreSQL transactional outbox rows. The worker
 writes `span.inserted` outbox events in the same transaction as span/trace
 storage; `deliver_span_outbox_events` publishes them to Redis and retries

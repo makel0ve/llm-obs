@@ -379,6 +379,31 @@ rate-limit counters, batch status and live pub/sub. `redis-queue` handles
 Taskiq queues, task results and the DLQ with AOF persistence and `noeviction`,
 so accepted ingest work is not subject to cache eviction.
 
+## Graceful Shutdown
+
+Compose sends `SIGTERM` before forcefully stopping containers. The backend API
+has a 45 second `stop_grace_period`; during FastAPI shutdown it stops live
+Pub/Sub and closes Redis and SQLAlchemy connection pools. Production Gunicorn
+uses `--graceful-timeout 30 --timeout 60`, so in-flight HTTP requests get a
+bounded drain window before workers are terminated.
+
+Taskiq workers also have a 45 second `stop_grace_period`. The worker command
+uses `--wait-tasks-timeout 30` and `--shutdown-timeout 35`, so tasks already
+being executed can finish inside the drain window. Accepted tasks that are
+still queued in `redis-queue` remain durable. Tasks that fail or exceed retry
+policy continue through the existing retry/DLQ flow; this block does not change
+task idempotency or replay semantics.
+
+To smoke test shutdown without deleting volumes:
+
+```bash
+docker compose --env-file infra/.env -f infra/docker-compose.prod.yml up -d backend worker scheduler
+docker compose --env-file infra/.env -f infra/docker-compose.prod.yml stop worker
+docker compose --env-file infra/.env -f infra/docker-compose.prod.yml logs --tail=100 worker
+docker compose --env-file infra/.env -f infra/docker-compose.prod.yml up -d worker
+curl -f http://localhost:8000/worker-health
+```
+
 Telemetry delivery is intentionally split between committed storage and
 post-commit side effects. Raw spans and trace rows are committed in PostgreSQL
 before live Pub/Sub, trace aggregate enqueueing and batch anomaly checks
