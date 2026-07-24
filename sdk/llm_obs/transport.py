@@ -7,7 +7,6 @@ import structlog
 
 from llm_obs.version import user_agent
 
-
 log = structlog.get_logger()
 
 

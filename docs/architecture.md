@@ -158,9 +158,11 @@ The dashboard currently uses typed frontend helpers for:
 ## Operations
 
 Use `/health` for backend liveness and `/ready` for dependency readiness.
-Prometheus metrics are exposed at `/metrics`. Worker and scheduler liveness is
-reported by `/worker-health`, which reads the Redis timestamp written by the
-scheduled worker heartbeat task. Initial ingest, lag, loss and query SLOs are
-defined in [platform-slos.md](platform-slos.md). Runbooks for local development,
+`/ready` reports sanitized status and criticality for PostgreSQL, cache Redis,
+queue Redis and S3 payload storage. Prometheus metrics are exposed at
+`/metrics`. Worker and scheduler liveness is reported by `/worker-health`,
+which reads the Redis timestamp written by the scheduled worker heartbeat task.
+Initial ingest, lag, loss and query SLOs are defined in
+[platform-slos.md](platform-slos.md). Runbooks for local development,
 production Compose, migrations, rollback and smoke checks are in
 [runbooks.md](runbooks.md).

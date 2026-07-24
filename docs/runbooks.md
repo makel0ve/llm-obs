@@ -364,10 +364,12 @@ curl -f http://localhost:8000/ready
 curl -f http://localhost:8000/worker-health
 ```
 
-`/health` only proves the backend process can serve HTTP. `/ready` verifies
-Postgres and Redis as critical dependencies and reports S3 payload storage as a
-non-critical dependency. If S3 is `degraded`, metadata ingest can still succeed
-and affected spans record `payload_status=storage_failed`.
+`/health` only proves the backend process can serve HTTP. `/ready` returns a
+sanitized dependency map with `status` and `critical` for each dependency.
+Postgres, `redis_cache` and `redis_queue` are critical. S3 payload storage is
+non-critical and can report `ok`, `missing` or `degraded`; if S3 is degraded,
+metadata ingest can still succeed and affected spans record
+`payload_status=storage_failed`.
 `/worker-health` verifies that the scheduler enqueued the heartbeat task and a
 worker wrote it to Redis.
 

@@ -47,10 +47,14 @@ async def patch_app_engine(request):
 @pytest.fixture(autouse=True, scope="session")
 async def reset_redis():
     redis_module._redis_client = None
+    redis_module._redis_queue_client = None
     yield
     if redis_module._redis_client is not None:
         await redis_module._redis_client.aclose()
         redis_module._redis_client = None
+    if redis_module._redis_queue_client is not None:
+        await redis_module._redis_queue_client.aclose()
+        redis_module._redis_queue_client = None
 
 
 @pytest.fixture
