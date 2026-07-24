@@ -98,6 +98,21 @@ the limit while streaming the body, so clients cannot bypass it by omitting
 keep its body limit in sync; the bundled nginx config uses
 `client_max_body_size 10m`.
 
+## Shutdown Or Restart Issues
+
+If deploys interrupt ingestion, check whether Compose is giving the worker its
+full graceful stop window:
+
+```bash
+docker compose --env-file infra/.env -f infra/docker-compose.prod.yml logs --tail=100 worker
+docker compose --env-file infra/.env -f infra/docker-compose.prod.yml ps
+```
+
+The worker should receive `SIGTERM` and get up to 30 seconds to finish in-flight
+tasks before the 45 second Compose grace period ends. Queued tasks remain in
+`redis-queue`; repeated task failures should be inspected through the failed
+tasks API and DLQ runbook instead of replayed blindly.
+
 ## API Key Problems
 
 - Legacy project keys and managed API keys are shown only once.
