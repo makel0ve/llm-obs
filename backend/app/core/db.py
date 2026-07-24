@@ -59,3 +59,8 @@ async def get_maintenance_db() -> AsyncGenerator[AsyncSession, None]:
         except Exception:
             await session.rollback()
             raise
+
+
+async def close_db_engines() -> None:
+    await engine.dispose()
+    await maintenance_engine.dispose()

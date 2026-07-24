@@ -67,6 +67,7 @@ services:
       - ../backend/seed:/app/seed
       - ../backend/tests:/app/tests
     command: uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+    stop_grace_period: 45s
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/ready"]
       interval: 30s
@@ -78,7 +79,8 @@ services:
     build:
       context: ../backend
       target: development
-    command: taskiq worker app.core.taskiq:broker app.workers.process_span app.workers.maintenance app.workers.dlq app.workers.health
+    command: taskiq worker --shutdown-timeout 35 --wait-tasks-timeout 30 app.core.taskiq:broker app.workers.process_span app.workers.maintenance app.workers.dlq app.workers.health
+    stop_grace_period: 45s
     depends_on:
       postgres:
         condition: service_healthy
@@ -107,6 +109,7 @@ services:
       context: ../backend
       target: development
     command: taskiq scheduler app.core.taskiq:scheduler app.workers.maintenance app.workers.health
+    stop_grace_period: 20s
     depends_on:
       postgres:
         condition: service_healthy
