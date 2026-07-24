@@ -1,5 +1,24 @@
 # CI Security Controls
 
+## Runtime database role RLS
+
+The backend CI `test` job runs database migrations with
+`MIGRATION_DATABASE_URL` as the PostgreSQL owner role and runs application tests
+with `DATABASE_URL` as the non-owner runtime role. The runtime role is created
+by migrations from `POSTGRES_APP_USER` and `POSTGRES_APP_PASSWORD` and must be
+`NOSUPERUSER NOBYPASSRLS`.
+
+CI has a dedicated invariant gate:
+
+```bash
+cd backend && RUN_RUNTIME_RLS_TESTS=1 pytest tests/integration/test_runtime_role_rls.py -q
+```
+
+That test proves the runtime role cannot read trace/span rows without
+`app.current_project_id`, can see only the selected project after the project
+context is set, and that parent plus child trace/span partitions keep
+`ENABLE/FORCE ROW LEVEL SECURITY`.
+
 ## Secret scanning
 
 The `security` workflow job installs `detect-secrets==1.5.0` and runs:
