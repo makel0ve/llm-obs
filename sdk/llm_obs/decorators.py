@@ -4,11 +4,11 @@ import time
 import traceback as tb
 import uuid
 import warnings
+from collections.abc import Callable
 from contextvars import ContextVar, Token
-from datetime import datetime, UTC
+from datetime import UTC, datetime
 from types import TracebackType
-from typing import Callable, TypeVar, ParamSpec, Any, Self
-
+from typing import Any, ParamSpec, Self, TypeVar
 
 P = ParamSpec("P")
 T = TypeVar("T")

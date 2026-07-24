@@ -1,12 +1,15 @@
 import time
 import uuid
-from datetime import datetime, UTC
+from datetime import UTC, datetime
 from typing import Any
+
+import structlog
 
 from llm_obs.decorators import _current_span_id, _current_trace_id
 from llm_obs.tracer import SpanData
 
 _PATCHED_ATTR = "__llm_obs_openai_patched__"
+log = structlog.get_logger()
 
 
 def _get_value(obj, name, default=None):
@@ -134,8 +137,8 @@ class _TracedOpenAIStream:
                 )
             )
 
-        except Exception:
-            pass
+        except Exception as exc:  # noqa: BLE001
+            log.debug("llm_obs_openai_stream_record_failed", error=str(exc))
 
 
 def patch_openai(client):
@@ -209,8 +212,8 @@ def patch_openai(client):
                         )
                     )
 
-                except Exception:
-                    pass
+                except Exception as exc:  # noqa: BLE001
+                    log.debug("llm_obs_openai_record_failed", error=str(exc))
 
     setattr(traced, _PATCHED_ATTR, True)
     client.chat.completions.create = traced

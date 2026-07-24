@@ -1,7 +1,6 @@
 from importlib.metadata import PackageNotFoundError
 from importlib.metadata import version as metadata_version
 
-
 PACKAGE_NAME = "llm-obs-sdk"
 UNKNOWN_VERSION = "0.0.0+unknown"
 

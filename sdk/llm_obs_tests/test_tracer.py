@@ -8,9 +8,9 @@ import pytest_asyncio
 import respx
 
 import llm_obs
+import llm_obs.version as version_module
 from llm_obs.tracer import FlushBatch, LLMTracer, SpanData
 from llm_obs.transport import HttpTransport
-import llm_obs.version as version_module
 
 
 @pytest_asyncio.fixture(autouse=True)
