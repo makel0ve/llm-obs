@@ -7,12 +7,18 @@ from sqlalchemy import text
 
 from app.core.config import settings
 from app.core.db import get_db
-from app.core.redis import get_redis
+from app.core.redis import get_redis, get_redis_queue
 from app.services.storage import check_payload_bucket
 from app.workers.health import WORKER_HEARTBEAT_KEY
 
 router = APIRouter(tags=["health"])
 log = structlog.get_logger()
+
+DependencyCheck = dict[str, str | bool]
+
+
+def _dependency(status: str, *, critical: bool) -> DependencyCheck:
+    return {"status": status, "critical": critical}
 
 
 @router.get("/health")
@@ -22,36 +28,46 @@ async def liveness() -> dict[str, str]:
 
 @router.get("/ready")
 async def readiness() -> dict[str, Any]:
-    checks: dict[str, str] = {}
+    checks: dict[str, DependencyCheck] = {}
     ok = True
 
     try:
         async with get_db() as db:
             await db.execute(text("SELECT 1"))
 
-        checks["postgres"] = "ok"
+        checks["postgres"] = _dependency("ok", critical=True)
 
     except Exception as e:
-        checks["postgres"] = "error"
+        checks["postgres"] = _dependency("error", critical=True)
         ok = False
         log.error("readiness_postgres_failed", error=str(e))
 
     try:
-        checks["s3"] = await check_payload_bucket()
+        checks["s3"] = _dependency(await check_payload_bucket(), critical=False)
 
     except Exception as e:
-        checks["s3"] = "degraded"
+        checks["s3"] = _dependency("degraded", critical=False)
         log.error("readiness_s3_failed", error=str(e))
 
     try:
         redis = await get_redis()
         await redis.ping()
-        checks["redis"] = "ok"
+        checks["redis_cache"] = _dependency("ok", critical=True)
 
     except Exception as e:
-        checks["redis"] = "error"
+        checks["redis_cache"] = _dependency("error", critical=True)
         ok = False
-        log.error("readiness_redis_failed", error=str(e))
+        log.error("readiness_redis_cache_failed", error=str(e))
+
+    try:
+        redis_queue = await get_redis_queue()
+        await redis_queue.ping()
+        checks["redis_queue"] = _dependency("ok", critical=True)
+
+    except Exception as e:
+        checks["redis_queue"] = _dependency("error", critical=True)
+        ok = False
+        log.error("readiness_redis_queue_failed", error=str(e))
 
     if not ok:
         raise HTTPException(status_code=503, detail=checks)
