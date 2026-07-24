@@ -83,9 +83,11 @@ Use `/ready` to check dependencies:
 curl http://localhost:8000/ready
 ```
 
-`/ready` treats PostgreSQL and Redis as critical. S3/MinIO payload storage is
-reported as `ok`, `missing` or `degraded`; a degraded S3 check does not block
-metadata ingest, but new payload writes record `payload_status=storage_failed`.
+`/ready` returns sanitized `status` and `critical` fields for PostgreSQL,
+`redis_cache`, `redis_queue` and S3/MinIO. PostgreSQL, cache Redis and queue
+Redis are critical. S3/MinIO payload storage is non-critical and reports `ok`,
+`missing` or `degraded`; a degraded S3 check does not block metadata ingest,
+but new payload writes record `payload_status=storage_failed`.
 
 ## API Key Problems
 

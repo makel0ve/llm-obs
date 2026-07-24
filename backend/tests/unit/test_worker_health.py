@@ -16,8 +16,9 @@ def patch_app_engine() -> Iterator[None]:
 
 
 class FakeRedis:
-    def __init__(self, value: str | None = None) -> None:
+    def __init__(self, value: str | None = None, *, fail_ping: bool = False) -> None:
         self.value = value
+        self.fail_ping = fail_ping
         self.set_calls: list[tuple[str, str, int | None]] = []
 
     async def get(self, key: str) -> str | None:
@@ -29,6 +30,8 @@ class FakeRedis:
         self.value = value
 
     async def ping(self) -> bool:
+        if self.fail_ping:
+            raise RuntimeError("redis password=secret host=redis.internal")
         return True
 
 
@@ -69,27 +72,37 @@ async def test_record_worker_heartbeat_writes_redis_key(
 async def test_readiness_returns_sanitized_dependency_status(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    redis = FakeRedis()
+    redis_cache = FakeRedis()
+    redis_queue = FakeRedis()
 
     @asynccontextmanager
     async def fake_get_db() -> AsyncIterator[FakeDb]:
         yield FakeDb()
 
     async def fake_get_redis() -> FakeRedis:
-        return redis
+        return redis_cache
+
+    async def fake_get_redis_queue() -> FakeRedis:
+        return redis_queue
 
     async def fake_check_payload_bucket() -> str:
         return "ok"
 
     monkeypatch.setattr(health_api, "get_db", fake_get_db)
     monkeypatch.setattr(health_api, "get_redis", fake_get_redis)
+    monkeypatch.setattr(health_api, "get_redis_queue", fake_get_redis_queue)
     monkeypatch.setattr(health_api, "check_payload_bucket", fake_check_payload_bucket)
 
     response = await health_api.readiness()
 
     assert response == {
         "status": "ready",
-        "checks": {"postgres": "ok", "s3": "ok", "redis": "ok"},
+        "checks": {
+            "postgres": {"status": "ok", "critical": True},
+            "s3": {"status": "ok", "critical": False},
+            "redis_cache": {"status": "ok", "critical": True},
+            "redis_queue": {"status": "ok", "critical": True},
+        },
     }
 
 
@@ -97,28 +110,38 @@ async def test_readiness_returns_sanitized_dependency_status(
 async def test_readiness_redacts_dependency_exception_text(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    redis = FakeRedis()
+    redis_cache = FakeRedis()
+    redis_queue = FakeRedis()
 
     @asynccontextmanager
     async def fake_get_db() -> AsyncIterator[FailingDb]:
         yield FailingDb()
 
     async def fake_get_redis() -> FakeRedis:
-        return redis
+        return redis_cache
+
+    async def fake_get_redis_queue() -> FakeRedis:
+        return redis_queue
 
     async def fake_check_payload_bucket() -> str:
         return "ok"
 
     monkeypatch.setattr(health_api, "get_db", fake_get_db)
     monkeypatch.setattr(health_api, "get_redis", fake_get_redis)
+    monkeypatch.setattr(health_api, "get_redis_queue", fake_get_redis_queue)
     monkeypatch.setattr(health_api, "check_payload_bucket", fake_check_payload_bucket)
 
     with pytest.raises(HTTPException) as exc:
         await health_api.readiness()
 
     assert exc.value.status_code == 503
-    detail = cast(dict[str, str], exc.value.detail)
-    assert detail == {"postgres": "error", "s3": "ok", "redis": "ok"}
+    detail = cast(dict[str, dict[str, str | bool]], exc.value.detail)
+    assert detail == {
+        "postgres": {"status": "error", "critical": True},
+        "s3": {"status": "ok", "critical": False},
+        "redis_cache": {"status": "ok", "critical": True},
+        "redis_queue": {"status": "ok", "critical": True},
+    }
     assert "secret" not in str(detail)
     assert "db.internal" not in str(detail)
 
@@ -127,28 +150,78 @@ async def test_readiness_redacts_dependency_exception_text(
 async def test_readiness_keeps_api_ready_when_s3_is_degraded(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    redis = FakeRedis()
+    redis_cache = FakeRedis()
+    redis_queue = FakeRedis()
 
     @asynccontextmanager
     async def fake_get_db() -> AsyncIterator[FakeDb]:
         yield FakeDb()
 
     async def fake_get_redis() -> FakeRedis:
-        return redis
+        return redis_cache
+
+    async def fake_get_redis_queue() -> FakeRedis:
+        return redis_queue
 
     async def fake_check_payload_bucket() -> str:
         return "degraded"
 
     monkeypatch.setattr(health_api, "get_db", fake_get_db)
     monkeypatch.setattr(health_api, "get_redis", fake_get_redis)
+    monkeypatch.setattr(health_api, "get_redis_queue", fake_get_redis_queue)
     monkeypatch.setattr(health_api, "check_payload_bucket", fake_check_payload_bucket)
 
     response = await health_api.readiness()
 
     assert response == {
         "status": "ready",
-        "checks": {"postgres": "ok", "s3": "degraded", "redis": "ok"},
+        "checks": {
+            "postgres": {"status": "ok", "critical": True},
+            "s3": {"status": "degraded", "critical": False},
+            "redis_cache": {"status": "ok", "critical": True},
+            "redis_queue": {"status": "ok", "critical": True},
+        },
     }
+
+
+@pytest.mark.asyncio
+async def test_readiness_fails_when_redis_queue_is_unavailable(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    redis_cache = FakeRedis()
+    redis_queue = FakeRedis(fail_ping=True)
+
+    @asynccontextmanager
+    async def fake_get_db() -> AsyncIterator[FakeDb]:
+        yield FakeDb()
+
+    async def fake_get_redis() -> FakeRedis:
+        return redis_cache
+
+    async def fake_get_redis_queue() -> FakeRedis:
+        return redis_queue
+
+    async def fake_check_payload_bucket() -> str:
+        return "ok"
+
+    monkeypatch.setattr(health_api, "get_db", fake_get_db)
+    monkeypatch.setattr(health_api, "get_redis", fake_get_redis)
+    monkeypatch.setattr(health_api, "get_redis_queue", fake_get_redis_queue)
+    monkeypatch.setattr(health_api, "check_payload_bucket", fake_check_payload_bucket)
+
+    with pytest.raises(HTTPException) as exc:
+        await health_api.readiness()
+
+    assert exc.value.status_code == 503
+    detail = cast(dict[str, dict[str, str | bool]], exc.value.detail)
+    assert detail == {
+        "postgres": {"status": "ok", "critical": True},
+        "s3": {"status": "ok", "critical": False},
+        "redis_cache": {"status": "ok", "critical": True},
+        "redis_queue": {"status": "error", "critical": True},
+    }
+    assert "secret" not in str(detail)
+    assert "redis.internal" not in str(detail)
 
 
 @pytest.mark.asyncio

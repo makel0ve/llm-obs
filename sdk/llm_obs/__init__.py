@@ -2,10 +2,12 @@ import asyncio
 import os
 import threading
 
+from llm_obs.decorators import ManualSpan as ManualSpan
+from llm_obs.decorators import span as span
+from llm_obs.decorators import trace as trace
 from llm_obs.tracer import LLMTracer, SDKDiagnostics
 from llm_obs.transport import TransportDiagnostics
 from llm_obs.version import __version__
-
 
 _tracer_lock = threading.Lock()
 _tracer_instance: LLMTracer | None = None
@@ -122,10 +124,6 @@ def _get_tracer() -> LLMTracer:
 
     return tracer
 
-
-from llm_obs.decorators import ManualSpan as ManualSpan  # noqa: E402
-from llm_obs.decorators import span as span  # noqa: E402
-from llm_obs.decorators import trace as trace  # noqa: E402
 
 __all__ = [
     "LLMTracer",

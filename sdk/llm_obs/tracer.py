@@ -4,7 +4,7 @@ import uuid
 from collections import deque
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, Self
 
 import structlog
 
@@ -130,7 +130,7 @@ class LLMTracer:
             self._atexit_registered = False
         self._closed = True
 
-    async def __aenter__(self) -> "LLMTracer":
+    async def __aenter__(self) -> Self:
         await self.start()
         return self
 
@@ -158,8 +158,8 @@ class LLMTracer:
                 if not sent:
                     break
 
-        except Exception:
-            pass
+        except Exception as exc:  # noqa: BLE001
+            log.debug("llm_obs_sync_flush_on_exit_failed", error=str(exc))
         finally:
             if created_loop and loop is not None:
                 loop.close()
