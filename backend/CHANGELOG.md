@@ -1,6 +1,22 @@
 # CHANGELOG
 
 
+## v0.50.2 (2026-07-24)
+
+### Bug Fixes
+
+- Enforce streamed request body limits
+  ([`f162543`](https://github.com/makel0ve/llm-obs/commit/f16254334ba2c091fc8e75bd5dbe9bb6daf7e413))
+
+### Chores
+
+- Trigger ci for release sync
+  ([`347b773`](https://github.com/makel0ve/llm-obs/commit/347b773ee5869f495ba53266c46872074783f2d5))
+
+- Update secrets baseline
+  ([`133176d`](https://github.com/makel0ve/llm-obs/commit/133176def52e858ece4705425368313d63053b7b))
+
+
 ## v0.50.1 (2026-07-24)
 
 ### Bug Fixes
