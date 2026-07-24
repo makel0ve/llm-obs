@@ -288,6 +288,17 @@ only see project rows after `app.current_project_id` is set. It uses
 `MIGRATION_DATABASE_URL` as the owner/admin connection and leaves the main local
 database untouched.
 
+Run the CI-equivalent runtime-role RLS check locally after migrations:
+
+```bash
+docker compose -f infra/docker-compose.yml exec backend \
+  env RUN_RUNTIME_RLS_TESTS=1 pytest tests/integration/test_runtime_role_rls.py -q
+```
+
+This check uses `MIGRATION_DATABASE_URL` to seed isolated tenant rows and
+`DATABASE_URL` to query as the application runtime role. It should fail if the
+runtime role is the migration owner, a superuser or has `BYPASSRLS`.
+
 Database rollback must be planned per migration. Only use `alembic downgrade`
 after verifying the target migration has a safe downgrade path and after taking
 a database backup. For production incidents, prefer restoring from a known-good

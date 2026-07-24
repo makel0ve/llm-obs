@@ -5,14 +5,21 @@ import pytest
 from httpx import AsyncClient
 from pydantic import SecretStr
 from sqlalchemy import text
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 
 from app.core.config import settings
 
 
-async def clear_bootstrap_state(db_session: AsyncSession) -> None:
-    await db_session.execute(text("TRUNCATE organizations CASCADE"))
-    await db_session.commit()
+async def clear_bootstrap_state() -> None:
+    engine = create_async_engine(
+        settings.effective_migration_database_url.get_secret_value(),
+        connect_args={"timeout": 5},
+    )
+    try:
+        async with engine.begin() as connection:
+            await connection.execute(text("TRUNCATE organizations CASCADE"))
+    finally:
+        await engine.dispose()
 
 
 @pytest.mark.asyncio
@@ -61,10 +68,9 @@ async def test_register_returns_default_project_credentials(
 @pytest.mark.asyncio
 async def test_register_bootstraps_first_admin_when_public_registration_disabled(
     client: AsyncClient,
-    db_session: AsyncSession,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    await clear_bootstrap_state(db_session)
+    await clear_bootstrap_state()
     monkeypatch.setattr(settings, "public_registration_enabled", False)
     monkeypatch.setattr(
         settings,
