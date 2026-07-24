@@ -260,6 +260,45 @@ async def test_retry_failed_task_requeues_retryable_span_batch(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_retry_failed_task_accepts_full_taskiq_task_name(monkeypatch):
+    org_id = str(uuid4())
+    project_id = str(uuid4())
+    spans = [{"span_id": str(uuid4()), "provider": "openai"}]
+    db = FakeDb(
+        retry_row={
+            "id": 42,
+            "task_name": "app.workers.process_span:process_span_batch",
+            "project_id": project_id,
+            "task_args": json.dumps(
+                {"batch_id": "batch-1", "project_id": project_id, "spans": spans}
+            ),
+            "resolved": False,
+        }
+    )
+    enqueued = {}
+
+    class FakeProcessSpanBatch:
+        async def kiq(self, **kwargs):
+            enqueued.update(kwargs)
+
+    @asynccontextmanager
+    async def fake_get_db():
+        yield db
+
+    monkeypatch.setattr(failed_tasks_api, "get_db", fake_get_db)
+    monkeypatch.setattr(failed_tasks_api, "process_span_batch", FakeProcessSpanBatch())
+
+    result = await retry_failed_task(task_id=42, user=_user(org_id=org_id))
+
+    assert result.retried is True
+    assert enqueued == {
+        "batch_id": "batch-1",
+        "project_id": project_id,
+        "spans": spans,
+    }
+
+
+@pytest.mark.asyncio
 async def test_retry_failed_task_rejects_summary_only_task_args(monkeypatch):
     org_id = str(uuid4())
     project_id = str(uuid4())
@@ -286,3 +325,82 @@ async def test_retry_failed_task_rejects_summary_only_task_args(monkeypatch):
 
     assert exc_info.value.status_code == 409
     assert "payload is not available" in exc_info.value.detail
+
+
+@pytest.mark.asyncio
+async def test_dlq_recovery_runbook_smoke_lists_rejects_retry_and_resolves(
+    monkeypatch,
+):
+    org_id = str(uuid4())
+    project_id = str(uuid4())
+    failed_at = datetime.now(UTC)
+    db = FakeDb(
+        rows=[
+            {
+                "id": 42,
+                "task_name": "app.workers.process_span:process_span_batch",
+                "project_id": project_id,
+                "task_args": json.dumps(
+                    {
+                        "batch_id": "batch-1",
+                        "project_id": project_id,
+                        "span_count": 2,
+                    }
+                ),
+                "error": "permanent failure",
+                "attempts": 3,
+                "failed_at": failed_at,
+                "resolved": False,
+            }
+        ],
+        retry_row={
+            "id": 42,
+            "task_name": "app.workers.process_span:process_span_batch",
+            "project_id": project_id,
+            "task_args": json.dumps(
+                {
+                    "batch_id": "batch-1",
+                    "project_id": project_id,
+                    "span_count": 2,
+                }
+            ),
+            "resolved": False,
+        },
+    )
+
+    @asynccontextmanager
+    async def fake_get_db():
+        yield db
+
+    monkeypatch.setattr(failed_tasks_api, "get_db", fake_get_db)
+
+    tasks = await list_failed_tasks(
+        project_id=project_id,
+        limit=100,
+        user=_user(org_id=org_id),
+    )
+    assert tasks == [
+        {
+            "id": 42,
+            "task_name": "app.workers.process_span:process_span_batch",
+            "project_id": project_id,
+            "task_args": {
+                "batch_id": "batch-1",
+                "project_id": project_id,
+                "span_count": 2,
+            },
+            "error": "permanent failure",
+            "attempts": 3,
+            "failed_at": failed_at,
+            "resolved": False,
+        }
+    ]
+
+    with pytest.raises(HTTPException) as exc_info:
+        await retry_failed_task(task_id=42, user=_user(org_id=org_id))
+    assert exc_info.value.status_code == 409
+    assert "payload is not available" in exc_info.value.detail
+
+    result = await resolve_failed_task(task_id=42, user=_user(org_id=org_id))
+    assert result.resolved is True
+    assert db.committed is True

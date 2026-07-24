@@ -54,6 +54,11 @@ safe payload for the background task. Summary-only records, including records
 that only show `batch_id`, `project_id` and `span_count`, cannot be retried
 because the original spans are not stored there.
 
+For summary-only records, use `/v1/ingest/batches/{batch_id}` to compare the
+batch status with the failed-task error. If the raw telemetry needs to be sent
+again, resend it from the original client with the same `idempotency_key` when
+one was used; otherwise mark the failed task resolved after investigation.
+
 If batch status is `processed` but live dashboard updates lag, check for
 `PENDING` or `FAILED` `span.inserted` rows in `outbox_events` and verify Redis
 health. Span storage can be committed before live Pub/Sub delivery completes.

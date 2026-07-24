@@ -485,6 +485,50 @@ If live dashboard updates lag while batch status is processed, inspect the
 Redis health. These rows represent retryable live-stream delivery, not missing
 stored telemetry.
 
+## DLQ And Failed-Task Recovery
+
+Taskiq retries transient worker failures before recording a permanent failure.
+When retry policy is exhausted, the DLQ path stores a failed-task record with
+safe task metadata, batch/project identifiers, error text and attempt count.
+Standard records intentionally store summaries such as `span_count`; they do
+not store full spans, prompts, model outputs or credentials.
+
+Inspect unresolved failed tasks for a project:
+
+```bash
+curl -H "Authorization: Bearer YOUR_JWT_TOKEN" \
+  "http://localhost:8000/v1/failed-tasks?project_id=YOUR_PROJECT_ID"
+```
+
+Compare the failed task with batch status:
+
+```bash
+curl -H "X-API-Key: YOUR_PROJECT_API_KEY" \
+  http://localhost:8000/v1/ingest/batches/YOUR_BATCH_ID
+```
+
+Retry only when the failed-task record contains a complete safe
+`process_span_batch` payload with `batch_id`, `project_id` and `spans`. Sanitized
+summary-only records that show `span_count` are not replayable because the raw
+spans are not stored in the failed-task table. For those records, decide whether
+the original client should resend telemetry with the same `idempotency_key`
+when one was supplied, or whether the task should be marked resolved after
+investigation.
+
+Attempt a retry:
+
+```bash
+curl -X POST -H "Authorization: Bearer YOUR_JWT_TOKEN" \
+  http://localhost:8000/v1/failed-tasks/FAILED_TASK_ID/retry
+```
+
+Mark an investigated record as resolved:
+
+```bash
+curl -X POST -H "Authorization: Bearer YOUR_JWT_TOKEN" \
+  http://localhost:8000/v1/failed-tasks/FAILED_TASK_ID/resolve
+```
+
 The SLO response checklist in [platform-slos.md](platform-slos.md) maps these
 metrics to incident classes such as API acceptance failure, worker lag,
 permanent span drops, payload-only failures, query failures and live-stream
