@@ -1,6 +1,19 @@
 # CHANGELOG
 
 
+## v0.50.3 (2026-07-24)
+
+### Bug Fixes
+
+- Add graceful shutdown controls
+  ([`bd88570`](https://github.com/makel0ve/llm-obs/commit/bd88570a57388c5f960862a50ddbca06edd929cf))
+
+### Chores
+
+- Trigger ci for release sync
+  ([`018142c`](https://github.com/makel0ve/llm-obs/commit/018142cfd3432dcb02eb492add0f78c337be7f73))
+
+
 ## v0.50.2 (2026-07-24)
 
 ### Bug Fixes
