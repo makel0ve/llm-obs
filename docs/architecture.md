@@ -40,6 +40,9 @@ batched: it deletes payload objects under the project's `payloads/{project_id}/`
 prefix before removing old span rows, then removes trace rows that no longer
 have spans.
 
+Backend import layering and current API-layer compatibility exceptions are
+tracked in [Architecture Boundaries](architecture-boundaries.md).
+
 ## Ingest Flow
 
 1. The Python SDK records spans with decorators or provider patching.
