@@ -20,15 +20,19 @@ Scope: Big Block 11.1, routed Vitest coverage for the React dashboard.
 - Trace Detail routed coverage for the selected trace, `started_at` query propagation and on-demand payload loading with redaction status.
 - Audit Log routed coverage for filter submission and cursor-based pagination.
 
+## Added In Block 11.3
+
+- Trace Detail empty-span and requested-but-unloaded payload states are covered so the page cannot regress to blank content for legacy or partial traces.
+- Pricing load-error coverage verifies API errors are not presented as an empty pricing catalog.
+
 ## Priority Gaps
 
 - Dashboard/Overview: loading, empty and error states are partially covered; charts and tables still need focused assertions for timeseries, cost, latency and error breakdowns.
 - Settings: payload privacy update, retention update, API-key rotate/revoke and mutation error states need routed tests.
 - Alerts: update, pause/resume, validation failures and Slack-domain error copy need routed tests.
 - Users: organization-user role changes, delete safeguards and project-access mutation failures need routed tests.
-- Pricing: update/end flows, invalid date/cost validation and load-error state need routed tests.
-- Trace Detail: error state, empty span state and payload requested but no object loaded should be covered before larger UI changes.
-- Global UX: shared 401/403/429/5xx handling and Error Boundary behavior are intentionally left for Block 11.2.
+- Pricing: update/end flows and invalid date/cost validation need routed tests.
+- Trace Detail: load-error state and stored-key-but-unloaded payload warnings need routed tests.
 - Accessibility/router: keyboard navigation, labels, dialog semantics, contrast and unused router dependency cleanup are intentionally left for Block 11.4.
 
 ## Test Helper Notes

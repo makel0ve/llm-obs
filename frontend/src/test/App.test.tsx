@@ -843,6 +843,47 @@ describe('App', () => {
     })
   })
 
+  it('shows trace detail empty and no-payload states without blank content', async () => {
+    const user = userEvent.setup()
+    const traceProject = { ...project, id: 'project-trace-empty' }
+    mockedListAccessibleProjects.mockResolvedValue([{ ...traceProject, project_role: 'admin' }])
+    mockedGetTraceDetail
+      .mockResolvedValueOnce({
+        id: 'trace-empty-123',
+        project_id: traceProject.id,
+        started_at: '2026-07-28T08:00:00Z',
+        ended_at: null,
+        total_tokens: 0,
+        total_cost_usd: '0',
+        span_count: 0,
+        status: 'ok',
+        spans: [],
+      })
+      .mockResolvedValueOnce({
+        id: 'trace-empty-123',
+        project_id: traceProject.id,
+        started_at: '2026-07-28T08:00:00Z',
+        ended_at: null,
+        total_tokens: 0,
+        total_cost_usd: '0',
+        span_count: 0,
+        status: 'ok',
+        spans: [],
+      })
+    storeAdminSession('/dashboard/traces/trace-empty-123', traceProject)
+
+    render(<App />)
+
+    expect(await screen.findByRole('heading', { name: 'Trace Detail' })).toBeInTheDocument()
+    expect(await screen.findByText('No spans are attached to this trace.')).toBeInTheDocument()
+    expect(screen.getByText('Hidden')).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Load payload' }))
+
+    expect(await screen.findByText('Loaded (0)')).toBeInTheDocument()
+    expect(screen.getByText(/Payload was requested, but no payload objects were loaded/)).toBeInTheDocument()
+  })
+
   it('shows accessible project tiles and stores the selected project', async () => {
     const user = userEvent.setup()
     mockedListAccessibleProjects.mockResolvedValue([
@@ -1077,6 +1118,20 @@ describe('App', () => {
       valid_from: null,
     })
   })
+
+  it('shows pricing load errors instead of an empty pricing table', async () => {
+    mockedListAccessibleProjects.mockResolvedValue([{ ...project, project_role: 'admin' }])
+    mockedListPricing.mockRejectedValue({ response: { status: 429 } })
+    storeAdminSession('/admin-settings/pricing')
+
+    render(<App />)
+
+    expect(await screen.findByRole('heading', { name: 'Pricing' })).toBeInTheDocument()
+    expect(
+      await screen.findByText('Too many requests. Wait a moment and try again.', {}, { timeout: 5_000 }),
+    ).toBeInTheDocument()
+    expect(screen.queryByText('No pricing records')).not.toBeInTheDocument()
+  }, 10_000)
 
   it('filters audit events and loads the next page', async () => {
     const user = userEvent.setup()
