@@ -14,7 +14,6 @@ from urllib.request import Request, urlopen
 
 import llm_obs  # type: ignore[import-not-found]
 
-
 ENDPOINT = os.getenv("LLM_OBS_E2E_ENDPOINT", "http://localhost:8000").rstrip("/")
 TIMEOUT_SECONDS = int(os.getenv("LLM_OBS_E2E_TIMEOUT_SECONDS", "120"))
 LOGIN_SECRET_FIELD = "pass" + "word"  # pragma: allowlist secret
