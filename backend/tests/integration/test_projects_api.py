@@ -1,10 +1,32 @@
 import hashlib
 import uuid
+from collections.abc import Generator
 
 import pytest
+from fastapi import Response
 from sqlalchemy import text
 
 from app.core.auth import create_access_token
+from app.core.ratelimit import get_auth_rate_limiter
+from app.main import app
+
+
+class NoopAuthRateLimiter:
+    async def check(
+        self,
+        *,
+        identifier: str,
+        action: str,
+        response: Response,
+    ) -> None:
+        return None
+
+
+@pytest.fixture(autouse=True)
+def disable_auth_rate_limit_for_project_api_tests() -> Generator[None, None, None]:
+    app.dependency_overrides[get_auth_rate_limiter] = lambda: NoopAuthRateLimiter()
+    yield
+    app.dependency_overrides.pop(get_auth_rate_limiter, None)
 
 
 async def register_org(client, org_name: str) -> dict:
