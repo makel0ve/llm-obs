@@ -35,8 +35,11 @@ export function TraceWaterfall({ spans }: { spans: Span[] }) {
                     const isErr = span.status === "error";
 
                     return (
-                        <div key={span.id}
-                            className="flex items-center gap-2 py-1 px-2 hover:bg-gray-50 rounded cursor-pointer"
+                        <button key={span.id}
+                            type="button"
+                            className="flex w-full items-center gap-2 rounded px-2 py-1 text-left hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-100"
+                            aria-label={`${selected?.id === span.id ? 'Collapse' : 'Expand'} span ${span.name}`}
+                            aria-pressed={selected?.id === span.id}
                             onClick={() => setSelected(s => s?.id === span.id ? null : span)}>
                             <div className="w-44 truncate text-gray-700">{span.name}</div>
                             <div className="flex-1 relative h-4 bg-gray-100 rounded overflow-hidden">
@@ -44,8 +47,8 @@ export function TraceWaterfall({ spans }: { spans: Span[] }) {
                                 style={{ left: `${offset}%`, width: `${width}%`}} />
                             </div>
                             <div className="w-14 text-right text-gray-500">{span.latency_ms.toFixed(0)}ms</div>
-                            {isErr && <span className="text-red-500 font-bold">!</span>}
-                        </div>
+                            {isErr && <span className="text-red-500 font-bold" aria-label="error">!</span>}
+                        </button>
                     );
                 })}
             </div>
