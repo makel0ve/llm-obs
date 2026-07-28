@@ -28,3 +28,8 @@ When deploying LLM Obs:
 - Rotate API keys regularly via the projects API
 - Use HTTPS in production (put LLM Obs behind a reverse proxy like nginx or Caddy)
 - Keep Docker images updated
+
+For the current security posture, tenant-isolation boundary and production
+operator controls, see [docs/security-posture.md](docs/security-posture.md).
+Historical isolation audit findings are kept separately in
+[docs/security-isolation-audit.md](docs/security-isolation-audit.md).
