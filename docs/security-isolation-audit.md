@@ -1,6 +1,8 @@
 # Security Isolation Audit
 
-Block 01 audit result for the next hardening release.
+Historical tenant-isolation audit and closure status. For the current security
+posture and production operator checklist, see
+[security-posture.md](security-posture.md).
 
 ## Scope
 
@@ -9,60 +11,86 @@ Block 01 audit result for the next hardening release.
 - Runtime database user and table ownership.
 - Trace and metrics project-scoping assumptions.
 
-## Findings
+## Historical Findings
 
 - RLS is enabled on `spans` and `traces` by
   `backend/alembic/versions/bf79868b5f76_add_rls_policies.py`.
 - Both policies compare `project_id` with
-  `current_setting('app.current_project_id', true)::uuid`.
+  `NULLIF(current_setting('app.current_project_id', true), '')::uuid`.
 - `app.core.db.get_db(project_id=...)` sets `app.current_project_id` with
   `set_config(..., true)` when a project context is provided.
-- Local Docker-backed verification showed the runtime/migration database role is
-  `llmobs`, and both `spans` and `traces` are owned by `llmobs`.
-- Follow-up verification during Block 02 showed the local `llmobs` role is a
-  PostgreSQL superuser with `BYPASSRLS`; such roles bypass RLS even when
-  `FORCE ROW LEVEL SECURITY` is enabled.
-- Local Docker-backed verification showed `relrowsecurity = true` and
-  `relforcerowsecurity = false` for both tables.
-- Local Docker-backed verification showed the `llmobs` owner role can see rows
-  from `spans` and `traces` without `app.current_project_id` being set. Current
-  RLS is therefore not an effective runtime isolation boundary for the owner
-  role.
-- Trace and metrics APIs still apply explicit `project_id` filters in service
-  SQL and use `get_db(project_id=...)`, so API behavior is protected by
-  application-level scoping even though owner-bypass weakens database
-  defense-in-depth.
-- JWT project selection currently validates that the requested project is active
-  and belongs to the user's organization. Project membership enforcement does
-  not exist yet, so ordinary organization users can access any active
-  organization project if they know its `project_id`.
+- The original local Docker-backed verification used one `llmobs`
+  owner/runtime role. That role was a PostgreSQL superuser with `BYPASSRLS`, so
+  it could see `spans` and `traces` rows without `app.current_project_id` even
+  when RLS policies existed.
+- The original verification also showed `relrowsecurity = true` and
+  `relforcerowsecurity = false` for `spans` and `traces`.
+- At that point, trace and metrics APIs still applied explicit `project_id`
+  filters in service SQL, so application-level scoping existed, but database
+  RLS was not yet an effective defense-in-depth boundary for the runtime role.
+- At that point, JWT project selection validated active organization projects,
+  but project membership enforcement was incomplete for ordinary users.
 
-## Recommendation
+## Closure Status
 
-- In Block 02, apply `FORCE ROW LEVEL SECURITY` to `spans`, `traces` and their
-  existing partitions as the smallest safe hardening step.
-- Ensure future trace/span partitions are created with RLS enabled and forced.
-- Use a runtime application role without `SUPERUSER` and without `BYPASSRLS`.
-  `FORCE ROW LEVEL SECURITY` does not protect rows from those privileged roles.
-- Keep separate migration-owner and runtime-application roles as the production
-  deployment direction when stronger role separation is needed.
+The historical findings above are closed for the current production/runtime
+role model:
 
-## Block 33 Closure
-
-Block 33 converts the runtime-role recommendation into the Docker and settings
-contract:
-
-- `DATABASE_URL` is the runtime application role and is rejected in production if
-  it uses `POSTGRES_USER` or `postgres`.
-- `MIGRATION_DATABASE_URL` is the Alembic owner/admin role and is used by
+- `backend/alembic/versions/3b9f1a2c4d6e_force_rls_on_trace_tables.py` applies
+  `FORCE ROW LEVEL SECURITY` to `spans`, `traces` and their existing child
+  partitions.
+- Future monthly trace/span partitions created by
+  `backend/app/workers/maintenance.py` enable and force RLS immediately after
+  partition creation.
+- `DATABASE_URL` is the runtime application role. In production,
+  `backend/app/core/config.py` rejects `DATABASE_URL` values that use
+  `POSTGRES_USER` or `postgres`.
+- `MIGRATION_DATABASE_URL` is the Alembic owner/admin role used by
   `backend/alembic/env.py`.
-- Docker Compose defines `POSTGRES_APP_USER` and `POSTGRES_APP_PASSWORD`; new
-  Postgres volumes create the app role with `NOSUPERUSER NOBYPASSRLS`.
-- The Block 33 migration grants current and future `public` schema table and
-  sequence privileges to `POSTGRES_APP_USER` when that environment variable is
-  available.
+- `backend/alembic/versions/d4e5f6a7b8c9_runtime_database_role_grants.py`
+  creates or updates `POSTGRES_APP_USER` with
+  `NOSUPERUSER NOBYPASSRLS` when `POSTGRES_APP_USER` and
+  `POSTGRES_APP_PASSWORD` are available, then grants schema, table and sequence
+  privileges for runtime access.
+- `backend/tests/integration/test_runtime_role_rls.py` is the opt-in CI gate
+  for physical isolation. It proves the runtime role is not superuser, does
+  not have `BYPASSRLS`, sees no trace/span rows without
+  `app.current_project_id`, sees only the selected project after setting the
+  context, and verifies parent plus child trace/span partitions keep
+  `ENABLE/FORCE ROW LEVEL SECURITY`.
+- Project access now uses explicit project memberships for non-admin users via
+  `backend/app/core/auth.py::get_project_for_user`; organization admins retain
+  implicit access to organization projects.
 
-## Verification Evidence
+## Current Guarantees
+
+- Trace and span RLS is a defense-in-depth boundary for the dedicated runtime
+  application role.
+- Application APIs still enforce project scope explicitly before querying
+  project data.
+- Project API keys are project-scoped, hashed at rest and checked for
+  operation scope.
+- Ordinary organization users need explicit project membership for dashboard
+  project data. Organization admins can manage and view organization projects.
+- Global pricing writes require `users.is_platform_admin`; organization admin
+  alone is not enough.
+
+## Known Limitations
+
+- RLS does not protect data from PostgreSQL superusers, `BYPASSRLS` roles or
+  table owners. Production must keep `DATABASE_URL` on the non-owner runtime
+  role and reserve `MIGRATION_DATABASE_URL` for migrations and maintenance.
+- Existing PostgreSQL volumes do not rerun Docker init scripts automatically.
+  Operators must run migrations with `POSTGRES_APP_USER` and
+  `POSTGRES_APP_PASSWORD` available, then verify the app role before accepting
+  tenant traffic.
+- Pricing is still a global platform-default catalog. Organization-scoped
+  pricing overrides are planned in [ADR 0001](adr/0001-pricing-tenancy.md).
+- Dashboard login JWTs are intentionally bearer tokens stored in
+  `localStorage` for this release. The accepted risk and mitigations are in
+  [browser-token-storage.md](browser-token-storage.md).
+
+## Original Verification Evidence
 
 The Docker-backed SQL check returned:
 
