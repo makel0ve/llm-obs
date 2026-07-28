@@ -457,6 +457,7 @@ function LoginPage({
           <button
             type="button"
             onClick={() => { setMode('login'); setError('') }}
+            aria-pressed={mode === 'login'}
             className={`rounded px-3 py-2 font-medium ${mode === 'login' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500'}`}
           >
             Sign in
@@ -464,6 +465,7 @@ function LoginPage({
           <button
             type="button"
             onClick={() => { setMode('register'); setError('') }}
+            aria-pressed={mode === 'register'}
             className={`rounded px-3 py-2 font-medium ${mode === 'register' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500'}`}
           >
             Create account
@@ -472,28 +474,40 @@ function LoginPage({
         <form onSubmit={handleSubmit} className="space-y-3">
           {mode === 'register' && (
             <>
-              <input
-                className="w-full border border-gray-300 rounded px-3 py-2 text-sm text-gray-900 bg-white placeholder-gray-400"
-                type="text" placeholder="Organization name"
-                value={orgName} onChange={e => setOrgName(e.target.value)} required minLength={2} maxLength={100}
-              />
-              <input
-                className="w-full border border-gray-300 rounded px-3 py-2 text-sm text-gray-900 bg-white placeholder-gray-400"
-                type="password" placeholder="Bootstrap token"
-                value={bootstrapToken} onChange={e => setBootstrapToken(e.target.value)}
-              />
+              <label className="block">
+                <span className="sr-only">Organization name</span>
+                <input
+                  className="w-full border border-gray-300 rounded px-3 py-2 text-sm text-gray-900 bg-white placeholder-gray-400"
+                  type="text" placeholder="Organization name"
+                  value={orgName} onChange={e => setOrgName(e.target.value)} required minLength={2} maxLength={100}
+                />
+              </label>
+              <label className="block">
+                <span className="sr-only">Bootstrap token</span>
+                <input
+                  className="w-full border border-gray-300 rounded px-3 py-2 text-sm text-gray-900 bg-white placeholder-gray-400"
+                  type="password" placeholder="Bootstrap token"
+                  value={bootstrapToken} onChange={e => setBootstrapToken(e.target.value)}
+                />
+              </label>
             </>
           )}
-          <input
-            className="w-full border border-gray-300 rounded px-3 py-2 text-sm text-gray-900 bg-white placeholder-gray-400"
-            type="email" placeholder="Email"
-            value={email} onChange={e => setEmail(e.target.value)} required
-          />
-          <input
-            className="w-full border border-gray-300 rounded px-3 py-2 text-sm text-gray-900 bg-white placeholder-gray-400"
-            type="password" placeholder="Password"
-            value={password} onChange={e => setPassword(e.target.value)} required
-          />
+          <label className="block">
+            <span className="sr-only">Email</span>
+            <input
+              className="w-full border border-gray-300 rounded px-3 py-2 text-sm text-gray-900 bg-white placeholder-gray-400"
+              type="email" placeholder="Email"
+              value={email} onChange={e => setEmail(e.target.value)} required
+            />
+          </label>
+          <label className="block">
+            <span className="sr-only">Password</span>
+            <input
+              className="w-full border border-gray-300 rounded px-3 py-2 text-sm text-gray-900 bg-white placeholder-gray-400"
+              type="password" placeholder="Password"
+              value={password} onChange={e => setPassword(e.target.value)} required
+            />
+          </label>
           {error && <p className="text-red-500 text-sm">{error}</p>}
           <button
             type="submit" disabled={loading}
