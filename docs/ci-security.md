@@ -153,6 +153,10 @@ Image scan policy:
 - Fail gate: `HIGH` and `CRITICAL` vulnerabilities with available fixes.
 - Base image policy: unfixed base image CVEs are reported by Trivy but do not
   fail the release gate until a fixed base image is available.
+- Temporary application dependency exceptions are listed in
+  `security/trivy-image-ignore.txt` and must include an owner, reason and expiry
+  in comments near the ignored CVE IDs. Keep this aligned with
+  `security/pip-audit-allowlist.json`.
 
 SBOM artifacts are uploaded from the release job as:
 

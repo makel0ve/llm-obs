@@ -1,0 +1,5 @@
+# Temporary Starlette compatibility hold, aligned with security/pip-audit-allowlist.json.
+# FastAPI currently pins Starlette below the patched versions reported by Trivy.
+# Owner: platform/security. Expires: 2026-09-30.
+CVE-2026-48818
+CVE-2026-54283
