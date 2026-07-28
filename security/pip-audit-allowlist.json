@@ -1,0 +1,24 @@
+{
+  "ignore": [
+    {
+      "package": "starlette",
+      "advisories": [
+        "PYSEC-2026-161",
+        "PYSEC-2026-248",
+        "PYSEC-2026-249",
+        "PYSEC-2026-2280",
+        "PYSEC-2026-2281"
+      ],
+      "reason": "Temporary FastAPI compatibility hold; patched Starlette releases require a FastAPI-compatible upgrade path.",
+      "expires": "2026-09-30"
+    },
+    {
+      "package": "ecdsa",
+      "advisories": [
+        "PYSEC-2026-1325"
+      ],
+      "reason": "Temporary python-jose transitive dependency hold; application uses JWT verification flows, not ecdsa signing key operations.",
+      "expires": "2026-09-30"
+    }
+  ]
+}
