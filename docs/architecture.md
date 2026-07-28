@@ -79,7 +79,8 @@ have spans.
 Accepted ingest requests return a `batch_id`. Processing can still fail later,
 so operational checks should include the batch status API, failed-task API and
 Prometheus metrics. Current end-to-end delivery semantics are documented in
-[delivery-guarantees.md](delivery-guarantees.md), and the initial platform SLO
+[delivery-guarantees.md](delivery-guarantees.md) and
+[ADR 0002](adr/0002-telemetry-delivery-semantics.md). Initial platform SLO
 targets are documented in [platform-slos.md](platform-slos.md).
 
 ## Storage Boundaries
@@ -90,7 +91,8 @@ audit events and failed-task metadata.
 Runtime services should connect with the dedicated application database role,
 while Alembic migrations use the owner/admin migration role. This keeps trace
 RLS as a database-level defense-in-depth boundary instead of relying on a
-superuser or table-owner runtime connection.
+superuser or table-owner runtime connection. See
+[ADR 0004](adr/0004-runtime-role-rls-boundary.md).
 
 Governance mutations for users, projects and API keys write audit events in the
 same database transaction as the audited change. If the audit insert fails, the
@@ -105,13 +107,14 @@ keys plus non-sensitive storage status metadata such as omitted, oversized or
 storage-failed. Span metadata stored in PostgreSQL is limited to an allowlist
 of low-risk technical fields; prompts, provider system instructions,
 authorization-like fields and arbitrary unknown metadata are not stored as
-ordinary span metadata.
+ordinary span metadata. See
+[ADR 0005](adr/0005-payload-storage-policy.md).
 
 Redis storage is split by durability requirement. `REDIS_URL` is the cache and
 coordination Redis for rate limits, short-lived caches, batch status and the
 live span stream. `REDIS_QUEUE_URL` is the durable Taskiq queue/result Redis for
 accepted ingest work, scheduled jobs and the DLQ; Compose configures it with AOF
-persistence and `noeviction`.
+persistence and `noeviction`. See [ADR 0003](adr/0003-redis-role-split.md).
 
 API shutdown stops live Pub/Sub and closes Redis and SQLAlchemy pools. Compose
 gives the backend and worker containers 45 seconds to stop; Taskiq workers wait
