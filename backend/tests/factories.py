@@ -30,7 +30,9 @@ async def test_engine():
 
 @pytest.fixture(autouse=True)
 async def patch_app_engine(request):
-    if request.node.path.name == "test_config.py":
+    if request.node.path.name == "test_config.py" or request.node.get_closest_marker(
+        "no_db"
+    ):
         yield
         return
 
