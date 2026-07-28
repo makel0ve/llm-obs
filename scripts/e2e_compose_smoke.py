@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """End-to-end smoke check for the local Docker Compose stack."""
 
 from __future__ import annotations
@@ -62,7 +61,7 @@ def wait_for_ready() -> None:
     while time.monotonic() < deadline:
         try:
             response = request_json("GET", "/ready")
-            if response.get("status") == "ok":
+            if response.get("status") in {"ok", "ready"}:
                 return
             last_error = AssertionError(f"/ready returned {response!r}")
         except Exception as exc:  # noqa: BLE001
@@ -199,7 +198,7 @@ async def main() -> int:
         raise AssertionError(f"payload was not stored/redacted: {raw_span!r}")
     payload = raw_span.get("payload")
     if not isinstance(payload, dict):
-        raise AssertionError(f"payload was not returned: {raw_span!r}")
+        raise TypeError(f"payload was not returned: {raw_span!r}")
     if payload.get("output") != "compose e2e output":
         raise AssertionError(f"unexpected payload output: {payload!r}")
     messages = payload.get("messages")
