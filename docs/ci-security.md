@@ -19,6 +19,28 @@ That test proves the runtime role cannot read trace/span rows without
 context is set, and that parent plus child trace/span partitions keep
 `ENABLE/FORCE ROW LEVEL SECURITY`.
 
+## E2E Compose smoke
+
+CI runs an `e2e-compose` job against the local Docker Compose stack:
+
+```bash
+cp backend/.env.example backend/.env
+docker compose -f infra/docker-compose.yml up -d --build postgres redis redis-queue minio backend worker
+docker compose -f infra/docker-compose.yml exec -T backend alembic upgrade head
+python -m pip install -e ./sdk
+python scripts/e2e_compose_smoke.py
+docker compose -f infra/docker-compose.yml down -v
+```
+
+CI creates `backend/.env` from `backend/.env.example` before starting Compose.
+For a fresh local checkout, do the same if `backend/.env` does not exist.
+
+The smoke registers an isolated organization, sends one real SDK span, sends
+one direct ingest payload to verify batch status, waits for the worker to
+persist both spans, then verifies trace visibility and MinIO-backed payload
+retrieval/redaction through the Query API. It does not call external LLM
+providers.
+
 ## Secret scanning
 
 The `security` workflow job installs `detect-secrets==1.5.0` and runs:
