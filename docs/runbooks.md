@@ -299,6 +299,23 @@ This check uses `MIGRATION_DATABASE_URL` to seed isolated tenant rows and
 `DATABASE_URL` to query as the application runtime role. It should fail if the
 runtime role is the migration owner, a superuser or has `BYPASSRLS`.
 
+Run the backend critical regression gate from the host after local Compose
+migrations:
+
+```bash
+env \
+  DATABASE_URL=postgresql+asyncpg://llmobs_app:llmobs_dev@localhost:5432/llmobs \
+  MIGRATION_DATABASE_URL=postgresql+asyncpg://llmobs_owner:llmobs_owner_dev@localhost:5432/llmobs \
+  REDIS_URL=redis://localhost:6379/0 \
+  REDIS_QUEUE_URL=redis://localhost:6380/0 \
+  python scripts/backend_critical_tests.py
+```
+
+This gate exercises the mandatory backend invariants for isolation,
+authentication/API keys, ingest delivery, retention, payload privacy/storage
+and pricing. It complements the aggregate coverage threshold and should be run
+for backend changes that touch security or data integrity.
+
 Database rollback must be planned per migration. Only use `alembic downgrade`
 after verifying the target migration has a safe downgrade path and after taking
 a database backup. For production incidents, prefer restoring from a known-good
