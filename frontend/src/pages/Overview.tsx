@@ -11,6 +11,7 @@ import {
   YAxis,
 } from 'recharts'
 import { format } from 'date-fns'
+import { getApiErrorMessage } from '../api/errors'
 import { OnboardingSetup } from '../components/OnboardingSetup'
 import {
   dashboardQueryKeys,
@@ -587,6 +588,7 @@ export function Overview({ projectId }: { projectId: string }) {
     data: metrics,
     isLoading,
     isError,
+    error,
   } = useQuery({
     queryKey: dashboardQueryKeys.overview(projectId, period),
     queryFn: () => getMetricsOverview(projectId, period),
@@ -602,7 +604,7 @@ export function Overview({ projectId }: { projectId: string }) {
     enabled: !!projectId,
   })
 
-  const { data: analytics, isError: isAnalyticsError } = useQuery({
+  const { data: analytics, isError: isAnalyticsError, error: analyticsError } = useQuery({
     queryKey: dashboardQueryKeys.analytics(projectId, period),
     queryFn: () => getMetricsAnalytics(projectId, period),
     refetchInterval: 60_000,
@@ -645,13 +647,13 @@ export function Overview({ projectId }: { projectId: string }) {
 
       {isError && (
         <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">
-          Could not load overview metrics. Check that the API is running and your session is still valid.
+          {getApiErrorMessage(error, 'Could not load overview metrics. Check that the API is running and your session is still valid.')}
         </div>
       )}
 
       {isAnalyticsError && (
         <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
-          Analytics breakdowns could not be loaded. Summary metrics are still available.
+          {getApiErrorMessage(analyticsError, 'Analytics breakdowns could not be loaded. Summary metrics are still available.')}
         </div>
       )}
 

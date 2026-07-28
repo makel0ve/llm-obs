@@ -2,6 +2,7 @@ import { QueryClient, QueryClientProvider, useMutation, useQuery, useQueryClient
 import { lazy, Suspense, useEffect, useMemo, useState, type FormEvent, type ReactNode } from 'react'
 import { BrowserRouter, Routes, Route, Navigate, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { api } from './api/client'
+import { getApiErrorMessage, getApiErrorStatus, SESSION_EXPIRED_EVENT } from './api/errors'
 import {
   createProject,
   dashboardQueryKeys,
@@ -12,6 +13,7 @@ import {
   type ProjectCreateResponse,
   type UserRole,
 } from './api/dashboard'
+import { AppErrorBoundary } from './components/AppErrorBoundary'
 
 const queryClient = new QueryClient()
 const Overview = lazy(() => import('./pages/Overview').then(module => ({ default: module.Overview })))
@@ -122,6 +124,7 @@ function ProjectSwitcher({
   projects,
   isLoading,
   isError,
+  error,
   role,
   onProjectChange,
 }: {
@@ -129,6 +132,7 @@ function ProjectSwitcher({
   projects: AccessibleProjectRecord[]
   isLoading: boolean
   isError: boolean
+  error: unknown
   role: UserRole
   onProjectChange: (projectId: string) => void
 }) {
@@ -137,7 +141,7 @@ function ProjectSwitcher({
   }
 
   if (isError) {
-    return <div className="text-xs text-red-600">Projects unavailable</div>
+    return <div className="text-xs text-red-600">{getApiErrorMessage(error, 'Projects unavailable')}</div>
   }
 
   if (projects.length === 0) {
@@ -170,7 +174,17 @@ function useAccessibleProjects() {
   })
 }
 
-function NoProjectAccess({ role, isLoading, isError }: { role: UserRole; isLoading: boolean; isError: boolean }) {
+function NoProjectAccess({
+  role,
+  isLoading,
+  isError,
+  error,
+}: {
+  role: UserRole
+  isLoading: boolean
+  isError: boolean
+  error?: unknown
+}) {
   if (isLoading) {
     return (
       <div className="p-4 sm:p-6 lg:p-8">
@@ -185,7 +199,7 @@ function NoProjectAccess({ role, isLoading, isError }: { role: UserRole; isLoadi
     return (
       <div className="p-4 sm:p-6 lg:p-8">
         <div className="rounded-lg border border-red-200 bg-red-50 p-6 text-sm text-red-800">
-          Project access could not be loaded. Sign in again or contact an organization admin.
+          {getApiErrorMessage(error, 'Project access could not be loaded. Sign in again or contact an organization admin.')}
         </div>
       </div>
     )
@@ -243,7 +257,10 @@ function ProjectSelectionLanding({
     return (
       <div className="p-4 sm:p-6 lg:p-8">
         <div className="rounded-lg border border-red-200 bg-red-50 p-6 text-sm text-red-800">
-          Project access could not be loaded. Sign in again or contact an organization admin.
+          {getApiErrorMessage(
+            projectsQuery.error,
+            'Project access could not be loaded. Sign in again or contact an organization admin.',
+          )}
         </div>
       </div>
     )
@@ -417,17 +434,15 @@ function LoginPage({
         onLogin(res.access_token, res.project_id ?? '', res.role)
       }
     } catch (err) {
-      const status = err && typeof err === 'object' && 'response' in err
-        ? (err.response as { status?: number } | undefined)?.status
-        : undefined
+      const status = getApiErrorStatus(err)
       setError(
         mode === 'register' && status === 409
           ? 'Email already registered'
           : mode === 'register' && status === 403
             ? 'Registration is disabled. Ask an admin for an invite or use the bootstrap token.'
-          : mode === 'register'
-            ? 'Could not create account'
-            : 'Invalid email or password'
+          : mode === 'login' && status === 401
+            ? 'Invalid email or password'
+            : getApiErrorMessage(err, mode === 'register' ? 'Could not create account' : 'Invalid email or password')
       )
     } finally {
       setLoading(false)
@@ -554,11 +569,9 @@ function Dashboard({
       onProjectChange(project.id)
     },
     onError: error => {
-      const status = error && typeof error === 'object' && 'response' in error
-        ? (error.response as { status?: number } | undefined)?.status
-        : undefined
+      const status = getApiErrorStatus(error)
       setCreateProjectError(
-        status === 409 ? 'Project name already exists' : 'Could not create project'
+        status === 409 ? 'Project name already exists' : getApiErrorMessage(error, 'Could not create project')
       )
     },
   })
@@ -580,6 +593,7 @@ function Dashboard({
                 projects={projects}
                 isLoading={projectQueryIsLoading}
                 isError={projectQueryIsError}
+                error={accessibleProjectsQuery.error}
                 role={role}
                 onProjectChange={onProjectChange}
               />
@@ -641,15 +655,18 @@ function Dashboard({
             />
           )}
           <div className="min-w-0">
-            {canRenderRoute ? (
-              <Outlet />
-            ) : (
-              <NoProjectAccess
-                role={role}
-                isLoading={projectQueryIsLoading || isResolvingProject}
-                isError={projectQueryIsError}
-              />
-            )}
+            <AppErrorBoundary key={location.pathname}>
+              {canRenderRoute ? (
+                <Outlet />
+              ) : (
+                <NoProjectAccess
+                  role={role}
+                  isLoading={projectQueryIsLoading || isResolvingProject}
+                  isError={projectQueryIsError}
+                  error={accessibleProjectsQuery.error}
+                />
+              )}
+            </AppErrorBoundary>
           </div>
         </main>
       </div>
@@ -713,6 +730,18 @@ export default function App() {
     setRole('viewer')
     setRegistrationApiKey('')
   }
+
+  useEffect(() => {
+    const handleSessionExpired = () => {
+      setToken('')
+      setProjectId('')
+      setRole('viewer')
+      setRegistrationApiKey('')
+    }
+
+    window.addEventListener(SESSION_EXPIRED_EVENT, handleSessionExpired)
+    return () => window.removeEventListener(SESSION_EXPIRED_EVENT, handleSessionExpired)
+  }, [])
 
   return (
     <QueryClientProvider client={queryClient}>

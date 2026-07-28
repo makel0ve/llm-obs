@@ -1,6 +1,7 @@
 import { useMemo, useState, type FormEvent } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { format } from 'date-fns'
+import { getApiErrorMessage } from '../api/errors'
 import {
   dashboardQueryKeys,
   listAuditEvents,
@@ -170,7 +171,9 @@ export function AuditLog() {
               )}
               {auditQuery.isError && (
                 <tr>
-                  <td colSpan={5} className="px-4 py-6 text-red-700">Could not load audit events.</td>
+                  <td colSpan={5} className="px-4 py-6 text-red-700">
+                    {getApiErrorMessage(auditQuery.error, 'Could not load audit events.')}
+                  </td>
                 </tr>
               )}
               {!auditQuery.isLoading && !auditQuery.isError && shownEvents.length === 0 && (
