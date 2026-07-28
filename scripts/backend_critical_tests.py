@@ -6,7 +6,6 @@ import subprocess
 import sys
 from pathlib import Path
 
-
 CRITICAL_TEST_TARGETS: tuple[str, ...] = (
     "tests/unit/test_config.py",
     "tests/unit/test_payload_size_limit.py",
