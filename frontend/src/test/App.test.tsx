@@ -18,8 +18,10 @@ import {
   getMetricsOverview,
   getMetricsTimeseries,
   getProjectSettings,
+  getTraceDetail,
   listAlertEvents,
   listAlertRules,
+  listAuditEvents,
   listAccessibleProjects,
   listFailedTasks,
   listPricing,
@@ -87,6 +89,19 @@ vi.mock('../api/dashboard', () => ({
       status: string,
       model: string,
     ) => ['traces', projectId, period, status, model],
+    traceDetail: (
+      projectId: string,
+      traceId: string | undefined,
+      startedAt: string | null,
+      includePayload: boolean,
+    ) => ['trace-detail', projectId, traceId, startedAt, includePayload],
+    auditEvents: (
+      action: string,
+      userId: string,
+      fromDt: string,
+      toDt: string,
+      cursor: string,
+    ) => ['audit-events', action, userId, fromDt, toDt, cursor],
     userProjectAccess: (userId: string) => ['user-project-access', userId],
     users: () => ['users'],
   },
@@ -95,9 +110,11 @@ vi.mock('../api/dashboard', () => ({
   getMetricsOverview: vi.fn(),
   getMetricsTimeseries: vi.fn(),
   getProjectSettings: vi.fn(),
+  getTraceDetail: vi.fn(),
   endPricing: vi.fn(),
   listAlertEvents: vi.fn(),
   listAlertRules: vi.fn(),
+  listAuditEvents: vi.fn(),
   listFailedTasks: vi.fn(),
   listAccessibleProjects: vi.fn(),
   listPricing: vi.fn(),
@@ -131,8 +148,10 @@ const mockedGetMetricsAnalytics = vi.mocked(getMetricsAnalytics)
 const mockedGetMetricsOverview = vi.mocked(getMetricsOverview)
 const mockedGetMetricsTimeseries = vi.mocked(getMetricsTimeseries)
 const mockedGetProjectSettings = vi.mocked(getProjectSettings)
+const mockedGetTraceDetail = vi.mocked(getTraceDetail)
 const mockedListAlertEvents = vi.mocked(listAlertEvents)
 const mockedListAlertRules = vi.mocked(listAlertRules)
+const mockedListAuditEvents = vi.mocked(listAuditEvents)
 const mockedListAccessibleProjects = vi.mocked(listAccessibleProjects)
 const mockedListFailedTasks = vi.mocked(listFailedTasks)
 const mockedListPricing = vi.mocked(listPricing)
@@ -242,6 +261,7 @@ describe('App', () => {
     })
     mockedListAlertRules.mockResolvedValue([])
     mockedListAlertEvents.mockResolvedValue([])
+    mockedListAuditEvents.mockResolvedValue({ events: [], next_cursor: null })
     mockedListAccessibleProjects.mockResolvedValue([])
     mockedListProjects.mockResolvedValue([project])
     mockedListPricing.mockResolvedValue([])
@@ -255,6 +275,17 @@ describe('App', () => {
       payload_storage_mode: 'all',
       payload_max_bytes: 262144,
       payload_redact_keys: 'api_key,password,secret,token,authorization',
+    })
+    mockedGetTraceDetail.mockResolvedValue({
+      id: 'trace-1',
+      project_id: project.id,
+      started_at: '2026-07-28T08:00:00Z',
+      ended_at: '2026-07-28T08:00:02Z',
+      total_tokens: 42,
+      total_cost_usd: '0.0042',
+      span_count: 1,
+      status: 'ok',
+      spans: [],
     })
     mockedListProjectApiKeys.mockResolvedValue([])
     mockedListUsers.mockResolvedValue([])
@@ -718,6 +749,100 @@ describe('App', () => {
     expect(screen.getByText('$0.4321')).toBeInTheDocument()
   })
 
+  it('loads trace detail payloads on demand for the selected trace', async () => {
+    const user = userEvent.setup()
+    const traceProject = { ...project, id: 'project-trace-detail' }
+    mockedListAccessibleProjects.mockResolvedValue([{ ...traceProject, project_role: 'admin' }])
+    mockedGetTraceDetail
+      .mockResolvedValueOnce({
+        id: 'trace-detail-123',
+        project_id: traceProject.id,
+        started_at: '2026-07-28T08:00:00Z',
+        ended_at: '2026-07-28T08:00:01Z',
+        total_tokens: 128,
+        total_cost_usd: '0.0123',
+        span_count: 1,
+        status: 'ok',
+        spans: [
+          {
+            id: 'span-root',
+            trace_id: 'trace-detail-123',
+            parent_span_id: null,
+            name: 'openai.chat',
+            provider: 'openai',
+            model: 'gpt-4o-mini',
+            input_tokens: 64,
+            output_tokens: 64,
+            cost_usd: '0.0123',
+            latency_ms: 1200,
+            status: 'ok',
+            started_at: '2026-07-28T08:00:00Z',
+            payload_s3_key: 'payloads/project-trace-detail/span-root.json.gz',
+            payload_status: 'stored_redacted',
+            metadata: { source: 'sdk' },
+          },
+        ],
+      })
+      .mockResolvedValueOnce({
+        id: 'trace-detail-123',
+        project_id: traceProject.id,
+        started_at: '2026-07-28T08:00:00Z',
+        ended_at: '2026-07-28T08:00:01Z',
+        total_tokens: 128,
+        total_cost_usd: '0.0123',
+        span_count: 1,
+        status: 'ok',
+        spans: [
+          {
+            id: 'span-root',
+            trace_id: 'trace-detail-123',
+            parent_span_id: null,
+            name: 'openai.chat',
+            provider: 'openai',
+            model: 'gpt-4o-mini',
+            input_tokens: 64,
+            output_tokens: 64,
+            cost_usd: '0.0123',
+            latency_ms: 1200,
+            status: 'ok',
+            started_at: '2026-07-28T08:00:00Z',
+            payload_s3_key: 'payloads/project-trace-detail/span-root.json.gz',
+            payload_status: 'stored_redacted',
+            metadata: { source: 'sdk' },
+            payload: {
+              input: { prompt: '[REDACTED]' },
+              output: { text: 'hello' },
+            },
+          },
+        ],
+      })
+    storeAdminSession('/dashboard/traces/trace-detail-123?started_at=2026-07-28T08%3A00%3A00Z', traceProject)
+
+    render(<App />)
+
+    expect(await screen.findByRole('heading', { name: 'Trace Detail' })).toBeInTheDocument()
+    expect(await screen.findByText('openai.chat')).toBeInTheDocument()
+    expect(screen.getByText('Hidden')).toBeInTheDocument()
+    expect(mockedGetTraceDetail).toHaveBeenCalledWith({
+      projectId: traceProject.id,
+      traceId: 'trace-detail-123',
+      startedAt: '2026-07-28T08:00:00Z',
+      includePayload: false,
+    })
+
+    await user.click(screen.getByRole('button', { name: 'Load payload' }))
+
+    expect(await screen.findByText('Loaded (1)')).toBeInTheDocument()
+    expect(screen.getByText('Payload loaded from storage with the redaction policy applied.')).toBeInTheDocument()
+    expect(screen.getByText(/REDACTED/)).toBeInTheDocument()
+    expect(mockedGetTraceDetail).toHaveBeenLastCalledWith({
+      projectId: traceProject.id,
+      traceId: 'trace-detail-123',
+      startedAt: '2026-07-28T08:00:00Z',
+      includePayload: true,
+    })
+  })
+
   it('shows accessible project tiles and stores the selected project', async () => {
     const user = userEvent.setup()
     mockedListAccessibleProjects.mockResolvedValue([
@@ -950,6 +1075,85 @@ describe('App', () => {
       input_cost_per_1k_tokens: '0.00015',
       output_cost_per_1k_tokens: '0.0006',
       valid_from: null,
+    })
+  })
+
+  it('filters audit events and loads the next page', async () => {
+    const user = userEvent.setup()
+    mockedListAccessibleProjects.mockResolvedValue([{ ...project, project_role: 'admin' }])
+    mockedListUsers.mockResolvedValue([
+      {
+        id: 'admin-user-1',
+        email: 'admin@example.com',
+        role: 'admin',
+        is_active: true,
+        created_at: '2026-07-15T08:00:00Z',
+      },
+    ])
+    mockedListAuditEvents
+      .mockResolvedValueOnce({
+        events: [],
+        next_cursor: null,
+      })
+      .mockResolvedValueOnce({
+        events: [
+          {
+            id: 1,
+            action: 'project.settings.update',
+            user_id: 'admin-user-1',
+            user_email: 'admin@example.com',
+            resource_id: project.id,
+            metadata: { field: 'retention_days' },
+            created_at: '2026-07-28T08:00:00Z',
+          },
+        ],
+        next_cursor: 'cursor-2',
+      })
+      .mockResolvedValueOnce({
+        events: [
+          {
+            id: 2,
+            action: 'project.api_key.create',
+            user_id: 'admin-user-1',
+            user_email: 'admin@example.com',
+            resource_id: 'key-1',
+            metadata: { scope: 'ingest' },
+            created_at: '2026-07-28T08:05:00Z',
+          },
+        ],
+        next_cursor: null,
+      })
+    storeAdminSession('/admin-settings/audit-log')
+
+    render(<App />)
+
+    expect(await screen.findByRole('heading', { name: 'Audit Log' })).toBeInTheDocument()
+    expect(await screen.findByText('No audit events found.')).toBeInTheDocument()
+
+    await user.type(screen.getByLabelText('Action'), 'project.settings.update')
+    await user.selectOptions(screen.getByLabelText('User'), 'admin-user-1')
+    await user.click(screen.getByRole('button', { name: 'Apply' }))
+
+    expect(await screen.findByText('project.settings.update')).toBeInTheDocument()
+    expect(screen.getByText('field: retention_days')).toBeInTheDocument()
+    expect(mockedListAuditEvents).toHaveBeenLastCalledWith({
+      action: 'project.settings.update',
+      userId: 'admin-user-1',
+      fromDt: '',
+      toDt: '',
+      cursor: '',
+    })
+
+    await user.click(screen.getByRole('button', { name: 'Load more' }))
+
+    expect(await screen.findByText('project.api_key.create')).toBeInTheDocument()
+    expect(screen.getByText('scope: ingest')).toBeInTheDocument()
+    expect(mockedListAuditEvents).toHaveBeenLastCalledWith({
+      action: 'project.settings.update',
+      userId: 'admin-user-1',
+      fromDt: '',
+      toDt: '',
+      cursor: 'cursor-2',
     })
   })
 
