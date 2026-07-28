@@ -611,3 +611,16 @@ Expected result:
 - Overview and Traces load without authentication loops.
 - The smoke span appears in Traces for the selected time range.
 - Worker logs have no repeated processing failures.
+
+Run the automated local E2E Compose smoke:
+
+```bash
+python -m pip install -e ./sdk
+python scripts/e2e_compose_smoke.py
+```
+
+The script expects the local Compose stack to be running, migrations to be at
+head and `http://localhost:8000` to be reachable. It registers a unique test
+organization, sends one SDK span, sends one direct ingest payload for batch
+status verification, then checks Trace Detail payload retrieval and redaction.
+Use `LLM_OBS_E2E_ENDPOINT` to point it at a different backend URL.
