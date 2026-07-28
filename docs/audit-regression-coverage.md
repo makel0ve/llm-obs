@@ -2,6 +2,15 @@
 
 Block 55 inventory for high-risk regressions covered by the hardening plan.
 
+CI now enforces the current critical backend subset with:
+
+```bash
+python scripts/backend_critical_tests.py
+```
+
+This command is a fail-fast invariant gate in addition to the aggregate
+`pytest tests/ --cov=app --cov-report=xml --cov-fail-under=40` run.
+
 ## Coverage Map
 
 - Redis durability and idempotency: batch status, enqueue failure, atomic
@@ -18,6 +27,9 @@ Block 55 inventory for high-risk regressions covered by the hardening plan.
 - Non-superuser RLS/runtime role: `backend/tests/unit/test_config.py` covers
   production rejection of owner or `postgres` runtime database users; deployment
   runbooks document `NOSUPERUSER NOBYPASSRLS` checks.
+- Runtime-role physical isolation:
+  `backend/tests/integration/test_runtime_role_rls.py` is a dedicated
+  opt-in CI gate with `RUN_RUNTIME_RLS_TESTS=1`.
 - Out-of-order spans and repeated batches:
   `backend/tests/integration/test_traces_api.py` covers stable logical trace
   identity and duplicate trace-row prevention.

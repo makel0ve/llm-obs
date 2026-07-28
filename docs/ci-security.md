@@ -19,6 +19,46 @@ That test proves the runtime role cannot read trace/span rows without
 context is set, and that parent plus child trace/span partitions keep
 `ENABLE/FORCE ROW LEVEL SECURITY`.
 
+## Backend critical regression policy
+
+The backend CI `test` job keeps the aggregate coverage gate at
+`--cov-fail-under=40`, but critical security and data-integrity behavior is
+guarded by an explicit fail-fast test set:
+
+```bash
+python scripts/backend_critical_tests.py
+```
+
+This gate is required for backend changes that touch tenant isolation, ingest
+delivery, retention, authentication, API keys, payload privacy, storage policy
+or pricing/cost behavior. It intentionally lists test files instead of relying
+only on the aggregate coverage percentage, because a high percentage can still
+miss a broken critical invariant.
+
+Current critical areas:
+
+- Isolation and authorization:
+  `tests/unit/test_config.py`,
+  `tests/integration/test_auth_current_user.py`,
+  `tests/integration/test_project_access_enforcement.py` and
+  `tests/integration/test_api_key_policies.py`.
+- Ingest and request safety:
+  `tests/integration/test_ingest_batch_status.py` and
+  `tests/unit/test_payload_size_limit.py`.
+- Retention and payload privacy:
+  `tests/integration/test_retention.py`,
+  `tests/integration/test_payload_privacy.py` and
+  `tests/unit/test_storage.py`.
+- Authentication/bootstrap:
+  `tests/integration/test_auth_api.py`.
+- Pricing:
+  `tests/integration/test_cost_service.py` and
+  `tests/integration/test_pricing_api.py`.
+
+If a security or data change adds a new invariant, update
+`scripts/backend_critical_tests.py` in the same PR so CI exercises the new
+regression boundary directly.
+
 ## E2E Compose smoke
 
 CI runs an `e2e-compose` job against the local Docker Compose stack:

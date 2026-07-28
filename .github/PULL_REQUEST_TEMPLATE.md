@@ -15,6 +15,7 @@ What does this PR do? Why is it needed?
 ## Testing
 
 - [ ] Backend tests pass: `pytest tests/ -v`
+- [ ] Backend critical gate passes: `python scripts/backend_critical_tests.py`
 - [ ] SDK tests pass: `pytest llm_obs_tests/ -q`
 - [ ] Frontend build passes: `npm run build`
 - [ ] Backend type check passes: `mypy backend/`
