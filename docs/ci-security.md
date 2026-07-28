@@ -107,6 +107,39 @@ git ls-files -z | xargs -0 detect-secrets-hook --baseline .secrets.baseline --no
 
 Commit `.secrets.baseline` only after the findings have been reviewed.
 
+## Dependency vulnerability scanning
+
+The `security` workflow job also runs dependency vulnerability gates for Python
+runtime dependencies and frontend production dependencies.
+
+Python packages are resolved from the backend and SDK project metadata, then
+audited with `pip-audit` through a repository wrapper:
+
+```bash
+python -m pip install "pip-audit>=2.7,<3"
+python scripts/pip_audit_gate.py --project backend --project sdk --allowlist security/pip-audit-allowlist.json
+```
+
+CI fails on any known vulnerability reported by `pip-audit` unless it is listed
+in `security/pip-audit-allowlist.json`. Each allowlist entry must include the
+package, advisory IDs, reason and expiry date. Prefer upgrading or constraining
+the dependency instead of ignoring the advisory; keep allowlist entries
+temporary and remove them when the dependency graph is fixed.
+
+Frontend production dependencies are audited from `frontend/package-lock.json`
+with a high-severity gate:
+
+```bash
+python scripts/npm_audit_gate.py --package-dir frontend --allowlist security/npm-audit-allowlist.json --audit-level high --omit dev
+```
+
+The wrapper runs `npm audit --json --omit=dev`, fails on unallowlisted
+`high`/`critical` vulnerabilities, and keeps false positives in
+`security/npm-audit-allowlist.json`. Each allowlist entry must include a
+package and reason; optional advisory IDs narrow the ignore to a specific
+finding. Keep entries temporary and remove them when the dependency graph is
+fixed.
+
 ## Pinned GitHub Actions
 
 Workflow `uses:` references are pinned to commit SHA with the source major tag
