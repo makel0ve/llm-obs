@@ -366,8 +366,8 @@ records are global platform defaults and require a user with
 global catalog. Pricing records are historical: adding a new price for the same
 provider/model closes the previous active interval at the new `valid_from`
 timestamp.
-Cost calculation cache keys include the span timestamp used for the historical
-lookup, and pricing edits clear cached entries for that provider/model.
+Cost calculation cache keys include the historical lookup interval, and pricing
+edits clear cached entries for that provider/model.
 
 Pricing is also available through the API:
 
@@ -489,11 +489,15 @@ ruff check .
 # Frontend validation
 cd frontend && npm run lint
 cd frontend && npm run build
+cd frontend && npm run test
 ```
 
-The frontend currently has no `npm test` script or component test runner. Do
-not add a new frontend testing stack casually; add one as a dedicated decision
-when component coverage becomes part of the release scope.
+Frontend tests use Vitest, Testing Library and jsdom. Current routed coverage
+includes auth and invite flows, project access and switching, admin navigation,
+organization users, alerts, pricing, API-key reveal, trace detail payload
+loading, audit-log pagination/filtering, global error handling and selected
+hooks/API helpers. See [docs/frontend-test-inventory.md](docs/frontend-test-inventory.md)
+for the current inventory and remaining gaps.
 
 ### Load testing
 
@@ -522,10 +526,11 @@ docker compose -f infra/docker-compose.yml run --rm \
 ## Current Dashboard Scope
 
 The current frontend includes account creation/sign-in, invite acceptance,
-overview metrics and charts, trace listing/detail pages, alert rule/event
-management, pricing records, user and role management, audit log, project
-settings, payload privacy controls, legacy key rotation, managed API keys and
-onboarding empty states for new projects.
+overview metrics and charts, project selection and switching for accessible
+projects, trace listing/detail pages, alert rule/event management, pricing
+records, user and role management, audit log, project settings, payload privacy
+controls, legacy key rotation, managed API keys and onboarding empty states for
+new projects.
 
 Dashboard API calls are routed through typed frontend helpers in
 `frontend/src/api/dashboard.ts`. Authentication failures from protected API
@@ -538,8 +543,8 @@ handle their own errors without triggering that redirect.
 
 Current limitations and planned work are tracked in
 [docs/roadmap.md](docs/roadmap.md). The short version: the dashboard works with
-one active project per login session, frontend component tests are not
-configured yet, and Helm manifests are still experimental.
+one active selected project at a time, frontend coverage is routed Vitest rather
+than full browser E2E, and Helm manifests are still experimental.
 
 ---
 

@@ -10,23 +10,30 @@ as a release promise.
 - OTLP HTTP trace ingest endpoint.
 - Overview dashboard with latency, errors, cost and usage charts.
 - Trace explorer and trace detail pages with explicit payload loading.
+- Project selection and switching across projects visible to the signed-in user.
 - Historical model pricing management.
 - Alert rules and alert events with email or Slack targets.
 - User invites, invite acceptance, role changes and guarded deletion.
 - Project retention, payload privacy settings and API key management.
 - Audit log for governance events.
 - Prometheus metrics, health checks, runbooks and backup/restore docs.
+- Frontend routed regression tests with Vitest, Testing Library and jsdom for
+  critical dashboard flows.
 
 ## Known Limitations
 
-- The dashboard uses one active project from the login session. A project
-  switcher is not implemented yet.
-- Frontend component/unit tests are not configured.
+- The dashboard has one active selected project at a time. Users can switch
+  between projects they can access, but side-by-side multi-project comparison
+  views are not implemented.
+- Frontend tests are configured as routed Vitest tests. Browser E2E and
+  automated accessibility/contrast checks are not configured.
 - Provider integration tests avoid real OpenAI and Anthropic credentials by
   default.
 - Helm manifests are experimental and less exercised than Docker Compose.
-- The dead-letter queue model exists, but retry/DLQ behavior still needs more
-  production hardening.
+- The failed-task/DLQ surface is operator-visible and supports retry only for
+  records that still contain a complete safe `process_span_batch` payload.
+  Sanitized summary-only records are resolve-only; operators should resend from
+  the original client when replay data is absent.
 - Payload privacy settings apply to stored payload objects. They do not replace
   upstream application-side secret handling.
 - Pricing records are currently global platform defaults guarded by
@@ -36,9 +43,10 @@ as a release promise.
 
 ## Planned Work
 
-- Multi-project selection in the dashboard.
+- Side-by-side multi-project dashboard views and cross-project comparison.
 - Stronger retry/DLQ operator workflow.
-- Mocked provider integration tests for OpenAI and Anthropic patching.
+- Broader provider integration tests for OpenAI and Anthropic patching.
 - Production-grade Kubernetes documentation and Helm hardening.
-- Broader frontend test coverage once the UI flows stabilize.
+- Broader frontend coverage for remaining dashboard mutation errors, chart
+  assertions and browser-level accessibility checks.
 - More detailed trace waterfall interactions and span comparison tools.
