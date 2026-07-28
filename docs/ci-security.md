@@ -140,6 +140,39 @@ package and reason; optional advisory IDs narrow the ignore to a specific
 finding. Keep entries temporary and remove them when the dependency graph is
 fixed.
 
+## Container image scanning and SBOMs
+
+The `docker` workflow job builds backend and frontend production images on
+`main`, scans the local images with Trivy, generates CycloneDX JSON SBOMs and
+only pushes images after the scan succeeds.
+
+Image scan policy:
+
+- Scanner: `aquasecurity/trivy-action`.
+- Scope: backend and frontend production images tagged with `${{ github.sha }}`.
+- Fail gate: `HIGH` and `CRITICAL` vulnerabilities with available fixes.
+- Base image policy: unfixed base image CVEs are reported by Trivy but do not
+  fail the release gate until a fixed base image is available.
+
+SBOM artifacts are uploaded from the release job as:
+
+```text
+image-sboms-${{ github.sha }}
+```
+
+The artifact contains:
+
+```text
+backend.cdx.json
+frontend.cdx.json
+```
+
+For incident response, download the SBOM artifact from the release workflow run
+for the affected commit SHA, identify the package or OS package named in the
+CVE, then either upgrade the application dependency, update the base image, or
+document a temporary risk acceptance in the relevant allowlist/runbook with an
+owner and expiry date.
+
 ## Pinned GitHub Actions
 
 Workflow `uses:` references are pinned to commit SHA with the source major tag

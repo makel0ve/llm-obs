@@ -140,28 +140,77 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      - name: Build and push backend image
+      - name: Prepare SBOM artifact directory
+        run: mkdir -p artifacts/sbom
+      - name: Build backend image
         uses: docker/build-push-action@ca052bb54ab0790a636c9b5f226502c73d547a25 # v5
         with:
           context: ./backend
           target: production
-          push: true
+          push: false
+          load: true
           tags: |
             ${{ steps.image-prefix.outputs.value }}/backend:${{ github.sha }}
             ${{ steps.image-prefix.outputs.value }}/backend:latest
           cache-from: type=gha,scope=backend
           cache-to: type=gha,mode=max,scope=backend
-      - name: Build and push frontend image
+      - name: Generate backend image SBOM
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: ${{ steps.image-prefix.outputs.value }}/backend:${{ github.sha }}
+          format: cyclonedx
+          output: artifacts/sbom/backend.cdx.json
+          exit-code: "0"
+      - name: Scan backend image
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: ${{ steps.image-prefix.outputs.value }}/backend:${{ github.sha }}
+          format: table
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: "1"
+      - name: Build frontend image
         uses: docker/build-push-action@ca052bb54ab0790a636c9b5f226502c73d547a25 # v5
         with:
           context: ./frontend
           target: production
-          push: true
+          push: false
+          load: true
           tags: |
             ${{ steps.image-prefix.outputs.value }}/frontend:${{ github.sha }}
             ${{ steps.image-prefix.outputs.value }}/frontend:latest
           cache-from: type=gha,scope=frontend
           cache-to: type=gha,mode=max,scope=frontend
+      - name: Generate frontend image SBOM
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: ${{ steps.image-prefix.outputs.value }}/frontend:${{ github.sha }}
+          format: cyclonedx
+          output: artifacts/sbom/frontend.cdx.json
+          exit-code: "0"
+      - name: Scan frontend image
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: ${{ steps.image-prefix.outputs.value }}/frontend:${{ github.sha }}
+          format: table
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: "1"
+      - name: Push backend image
+        run: |
+          docker push "${{ steps.image-prefix.outputs.value }}/backend:${{ github.sha }}"
+          docker push "${{ steps.image-prefix.outputs.value }}/backend:latest"
+      - name: Push frontend image
+        run: |
+          docker push "${{ steps.image-prefix.outputs.value }}/frontend:${{ github.sha }}"
+          docker push "${{ steps.image-prefix.outputs.value }}/frontend:latest"
+      - name: Upload image SBOM artifacts
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: image-sboms-${{ github.sha }}
+          path: artifacts/sbom/*.cdx.json
+          if-no-files-found: error
 
   release:
     needs: [test, sdk-test, frontend-build, e2e-compose, lint, security]
