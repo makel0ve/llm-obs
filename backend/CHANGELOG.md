@@ -1,6 +1,35 @@
 # CHANGELOG
 
 
+## v0.51.0 (2026-07-28)
+
+### Chores
+
+- Trigger ci for release sync
+  ([`26bf95b`](https://github.com/makel0ve/llm-obs/commit/26bf95bb38c0167c766db384a5b087111d440c61))
+
+- Update secrets baseline
+  ([`4310056`](https://github.com/makel0ve/llm-obs/commit/43100563febdb103f95e91799a10013cf9be593a))
+
+### Documentation
+
+- Clarify dlq recovery workflow
+  ([`00aa85c`](https://github.com/makel0ve/llm-obs/commit/00aa85c7ad1c1cbcd6434fa3ad00b480132ace2b))
+
+### Features
+
+- Add frontend error boundary and api error mapping
+  ([`b0d819e`](https://github.com/makel0ve/llm-obs/commit/b0d819e48a8a03d7d9eb3602dc57ea52ef060320))
+
+### Testing
+
+- Add frontend critical flow coverage
+  ([`390e892`](https://github.com/makel0ve/llm-obs/commit/390e8922da0cd01820daacc63efa7597e05ef923))
+
+- Inventory frontend coverage gaps
+  ([`674775b`](https://github.com/makel0ve/llm-obs/commit/674775ba3c5a2ce88a3163cbc31144278e472780))
+
+
 ## v0.50.3 (2026-07-24)
 
 ### Bug Fixes
