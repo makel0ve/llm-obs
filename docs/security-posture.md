@@ -98,6 +98,10 @@ docker compose -f infra/docker-compose.yml exec backend \
 ## Validation References
 
 - Runtime role and RLS: [ci-security.md](ci-security.md#runtime-database-role-rls)
+- Runtime role decision:
+  [ADR 0004](adr/0004-runtime-role-rls-boundary.md)
+- Payload policy decision:
+  [ADR 0005](adr/0005-payload-storage-policy.md)
 - Production runbook: [runbooks.md](runbooks.md)
 - Browser token decision: [browser-token-storage.md](browser-token-storage.md)
 - Architecture boundaries: [architecture.md](architecture.md)

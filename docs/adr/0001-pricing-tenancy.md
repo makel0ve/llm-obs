@@ -4,8 +4,9 @@ Date: 2026-07-22
 
 ## Status
 
-Accepted for implementation planning. Schema and authorization changes are
-deferred to a dedicated migration block.
+Accepted for implementation planning. The platform-admin authorization boundary
+is implemented for the current global pricing API; org-scoped pricing schema,
+lookup and UI changes are deferred to a dedicated migration block.
 
 ## Context
 
@@ -87,6 +88,15 @@ only to trusted platform operators.
 
 Existing pricing rows should remain valid as global defaults after migration.
 Existing cost data stored on spans must not be recalculated retroactively.
+
+Related operational and architecture context:
+
+- [ADR 0003 - Redis Role Split](0003-redis-role-split.md) covers future pricing
+  cache ownership keys.
+- [../security-posture.md](../security-posture.md) documents the current
+  `is_platform_admin` boundary.
+- [../architecture.md](../architecture.md) describes current dashboard and
+  worker pricing boundaries.
 
 ## Consequences
 
