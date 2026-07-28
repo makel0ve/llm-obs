@@ -1,6 +1,7 @@
 import { useMemo, useState, type FormEvent } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { format } from 'date-fns'
+import { getApiErrorMessage } from '../api/errors'
 import {
   createAlertRule,
   dashboardQueryKeys,
@@ -427,7 +428,11 @@ export function Alerts({ projectId, role }: { projectId: string; role: UserRole 
           {rulesQuery.isFetching && <span className="text-sm text-gray-500">Refreshing...</span>}
         </div>
         {rulesQuery.isLoading && <EmptyState title="Loading alert rules" text="Rules will appear here after the request completes." />}
-        {rulesQuery.isError && <AlertMessage tone="error">Could not load alert rules.</AlertMessage>}
+        {rulesQuery.isError && (
+          <AlertMessage tone="error">
+            {getApiErrorMessage(rulesQuery.error, 'Could not load alert rules.')}
+          </AlertMessage>
+        )}
         {!rulesQuery.isLoading && !rulesQuery.isError && rules.length === 0 && (
           <EmptyState title="No alert rules" text="Create a rule above to start monitoring latency, error rate, cost or anomaly signals." />
         )}
@@ -556,7 +561,11 @@ export function Alerts({ projectId, role }: { projectId: string; role: UserRole 
           {eventsQuery.isFetching && <span className="text-sm text-gray-500">Refreshing...</span>}
         </div>
         {eventsQuery.isLoading && <EmptyState title="Loading alert events" text="Triggered alerts will appear here after the request completes." />}
-        {eventsQuery.isError && <AlertMessage tone="error">Could not load alert events.</AlertMessage>}
+        {eventsQuery.isError && (
+          <AlertMessage tone="error">
+            {getApiErrorMessage(eventsQuery.error, 'Could not load alert events.')}
+          </AlertMessage>
+        )}
         {!eventsQuery.isLoading && !eventsQuery.isError && events.length === 0 && (
           <EmptyState title="No alert events" text="Open events will appear when active rules are triggered by incoming spans." />
         )}

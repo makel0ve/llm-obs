@@ -1,4 +1,9 @@
 import axios from 'axios';
+import {
+  clearStoredSession,
+  isUnauthorizedApiError,
+  SESSION_EXPIRED_EVENT,
+} from './errors'
 
 export const api = axios.create({
   baseURL: import.meta.env.VITE_API_URL ?? 'http://localhost:8000',
@@ -20,12 +25,10 @@ api.interceptors.response.use(
   error => {
     const url = String(error.config?.url ?? '')
     const isAuthEndpoint = url.includes('/v1/auth/')
-    if (error.response?.status === 401 && !isAuthEndpoint) {
-      localStorage.removeItem('token')
-      localStorage.removeItem('apiKey')
-      localStorage.removeItem('projectId')
-      localStorage.removeItem('role')
-      window.location.href = '/'
+    if (isUnauthorizedApiError(error) && !isAuthEndpoint) {
+      clearStoredSession()
+      delete api.defaults.headers.common['Authorization']
+      window.dispatchEvent(new Event(SESSION_EXPIRED_EVENT))
     }
     return Promise.reject(error)
   }

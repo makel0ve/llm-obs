@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { format } from 'date-fns'
 import { Link, useParams, useSearchParams } from 'react-router-dom'
+import { getApiErrorMessage } from '../api/errors'
 import {
   dashboardQueryKeys,
   getTraceDetail,
@@ -409,7 +410,7 @@ export function TraceDetail({ projectId }: { projectId: string }) {
         </div>
       ) : query.isError ? (
         <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">
-          Trace not found or could not be loaded.
+          {getApiErrorMessage(query.error, 'Trace not found or could not be loaded.')}
         </div>
       ) : query.data ? (
         <>
