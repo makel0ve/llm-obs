@@ -1,6 +1,7 @@
 import { useMemo, useState, type FormEvent } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { format } from 'date-fns'
+import { getApiErrorMessage } from '../api/errors'
 import {
   createPricing,
   dashboardQueryKeys,
@@ -344,6 +345,8 @@ export function Pricing() {
 
         {pricingQuery.isLoading ? (
           <div className="h-32 animate-pulse rounded-lg bg-gray-100" />
+        ) : pricingQuery.isError ? (
+          <Notice tone="error">{getApiErrorMessage(pricingQuery.error, 'Could not load pricing records.')}</Notice>
         ) : records.length === 0 ? (
           <EmptyState />
         ) : (

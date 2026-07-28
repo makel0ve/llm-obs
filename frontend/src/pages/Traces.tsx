@@ -2,6 +2,7 @@ import { useMemo, useState, type FormEvent } from 'react'
 import { useInfiniteQuery } from '@tanstack/react-query'
 import { format } from 'date-fns'
 import { Link } from 'react-router-dom'
+import { getApiErrorMessage } from '../api/errors'
 import { OnboardingSetup } from '../components/OnboardingSetup'
 import {
   dashboardQueryKeys,
@@ -247,7 +248,7 @@ export function Traces({ projectId }: { projectId: string }) {
         </div>
       ) : query.isError ? (
         <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">
-          Could not load traces. Check that the API is running and your session is still valid.
+          {getApiErrorMessage(query.error, 'Could not load traces. Check that the API is running and your session is still valid.')}
         </div>
       ) : traces.length === 0 ? (
         <EmptyState filtered={hasActiveFilter} />
