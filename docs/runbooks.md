@@ -405,7 +405,8 @@ worker wrote it to Redis.
 The Compose files separate Redis responsibilities. `redis` handles cache,
 rate-limit counters, batch status and live pub/sub. `redis-queue` handles
 Taskiq queues, task results and the DLQ with AOF persistence and `noeviction`,
-so accepted ingest work is not subject to cache eviction.
+so accepted ingest work is not subject to cache eviction. The decision is
+recorded in [ADR 0003](adr/0003-redis-role-split.md).
 
 ## Graceful Shutdown
 

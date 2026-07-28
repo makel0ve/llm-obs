@@ -131,6 +131,7 @@ post-deploy smoke checks. Backup and restore procedures live in
 Product and integration documentation:
 
 - [Architecture](docs/architecture.md)
+- [Architecture decisions](docs/adr/README.md)
 - [Browser token storage decision](docs/browser-token-storage.md)
 - [Audit regression coverage](docs/audit-regression-coverage.md)
 - [SDK integration guide](docs/sdk-integration.md)
