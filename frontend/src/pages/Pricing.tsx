@@ -139,6 +139,7 @@ export function Pricing() {
   const pricingQuery = useQuery({
     queryKey: dashboardQueryKeys.pricing(providerFilter, modelFilter, includeExpired),
     queryFn: () => listPricing({ provider: providerFilter, model: modelFilter, includeExpired }),
+    retry: false,
   })
 
   const records = useMemo(() => pricingQuery.data ?? [], [pricingQuery.data])
