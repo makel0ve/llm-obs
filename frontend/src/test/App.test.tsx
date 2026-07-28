@@ -8,15 +8,21 @@ import App from '../App'
 import { Overview } from '../pages/Overview'
 import { Traces } from '../pages/Traces'
 import {
+  acceptOrganizationInvite,
   assignProjectMember,
+  createAlertRule,
   createOrganizationUser,
+  createPricing,
   createProjectApiKey,
   getMetricsAnalytics,
   getMetricsOverview,
   getMetricsTimeseries,
   getProjectSettings,
+  listAlertEvents,
+  listAlertRules,
   listAccessibleProjects,
   listFailedTasks,
+  listPricing,
   listProjectApiKeys,
   listProjectMembers,
   listProjects,
@@ -26,16 +32,22 @@ import {
   loginUser,
   removeProjectMember,
   registerUser,
+  resolveAlertEvent,
   retryFailedTask,
 } from '../api/dashboard'
 
 vi.mock('../api/dashboard', () => ({
+  acceptOrganizationInvite: vi.fn(),
   assignProjectMember: vi.fn(),
+  createAlertRule: vi.fn(),
   createOrganizationUser: vi.fn(),
+  createPricing: vi.fn(),
   createProjectApiKey: vi.fn(),
   createProject: vi.fn(),
   dashboardQueryKeys: {
     accessibleProjects: () => ['accessible-projects'],
+    alertEvents: (projectId: string) => ['alert-events', projectId],
+    alertRules: (projectId: string) => ['alert-rules', projectId],
     analytics: (projectId: string, period: string) => [
       'metrics',
       'analytics',
@@ -53,6 +65,12 @@ vi.mock('../api/dashboard', () => ({
       'overview',
       projectId,
       period,
+    ],
+    pricing: (provider: string, model: string, includeExpired: boolean) => [
+      'pricing',
+      provider,
+      model,
+      includeExpired,
     ],
     projectMembers: (projectId: string) => ['project-members', projectId],
     projects: () => ['projects'],
@@ -72,12 +90,17 @@ vi.mock('../api/dashboard', () => ({
     userProjectAccess: (userId: string) => ['user-project-access', userId],
     users: () => ['users'],
   },
+  deleteAlertRule: vi.fn(),
   getMetricsAnalytics: vi.fn(),
   getMetricsOverview: vi.fn(),
   getMetricsTimeseries: vi.fn(),
   getProjectSettings: vi.fn(),
+  endPricing: vi.fn(),
+  listAlertEvents: vi.fn(),
+  listAlertRules: vi.fn(),
   listFailedTasks: vi.fn(),
   listAccessibleProjects: vi.fn(),
+  listPricing: vi.fn(),
   listProjectApiKeys: vi.fn(),
   listProjectMembers: vi.fn(),
   listProjects: vi.fn(),
@@ -86,24 +109,33 @@ vi.mock('../api/dashboard', () => ({
   listUsers: vi.fn(),
   loginUser: vi.fn(),
   removeProjectMember: vi.fn(),
+  resolveAlertEvent: vi.fn(),
   retryFailedTask: vi.fn(),
   revokeProjectApiKey: vi.fn(),
   rotateProjectApiKey: vi.fn(),
   registerUser: vi.fn(),
   deleteOrganizationUser: vi.fn(),
+  updateAlertRule: vi.fn(),
   updateOrganizationUserRole: vi.fn(),
+  updatePricing: vi.fn(),
   updateProjectSettings: vi.fn(),
 }))
 
+const mockedAcceptOrganizationInvite = vi.mocked(acceptOrganizationInvite)
 const mockedAssignProjectMember = vi.mocked(assignProjectMember)
+const mockedCreateAlertRule = vi.mocked(createAlertRule)
 const mockedCreateOrganizationUser = vi.mocked(createOrganizationUser)
+const mockedCreatePricing = vi.mocked(createPricing)
 const mockedCreateProjectApiKey = vi.mocked(createProjectApiKey)
 const mockedGetMetricsAnalytics = vi.mocked(getMetricsAnalytics)
 const mockedGetMetricsOverview = vi.mocked(getMetricsOverview)
 const mockedGetMetricsTimeseries = vi.mocked(getMetricsTimeseries)
 const mockedGetProjectSettings = vi.mocked(getProjectSettings)
+const mockedListAlertEvents = vi.mocked(listAlertEvents)
+const mockedListAlertRules = vi.mocked(listAlertRules)
 const mockedListAccessibleProjects = vi.mocked(listAccessibleProjects)
 const mockedListFailedTasks = vi.mocked(listFailedTasks)
+const mockedListPricing = vi.mocked(listPricing)
 const mockedListProjectApiKeys = vi.mocked(listProjectApiKeys)
 const mockedListProjectMembers = vi.mocked(listProjectMembers)
 const mockedListProjects = vi.mocked(listProjects)
@@ -113,6 +145,7 @@ const mockedListUsers = vi.mocked(listUsers)
 const mockedLoginUser = vi.mocked(loginUser)
 const mockedRemoveProjectMember = vi.mocked(removeProjectMember)
 const mockedRegisterUser = vi.mocked(registerUser)
+const mockedResolveAlertEvent = vi.mocked(resolveAlertEvent)
 const mockedRetryFailedTask = vi.mocked(retryFailedTask)
 
 const project = {
@@ -170,6 +203,21 @@ function renderOverviewWithTestClient(projectId: string) {
 
 describe('App', () => {
   beforeEach(() => {
+    mockedAcceptOrganizationInvite.mockResolvedValue({
+      access_token: 'invite-token-auth',
+      project_id: 'project-1',
+      role: 'member',
+    })
+    mockedCreateAlertRule.mockResolvedValue(undefined)
+    mockedCreatePricing.mockResolvedValue({
+      id: 2,
+      provider: 'openai',
+      model: 'gpt-4o-mini',
+      input_cost_per_1k_tokens: '0.00015',
+      output_cost_per_1k_tokens: '0.0006',
+      valid_from: '2026-07-28T08:00:00Z',
+      valid_to: null,
+    })
     mockedGetMetricsOverview.mockResolvedValue({
       total_spans: 0,
       p95_latency_ms: 0,
@@ -192,8 +240,11 @@ describe('App', () => {
       recent_failed_traces: [],
       error_fingerprints: [],
     })
+    mockedListAlertRules.mockResolvedValue([])
+    mockedListAlertEvents.mockResolvedValue([])
     mockedListAccessibleProjects.mockResolvedValue([])
     mockedListProjects.mockResolvedValue([project])
+    mockedListPricing.mockResolvedValue([])
     mockedListTraces.mockResolvedValue({
       traces: [],
       next_cursor: null,
@@ -220,6 +271,7 @@ describe('App', () => {
       updated_at: '2026-07-15T08:00:00Z',
     })
     mockedRemoveProjectMember.mockResolvedValue(undefined)
+    mockedResolveAlertEvent.mockResolvedValue(undefined)
     mockedCreateProjectApiKey.mockResolvedValue({
       id: 'key-1',
       name: 'Production ingest',
@@ -338,6 +390,28 @@ describe('App', () => {
     expect(
       await screen.findByText('Registration is disabled. Ask an admin for an invite or use the bootstrap token.'),
     ).toBeInTheDocument()
+  })
+
+  it('accepts an invite and stores the returned session values', async () => {
+    const user = userEvent.setup()
+    mockedListAccessibleProjects.mockResolvedValue([{ ...project, project_role: 'member' }])
+    window.history.pushState(null, '', '/accept-invite?token=invite-token')
+
+    render(<App />)
+
+    expect(await screen.findByRole('heading', { name: 'Accept invite' })).toBeInTheDocument()
+    await user.type(screen.getByLabelText('Password'), 'secret123')
+    await user.type(screen.getByLabelText('Confirm password'), 'secret123')
+    await user.click(screen.getByRole('button', { name: 'Join organization' }))
+
+    expect(mockedAcceptOrganizationInvite).toHaveBeenCalledWith({
+      token: 'invite-token',
+      password: 'secret123',
+    })
+    expect(await screen.findByRole('heading', { name: 'Projects' })).toBeInTheDocument()
+    expect(localStorage.getItem('token')).toBe('invite-token-auth')
+    expect(localStorage.getItem('projectId')).toBe(project.id)
+    expect(localStorage.getItem('role')).toBe('member')
   })
 
   it('shows admin-only navigation only for admins', async () => {
@@ -696,6 +770,66 @@ describe('App', () => {
     })
   })
 
+  it('creates an alert rule and resolves an open alert event for the selected project', async () => {
+    const user = userEvent.setup()
+    mockedListAccessibleProjects.mockResolvedValue([{ ...project, project_role: 'member' }])
+    mockedListAlertRules.mockResolvedValue([
+      {
+        id: 'rule-1',
+        project_id: project.id,
+        name: 'Production latency',
+        metric: 'latency_p95',
+        condition: 'gt',
+        threshold: 500,
+        window_minutes: 5,
+        cooldown_minutes: 15,
+        notify_email: 'alerts@example.com',
+        notify_slack_webhook: null,
+        is_active: true,
+        created_at: '2026-07-28T08:00:00Z',
+      },
+    ])
+    mockedListAlertEvents.mockResolvedValue([
+      {
+        id: 'event-1',
+        rule_id: 'rule-1',
+        triggered_at: '2026-07-28T08:10:00Z',
+        value: 650,
+        message: 'p95 latency exceeded threshold',
+        resolved_at: null,
+      },
+    ])
+    localStorage.setItem('token', 'member-token')
+    localStorage.setItem('projectId', project.id)
+    localStorage.setItem('role', 'member')
+    window.history.pushState(null, '', '/dashboard/alerts')
+
+    render(<App />)
+
+    expect(await screen.findByRole('heading', { name: 'Alerts' })).toBeInTheDocument()
+    expect(await screen.findByText('p95 latency exceeded threshold')).toBeInTheDocument()
+    await user.type(screen.getByPlaceholderText('Production latency'), 'High p95 latency')
+    await user.type(screen.getByPlaceholderText('500'), '750')
+    await user.type(screen.getByPlaceholderText('alerts@example.com'), 'alerts@example.com')
+    await user.click(screen.getByRole('button', { name: 'Create rule' }))
+
+    expect(mockedCreateAlertRule.mock.calls[0][0]).toEqual({
+      project_id: project.id,
+      name: 'High p95 latency',
+      metric: 'latency_p95',
+      condition: 'gt',
+      threshold: 750,
+      window_minutes: 5,
+      cooldown_minutes: 15,
+      notify_email: 'alerts@example.com',
+      notify_slack_webhook: null,
+    })
+
+    await user.click(screen.getByRole('button', { name: 'Resolve' }))
+
+    expect(mockedResolveAlertEvent).toHaveBeenCalledWith(project.id, 'event-1')
+  })
+
   it('routes the LLM Obs title back to the project selection page', async () => {
     const user = userEvent.setup()
     mockedListAccessibleProjects.mockResolvedValue([
@@ -777,6 +911,46 @@ describe('App', () => {
     })
     expect(await screen.findByText('Save this API key now. It is shown once and cannot be recovered later.')).toBeInTheDocument()
     expect(screen.getByText('llmobs_new_scoped_key')).toBeInTheDocument()
+  })
+
+  it('creates a pricing record from organization settings', async () => {
+    const user = userEvent.setup()
+    mockedListAccessibleProjects.mockResolvedValue([{ ...project, project_role: 'admin' }])
+    mockedListPricing.mockResolvedValue([
+      {
+        id: 1,
+        provider: 'openai',
+        model: 'gpt-4o',
+        input_cost_per_1k_tokens: '0.005',
+        output_cost_per_1k_tokens: '0.015',
+        valid_from: '2026-07-01T00:00:00Z',
+        valid_to: null,
+      },
+    ])
+    storeAdminSession('/admin-settings/pricing')
+
+    render(<App />)
+
+    expect(await screen.findByRole('heading', { name: 'Pricing' })).toBeInTheDocument()
+    expect(await screen.findByText('gpt-4o')).toBeInTheDocument()
+    const createSection = screen.getByRole('heading', { name: 'New pricing record' }).closest('section')
+    expect(createSection).not.toBeNull()
+    const createForm = within(createSection as HTMLElement)
+
+    await user.clear(createForm.getByLabelText('Provider'))
+    await user.type(createForm.getByLabelText('Provider'), 'OpenAI')
+    await user.type(createForm.getByLabelText('Model'), 'gpt-4o-mini')
+    await user.type(createForm.getByLabelText('Input / 1K'), '0,00015')
+    await user.type(createForm.getByLabelText('Output / 1K'), '0.0006')
+    await user.click(createForm.getByRole('button', { name: 'Create pricing' }))
+
+    expect(mockedCreatePricing.mock.calls[0][0]).toEqual({
+      provider: 'openai',
+      model: 'gpt-4o-mini',
+      input_cost_per_1k_tokens: '0.00015',
+      output_cost_per_1k_tokens: '0.0006',
+      valid_from: null,
+    })
   })
 
   it('shows retry only for failed tasks with complete span payloads', async () => {
