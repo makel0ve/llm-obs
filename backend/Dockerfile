@@ -4,7 +4,9 @@ COPY pyproject.toml .
 
 FROM base as production
 RUN apt-get update && apt-get install -y --no-install-recommends curl && rm -rf /var/lib/apt/lists/*
-RUN pip install --no-cache-dir .
+RUN pip install --no-cache-dir --upgrade pip setuptools wheel \
+    && pip install --no-cache-dir . \
+    && pip uninstall -y setuptools wheel
 COPY app/ app/
 COPY alembic/ alembic/
 COPY alembic.ini .
