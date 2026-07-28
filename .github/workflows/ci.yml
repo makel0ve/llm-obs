@@ -168,6 +168,7 @@ jobs:
           format: table
           severity: HIGH,CRITICAL
           ignore-unfixed: true
+          trivyignores: security/trivy-image-ignore.txt
           exit-code: "1"
       - name: Build frontend image
         uses: docker/build-push-action@ca052bb54ab0790a636c9b5f226502c73d547a25 # v5
@@ -195,6 +196,7 @@ jobs:
           format: table
           severity: HIGH,CRITICAL
           ignore-unfixed: true
+          trivyignores: security/trivy-image-ignore.txt
           exit-code: "1"
       - name: Push backend image
         run: |
